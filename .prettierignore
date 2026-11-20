@@ -1,0 +1,14 @@
+node_modules
+dist
+build
+coverage
+.next
+package-lock.json
+pnpm-lock.yaml
+yarn.lock
+
+# Python is formatted by Ruff
+*.py
+.venv
+venv
+__pycache__
