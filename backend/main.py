@@ -50,4 +50,9 @@ def delete_item(item_id: int) -> None:
     raise HTTPException(status_code=404, detail="Item not found")
 
 
+@api.delete("/test/{item_id}", status_code=200)
+def test(element: int) -> int:
+    return element
+
+
 app.include_router(api)
