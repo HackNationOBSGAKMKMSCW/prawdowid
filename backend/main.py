@@ -1,8 +1,36 @@
-from fastapi import APIRouter, FastAPI, HTTPException
+from fastapi import APIRouter, FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+
+from check import router as check_router
+
+MAX_BODY_BYTES = 64 * 1024
 
 app = FastAPI(title="Prawdowid API")
 api = APIRouter(prefix="/api")
+
+
+@app.middleware("http")
+async def limit_body_size(request: Request, call_next):
+    length = request.headers.get("content-length")
+    if length and length.isdigit() and int(length) > MAX_BODY_BYTES:
+        return _error(413, "payload_too_large", "Zgłoszenie jest za duże.")
+    return await call_next(request)
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_error(_: Request, exc: RequestValidationError) -> JSONResponse:
+    details = [
+        {"field": ".".join(str(p) for p in e["loc"][1:]), "message": e["msg"]}
+        for e in exc.errors()
+    ]
+    return _error(422, "invalid_input", "Nie udało się przyjąć zgłoszenia.", details)
+
+
+def _error(status: int, code: str, message_pl: str, details: list | None = None) -> JSONResponse:
+    body = {"error": {"code": code, "message_pl": message_pl, "details": details or []}}
+    return JSONResponse(status_code=status, content=body)
 
 
 class ItemCreate(BaseModel):
@@ -55,4 +83,5 @@ def test(element: int) -> int:
     return element
 
 
+api.include_router(check_router)
 app.include_router(api)

@@ -1,0 +1,5 @@
+extend = "../ruff.toml"
+
+[lint.isort]
+# Moduły backendu są płaskie (main:app wymaga importów bez pakietu).
+known-first-party = ["check", "llm", "main", "ratelimit", "retrieval", "schemas"]
