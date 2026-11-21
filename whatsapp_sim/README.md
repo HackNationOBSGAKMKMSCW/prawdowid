@@ -4,9 +4,10 @@ A demonstration channel for SprawdzTo: users talk to a **SprawdzTo** contact in 
 WhatsApp-style chat, send a phrase, question, or forwarded message, and get back
 a fact-check verdict with sources.
 
-Everything lives in this folder; the main `backend/` and `frontend/` are not
-modified. The adapter reuses the main app's `textAnalysis` and `apiReading`
-packages from `backend/`.
+The Python adapter lives in this folder and reuses the main app's
+`textAnalysis` and `apiReading` packages from `backend/`. The chat simulator
+is part of the main web app: it is the **WhatsApp** view of `frontend/`
+(`/whatsapp`, source in `frontend/src/whatsapp/`), next to the website view.
 
 ```
 whatsapp_sim/
@@ -14,8 +15,7 @@ whatsapp_sim/
 │   ├── requirements.txt
 │   ├── pytest.ini
 │   └── whatsappAdapter/      # bot, Cloud API shapes, verdicts, server, tests
-└── frontend/                 # Vite + React chat simulator, port 5174
-    └── src/
+frontend/src/whatsapp/        # chat simulator, the /whatsapp view of the main app
 ```
 
 The adapter speaks the **WhatsApp Cloud API** formats: it accepts webhook
@@ -43,13 +43,16 @@ python -m venv .venv
 cd whatsapp_sim/backend && ../../.venv/bin/python -m whatsappAdapter --demo
 ```
 
-Simulator, in a second terminal:
+Web app with the simulator, in a second terminal:
 
 ```bash
-cd whatsapp_sim/frontend && npm install && npm run dev
+cd frontend && npm install && npm run dev
 ```
 
-Open <http://localhost:5174>. Vite proxies `/api` to the adapter on port 8000.
+Open <http://localhost:5173/whatsapp> (or use the **Strona / WhatsApp** switch at
+the top). Vite proxies `/api` to the adapter on port 8000. The WhatsApp number on
+the start page opens this view with the typed message ready to send
+(`/whatsapp?text=…`); nothing goes to the real WhatsApp.
 
 - `--demo` answers from a few built-in example topics (vaccines and autism, 5G
   and coronavirus, the Great Wall, boiling water). Every demo reply is labelled
@@ -112,5 +115,5 @@ chat opens). Other types get a "text only" reply.
 
 ```bash
 cd whatsapp_sim/backend && ../../.venv/bin/python -m pytest
-cd whatsapp_sim/frontend && npm run build && npm run lint
+cd frontend && npm run build && npm run lint
 ```
