@@ -12,6 +12,7 @@ from abc import ABC, abstractmethod
 from datetime import UTC, datetime
 from html.parser import HTMLParser
 
+from dataMasking import mask_personal_data
 from openai import AsyncOpenAI, OpenAIError
 from pydantic import BaseModel, Field, ValidationError, field_validator
 
@@ -254,8 +255,9 @@ class InputSanitizer:
     @classmethod
     def sanitize(cls, raw_text: str) -> tuple[str, list[str]]:
         """
-        Oczyszcza tekst wejściowy, neutralizuje próby ucieczki ze znaczników XML
-        oraz zwraca krotkę: (oczyszczony_tekst, lista_ostrzeżeń).
+        Oczyszcza tekst wejściowy, maskuje dane osobowe (poza imieniem i nazwiskiem),
+        neutralizuje próby ucieczki ze znaczników XML oraz zwraca krotkę:
+        (oczyszczony_tekst, lista_ostrzeżeń). Wynik to dokładnie tekst wysyłany do LLM.
         """
         if not raw_text or not raw_text.strip():
             raise ValueError("Tekst wejściowy nie może być pusty.")
@@ -270,6 +272,14 @@ class InputSanitizer:
             working_text = working_text[: cls.MAX_INPUT_LENGTH]
 
         cleaned = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", working_text)
+
+        # Dane osobowe (poza imieniem i nazwiskiem) nie mogą trafić do LLM.
+        # Nie trafia do ``warnings``: te oznaczają próbę prompt injection (``is_safe``).
+        masking = mask_personal_data(cleaned)
+        if masking.changed:
+            found = ", ".join(f"{label} ×{n}" for label, n in masking.counts.items())
+            print(f"[textAnalysis] Zamaskowano dane osobowe: {found}.", flush=True)
+        cleaned = masking.text
 
         for pattern in cls.SUSPICIOUS_PATTERNS:
             if re.search(pattern, cleaned, flags=re.IGNORECASE):

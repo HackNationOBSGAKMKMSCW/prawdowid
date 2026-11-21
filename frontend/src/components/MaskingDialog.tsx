@@ -1,24 +1,8 @@
-import { useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { useRef, useState, type FormEvent } from 'react';
 import { ApiError, maskText } from '../api/client.ts';
-import type { MaskedLabel, MaskingResponse } from '../api/types.ts';
+import type { MaskingResponse } from '../api/types.ts';
+import { highlightPlaceholders, MASKED_LABELS } from '../lib/masking.tsx';
 import Modal from './Modal.tsx';
-
-const LABELS: Record<MaskedLabel, string> = {
-  PESEL: 'PESEL',
-  NIP: 'NIP',
-  REGON: 'REGON',
-  NR_KONTA: 'Numer konta',
-  KARTA: 'Karta płatnicza',
-  DOWOD: 'Dowód osobisty',
-  PASZPORT: 'Paszport',
-  TELEFON: 'Telefon',
-  EMAIL: 'E-mail',
-  IP: 'Adres IP',
-  ADRES: 'Adres',
-  KOD_POCZTOWY: 'Kod pocztowy',
-  DATA_URODZENIA: 'Data urodzenia',
-  NR_REJESTRACYJNY: 'Numer rejestracyjny',
-};
 
 const EXAMPLE =
   'Anna Nowak (PESEL 44051401359, tel. +48 600 100 200, anna.nowak@gmail.com) mieszka przy ' +
@@ -27,26 +11,12 @@ const EXAMPLE =
   '(Dz.U. 2024 poz. 1234).';
 
 const MAX_LENGTH = 15_000;
-const PLACEHOLDER = /(\[[A-Z_]+_\d+\])/;
 
 type State =
   | { step: 'idle' }
   | { step: 'sending' }
   | { step: 'done'; input: string; result: MaskingResponse }
   | { step: 'error'; message: string };
-
-/** Wyróżnia znaczniki `[TYP_N]` w zamaskowanym tekście. */
-function highlight(text: string): ReactNode[] {
-  return text.split(PLACEHOLDER).map((part, i) =>
-    i % 2 === 1 ? (
-      <mark key={i} className="masking-tag">
-        {part}
-      </mark>
-    ) : (
-      part
-    ),
-  );
-}
 
 interface MaskingDialogProps {
   open: boolean;
@@ -144,7 +114,7 @@ function MaskingResult({ input, result }: { input: string; result: MaskingRespon
   return (
     <section className="masking-result" aria-label="Wynik maskowania">
       <h3 className="masking-result__title">Po maskowaniu</h3>
-      <p className="masking-output">{highlight(result.masked_text)}</p>
+      <p className="masking-output">{highlightPlaceholders(result.masked_text)}</p>
 
       {rows.length === 0 ? (
         <p className="modal__text">Nie znaleziono danych osobowych.</p>
@@ -166,7 +136,7 @@ function MaskingResult({ input, result }: { input: string; result: MaskingRespon
                     <td>
                       <mark className="masking-tag">{e.placeholder}</mark>
                     </td>
-                    <td>{LABELS[e.label] ?? e.label}</td>
+                    <td>{MASKED_LABELS[e.label] ?? e.label}</td>
                     <td className="masking-table__value">{input.slice(e.start, e.end)}</td>
                   </tr>
                 ))}

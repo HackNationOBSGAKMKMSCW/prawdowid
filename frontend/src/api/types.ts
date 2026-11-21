@@ -4,6 +4,7 @@
  *   POST   /api/check              { text }  → CheckResponse
  *   POST   /api/check/{id}/report  { reason, comment? } → 204
  *   POST   /api/masking            { text }  → MaskingResponse
+ *   POST   /api/masking/llm-input  { text }  → LlmInputResponse
  */
 
 export type Verdict = 'confirmed' | 'false' | 'misleading' | 'insufficient' | 'unverifiable';
@@ -140,4 +141,12 @@ export interface MaskingResponse {
   masked_text: string;
   entities: MaskedEntity[];
   counts: Partial<Record<MaskedLabel, number>>;
+}
+
+/** Podgląd tekstu, który backend wstawia do promptu LLM (po sanityzacji i maskowaniu). */
+export interface LlmInputResponse {
+  llm_text: string;
+  counts: Partial<Record<MaskedLabel, number>>;
+  /** Ostrzeżenia sanitizera: przycięcie tekstu, wzorce prompt injection. */
+  warnings: string[];
 }

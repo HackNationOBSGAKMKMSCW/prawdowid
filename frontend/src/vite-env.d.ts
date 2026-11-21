@@ -7,6 +7,8 @@ interface ImportMetaEnv {
   readonly VITE_API_BASE_URL?: string;
   /** `true` / `false` – pasek z przykładami. Domyślnie widoczny w trybie `mock`. */
   readonly VITE_DEMO_BAR?: string;
+  /** `true` / `false` – okno z tekstem wysyłanym do LLM po kliknięciu „Sprawdź”. Domyślnie tylko w dev. */
+  readonly VITE_SHOW_LLM_INPUT?: string;
   /** Numer WhatsApp pokazywany na stronie startowej. */
   readonly VITE_WHATSAPP_NUMBER?: string;
 }

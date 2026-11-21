@@ -222,3 +222,10 @@ async def test_analyzer_still_rejects_missing_statements() -> None:
     with pytest.raises(AnalysisError):
         await analyzer.analyze("Tekst.")
     await analyzer.aclose()
+
+
+def test_input_sanitizer_masks_personal_data_without_security_warning() -> None:
+    cleaned, warnings = InputSanitizer.sanitize("Jan Kowalski, PESEL 44051401359, tel. 600 100 200")
+    assert cleaned == "Jan Kowalski, PESEL [PESEL_1], tel. [TELEFON_1]"
+    # Maskowanie to nie prompt injection: kontener ma zostać „bezpieczny”.
+    assert warnings == []

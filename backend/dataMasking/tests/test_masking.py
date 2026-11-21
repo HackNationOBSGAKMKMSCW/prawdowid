@@ -62,3 +62,18 @@ def test_api_rejects_too_long_text(client: TestClient) -> None:
 
 def test_api_health(client: TestClient) -> None:
     assert client.get("/api/masking/health").json() == {"status": "ok"}
+
+
+def test_llm_input_is_exactly_what_sanitizer_sends(client: TestClient) -> None:
+    text = "Anna Nowak, tel. 600 100 200 i 600100200, PESEL 44051401359. Budżet: 500 000 000 zł."
+    body = client.post("/api/masking/llm-input", json={"text": text}).json()
+    assert body == {
+        "llm_text": "Anna Nowak, tel. [TELEFON_1] i [TELEFON_1], PESEL [PESEL_1]. "
+        "Budżet: 500 000 000 zł.",
+        "counts": {"TELEFON": 2, "PESEL": 1},
+        "warnings": [],
+    }
+
+
+def test_llm_input_rejects_empty_text(client: TestClient) -> None:
+    assert client.post("/api/masking/llm-input", json={"text": "  "}).status_code == 422

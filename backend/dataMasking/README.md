@@ -51,13 +51,24 @@ identyfikatory („moja szefowa z urzędu w X”), nicki i linki do prywatnych p
 
 Zamaskowane wartości nie są odsyłane: `start`/`end` wskazują je w tekście wysłanym przez klienta.
 
+`POST /api/masking/llm-input` z `{ "text": "…" }` zwraca `{ llm_text, counts, warnings }`:
+dokładnie ten tekst, który `InputSanitizer` wstawia do promptu LLM. Nic nie trafia do modelu.
+
+## Gdzie działa przed LLM
+
+`textAnalysis.analysis.InputSanitizer.sanitize` maskuje dane, zanim tekst trafi do promptu
+(strona i WhatsApp). Liczba zamaskowanych wartości (bez samych wartości) trafia do logu;
+nie jest dopisywana do `security_warnings`, bo te oznaczają próbę prompt injection.
+
 Router jest podpięty pod serwer adaptera WhatsApp (port 8000). Samodzielnie:
 
 ```bash
 cd backend && python -m dataMasking --port 8000
 ```
 
-We frontendzie okno testowe otwiera przycisk **„Test maskowania”** w pasku DEMO
+We frontendzie po kliknięciu **„Sprawdź”** pojawia się okno **„Do LLM trafi ten tekst”**
+(domyślnie w `npm run dev`, w buildzie produkcyjnym z `VITE_SHOW_LLM_INPUT=true`).
+Osobne okno testowe otwiera przycisk **„Test maskowania”** w pasku DEMO
 (widoczny domyślnie w trybie `mock`, w trybie `live` po ustawieniu `VITE_DEMO_BAR=true`).
 Okno zawsze pyta prawdziwy backend.
 

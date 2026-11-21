@@ -1,5 +1,5 @@
 import { mockCheck, type Scenario } from './mock.ts';
-import type { CheckResponse, MaskingResponse } from './types.ts';
+import type { CheckResponse, LlmInputResponse, MaskingResponse } from './types.ts';
 
 /**
  * `mock` – odpowiedzi przykładowe, bez backendu (domyślnie).
@@ -84,6 +84,23 @@ export async function reportCheck(id: string | undefined, report: ReportPayload)
  */
 export function maskText(text: string, signal?: AbortSignal): Promise<MaskingResponse> {
   return request<MaskingResponse>('/masking', {
+    method: 'POST',
+    body: JSON.stringify({ text }),
+    signal: withTimeout(signal, 15_000),
+  });
+}
+
+/**
+ * Okno „Do LLM trafi” po kliknięciu „Sprawdź”. Domyślnie włączone w `npm run dev`,
+ * w buildzie produkcyjnym tylko z `VITE_SHOW_LLM_INPUT=true`.
+ */
+export const SHOW_LLM_INPUT =
+  import.meta.env.VITE_SHOW_LLM_INPUT === 'true' ||
+  (import.meta.env.DEV && import.meta.env.VITE_SHOW_LLM_INPUT !== 'false');
+
+/** Tekst, który backend wyśle do LLM (nic nie trafia do modelu). Zawsze pyta prawdziwy backend. */
+export function previewLlmInput(text: string, signal?: AbortSignal): Promise<LlmInputResponse> {
+  return request<LlmInputResponse>('/masking/llm-input', {
     method: 'POST',
     body: JSON.stringify({ text }),
     signal: withTimeout(signal, 15_000),

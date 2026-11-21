@@ -1,5 +1,7 @@
-import type { FormEvent, KeyboardEvent } from 'react';
+import { useState, type FormEvent, type KeyboardEvent } from 'react';
 import { Link } from 'react-router-dom';
+import { SHOW_LLM_INPUT } from '../api/client.ts';
+import LlmInputDialog from '../components/LlmInputDialog.tsx';
 import { SOURCE_GROUPS, WHATSAPP_NUMBER } from '../content/sources.ts';
 import { VERDICT_ORDER, VERDICTS } from '../content/verdicts.ts';
 import { useChecker } from '../lib/checker.ts';
@@ -12,17 +14,24 @@ const STEPS = [
 
 export default function StartScreen() {
   const { input, setInput, error, run } = useChecker();
+  // Tekst w oknie „Do LLM trafi” (tylko gdy SHOW_LLM_INPUT); `null` – okno zamknięte.
+  const [preview, setPreview] = useState<string | null>(null);
+
+  const submit = () => {
+    if (SHOW_LLM_INPUT && input.trim()) setPreview(input.trim());
+    else run();
+  };
 
   const onSubmit = (event: FormEvent) => {
     event.preventDefault();
-    run();
+    submit();
   };
 
   // Ctrl/Cmd + Enter wysyła formularz, sam Enter dodaje nową linię.
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
       event.preventDefault();
-      run();
+      submit();
     }
   };
 
@@ -60,6 +69,16 @@ export default function StartScreen() {
           Sprawdź
         </button>
       </form>
+      {SHOW_LLM_INPUT && (
+        <LlmInputDialog
+          text={preview}
+          onClose={() => setPreview(null)}
+          onSend={(text) => {
+            setPreview(null);
+            run(text);
+          }}
+        />
+      )}
 
       <p className="note note--center">Za darmo, bez logowania.</p>
 
