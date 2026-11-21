@@ -28,6 +28,21 @@ callers do not need to construct requests or clients. Progress output identifies
 each statement by number, shows request duration and retry delays, and avoids
 printing the statement text or API key.
 
+## Search the original text
+
+Use `run_full_text` to make one fact-check search with the original text stored
+by `textAnalysis.run()`, rather than one search per extracted statement:
+
+```python
+analysis = await textAnalysis.run("A claim to verify.")
+result = await apiReading.run_full_text(analysis)
+```
+
+This sends the source text to Google's Fact Check Tools API. The query is capped
+at 1,000 characters; `result.request.metadata["truncated"]` indicates whether
+it was shortened. Progress output reports query length but never prints the
+text or API key.
+
 ## Smoke test with final data
 
 ```bash
