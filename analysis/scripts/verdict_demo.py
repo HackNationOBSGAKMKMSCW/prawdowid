@@ -34,6 +34,11 @@ from prawdowid_analysis.schemas import (
 )
 from prawdowid_analysis.verdict.llm import FreeLLMClient, LLMError
 from prawdowid_analysis.verdict.rules import aggregate
+from prawdowid_analysis.verdict.security import (
+    SecurityEvent,
+    screen_passages,
+    security_limitations,
+)
 from prawdowid_analysis.verdict.sources import tier_of
 from prawdowid_analysis.verdict.stance import StanceAssessment, build_evidence
 
@@ -106,6 +111,11 @@ def main() -> int:
     parser.add_argument("--source", choices=["mock", "sample"], default="mock")
     parser.add_argument("--k", type=int, default=4, help="pasaży na twierdzenie")
     parser.add_argument("--chunk-chars", type=int, default=800, help="tylko --source sample")
+    parser.add_argument(
+        "--no-screen",
+        action="store_true",
+        help="nie odrzucaj pasaży z wstrzyknięciem (test odporności samego promptu)",
+    )
     args = parser.parse_args()
     sys.stdout.reconfigure(encoding="utf-8")
 
@@ -114,7 +124,11 @@ def main() -> int:
     except LLMError as exc:
         print(f"[FAIL] {exc}")
         return 1
-    print(f"LLM_MODEL={client.model}  źródło={args.source}  k={args.k}")
+    screen = not args.no_screen
+    print(
+        f"LLM_MODEL={client.model}  źródło={args.source}  k={args.k}  "
+        f"filtr wstrzyknięć={'tak' if screen else 'NIE'}"
+    )
 
     if args.source == "sample":
         claims, corpus = sample_corpus(args.chunk_chars)
@@ -131,28 +145,40 @@ def main() -> int:
     all_assessments: list[StanceAssessment] = []
     all_passages: dict[str, Passage] = {}
     claim_ms: list[int] = []
+    all_events: list[SecurityEvent] = []
     for claim in claims:
         print(f"\n== {claim.claim_id} [{claim.type}]: {claim.text}")
         passages = retrieve(claim.text)
         for p in passages:
             all_passages[p.chunk_id] = p
         started = time.perf_counter()
+        clean, events = screen_passages(passages, claim_id=claim.claim_id)
+        all_events += events
+        to_llm = clean if screen else passages
         assessments: list[StanceAssessment] = []
         evidence = []
         if claim.type == "opinion" or not claim.check_worthy:
             verdict = aggregate(claim, [], passages)  # opinii nie wysyłamy do LLM
         else:
             try:
-                evidence, assessments = build_evidence(claim, passages, client)
-                verdict = aggregate(claim, evidence, passages)
+                evidence, assessments = build_evidence(claim, to_llm, client)
+                verdict = aggregate(claim, evidence, to_llm)
             except LLMError as exc:
-                verdict = aggregate(claim, [], passages, error=f"{exc.kind}: {exc}")
+                verdict = aggregate(claim, [], to_llm, error=f"{exc.kind}: {exc}")
+        if screen and events:
+            verdict = verdict.model_copy(
+                update={"limitations": verdict.limitations + security_limitations(events)}
+            )
         claim_ms.append(int((time.perf_counter() - started) * 1000))
         all_assessments += assessments
 
         by_chunk = {a.chunk_id: a for a in assessments}
+        flagged = {e.chunk_id: e for e in events}
         for p in passages:
             print("  " + describe_passage(p))
+            if p.chunk_id in flagged:
+                verb = "ODRZUCONY" if screen else "WYKRYTO, ale wysłano do LLM"
+                print(f"    !! {verb}: wstrzyknięcie {flagged[p.chunk_id].patterns}")
             a = by_chunk.get(p.chunk_id)
             if a:
                 mark = "OK " if a.quote_verified else ("ZLY" if a.quote else " - ")
@@ -170,18 +196,27 @@ def main() -> int:
         print(f"  {verdict.explanation_pl}")
         if s:
             print(f"  czynniki: {'; '.join(s.factors)}")
+        if verdict.limitations:
+            print(f"  ograniczenia: {'; '.join(verdict.limitations)}")
         results.append(
             ClaimResult(claim=claim, passages=passages, evidence=evidence, verdict=verdict)
         )
 
     report(results, all_assessments, list(all_passages.values()), claim_ms)
+    docs = sorted({e.doc_id for e in all_events})
+    print(f"Zdarzenia bezpieczeństwa (security_events): {len(all_events)}, dokumenty: {docs}")
     OUTPUTS.mkdir(exist_ok=True)
     out = OUTPUTS / f"verdict_demo_{args.source}.json"
     output = AnalysisOutput(
         request_id=f"demo_{args.source}", results=results, ingest=IngestReport()
     )
     out.write_text(output.model_dump_json(indent=2), encoding="utf-8")
-    print(f"\nZapisano: {out.relative_to(ROOT)}")
+    events_out = OUTPUTS / f"security_events_{args.source}.json"
+    events_out.write_text(
+        json.dumps([e.to_dict() for e in all_events], ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    print(f"\nZapisano: {out.relative_to(ROOT)}, {events_out.relative_to(ROOT)}")
     return 0
 
 
