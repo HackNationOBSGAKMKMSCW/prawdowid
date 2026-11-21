@@ -19,7 +19,7 @@ class Case(NamedTuple):
 MASKED: list[Case] = [
     # PESEL
     Case("P1", "Mój PESEL to 44051401359.", "Mój PESEL to [PESEL_1]."),
-    Case("P2", "Urodzona w 2002: 02270803624", "Urodzona w 2002: [PESEL_1]"),
+    Case("P2", "Urodzona w 2002: 02270803624", "Urodzona w [DATA_URODZENIA_1]: [PESEL_1]"),
     Case("P3", "pesel: 12345678901 (z błędem)", "pesel: [PESEL_1] (z błędem)"),
     # NIP, REGON
     Case("N1", "NIP firmy: 526-025-02-74", "NIP firmy: [NIP_1]"),
@@ -142,6 +142,60 @@ MASKED += [
     Case("M24", "KR 4F123 to mój samochód", "[NR_REJESTRACYJNY_1] to mój samochód"),
     Case("M25", "pracuję w Biedronce przy Długiej 5", "pracuję w Biedronce przy [ADRES_1]"),
     Case("M26", "Gdańsk, Długa 15/3", "Gdańsk, [ADRES_1]"),
+    # Realne wiadomości (łańcuszki, zbiórki, ogłoszenia, seniorzy)
+    Case(
+        "R1",
+        "uwaga sąsiedzi z bloku na Kasprowicza 8, ktoś się kręci",
+        "uwaga sąsiedzi z bloku na [ADRES_1], ktoś się kręci",
+    ),
+    Case("R2", "nr karty 5168 4412 3456 7890 czy to prawda", "nr karty [KARTA_1] czy to prawda"),
+    Case("R3", "ur 3.07.1999 to se zapisz", "ur [DATA_URODZENIA_1] to se zapisz"),
+    Case("R4", "Nr KW KR1P/00123456/7", "Nr KW [KSIEGA_WIECZYSTA_1]"),
+    Case("R5", "Call me +44 7911 123456 or later", "Call me [TELEFON_1] or later"),
+    Case(
+        "R6",
+        "I live at 221B Baker Street, London NW1 6XE",
+        "I live at [ADRES_1], London [KOD_POCZTOWY_1]",
+    ),
+    Case(
+        "R7",
+        "Nasz adres Świętojańska 45/2, Gdynia 81-391",
+        "Nasz adres [ADRES_1], Gdynia [KOD_POCZTOWY_1]",
+    ),
+    Case(
+        "R8",
+        "jestem z 1987 r., urodzinki mam 3 maja",
+        "jestem z [DATA_URODZENIA_1] r., urodzinki mam [DATA_URODZENIA_2]",
+    ),
+    Case("R9", "MAC 00:1A:2B:3C:4D:5E", "MAC [MAC_1]"),
+    Case("R10", "seria i nr: AYZ-123456, wydany", "seria i nr: [DOWOD_1], wydany"),
+    Case("R11", "zadzwoń do Niemiec +49 30 1234 5678", "zadzwoń do Niemiec [TELEFON_1]"),
+    Case("R12", "mieszkam teraz na Wolskiej 23 m 81.", "mieszkam teraz na [ADRES_1]."),
+    Case(
+        "R13",
+        "Mama Joanna, tel 698 123 456. Mieszkają w Radomiu na Struga 12/4",
+        "Mama Joanna, tel [TELEFON_1]. Mieszkają w Radomiu na [ADRES_1]",
+    ),
+    Case(
+        "R14",
+        "Krzysztof Malinowski (ur. 1971, zam. Łomianki, ul. Warszawska 15) obiecał 500 zł",
+        "Krzysztof Malinowski (ur. [DATA_URODZENIA_1], zam. Łomianki, [ADRES_1]) obiecał 500 zł",
+    ),
+    Case(
+        "R15",
+        "adres zameldowania: Toruń, Szeroka 7/3, 87-100",
+        "adres zameldowania: Toruń, [ADRES_1], [KOD_POCZTOWY_1]",
+    ),
+    Case(
+        "R16",
+        "Znalezione pod Żabką na os. Piastowskim 22. Tel 533-019-888",
+        "Znalezione pod Żabką na [ADRES_1]. Tel [TELEFON_1]",
+    ),
+    Case(
+        "R17",
+        "kontakt na WhatsApp +48 791 202 303 lub maila p.nowicki95@interia.pl, przyjadę na Bema 5a/12",
+        "kontakt na WhatsApp [TELEFON_1] lub maila [EMAIL_1], przyjadę na [ADRES_1]",
+    ),
     Case(
         "X2",
         "siema, tu Kasia Nowak. zadzwon 600 100200 albo tel 600.100.200. mieszkam ul Długa 15, "
@@ -287,4 +341,50 @@ KEPT: list[Case] = [
         "Kowalski powiedział 12 marca 2024, że @ nie działa.",
         "Kowalski powiedział 12 marca 2024, że @ nie działa.",
     ),
+    Case(
+        "F25",
+        "Na Ukrainie 24 lutego 2022 zaczęła się wojna.",
+        "Na Ukrainie 24 lutego 2022 zaczęła się wojna.",
+    ),
+    Case("F26", "Na Euro 2024 Polska przegrała 1:2.", "Na Euro 2024 Polska przegrała 1:2."),
+    Case(
+        "F27",
+        "Na Jasnej Górze 15 sierpnia było 100 tys. pielgrzymów.",
+        "Na Jasnej Górze 15 sierpnia było 100 tys. pielgrzymów.",
+    ),
+    Case("F28", "Na Białorusi 9 sierpnia były wybory.", "Na Białorusi 9 sierpnia były wybory."),
+    Case("F29", "Na Litwie 2 lata temu podniesiono VAT.", "Na Litwie 2 lata temu podniesiono VAT."),
+    Case(
+        "F30",
+        "Ustawa jest z 1997 r., a godzina 12:30:45.",
+        "Ustawa jest z 1997 r., a godzina 12:30:45.",
+    ),
+    Case(
+        "F31",
+        "Mieszkańcy Gdańska 15 lat czekali na most.",
+        "Mieszkańcy Gdańska 15 lat czekali na most.",
+    ),
+    Case(
+        "F32",
+        "znak sprawy WOK.4321.15.2024 z 12.02.2024",
+        "znak sprawy WOK.4321.15.2024 z 12.02.2024",
+    ),
+    Case("F33", "Na Dolnym Śląsku 15 osób zginęło.", "Na Dolnym Śląsku 15 osób zginęło."),
+    Case("F34", "Na Kasprowicza ktoś się kręcił.", "Na Kasprowicza ktoś się kręcił."),
+    Case(
+        "F35",
+        "W 2023 roku urodziło się 272 tys. dzieci, a zmarło 409 tys. osób. 600 000 Polaków wyjechało.",
+        "W 2023 roku urodziło się 272 tys. dzieci, a zmarło 409 tys. osób. 600 000 Polaków wyjechało.",
+    ),
+    Case(
+        "F36",
+        "Sondaż z 12-14 kwietnia: KO 31%, PiS 29%.",
+        "Sondaż z 12-14 kwietnia: KO 31%, PiS 29%.",
+    ),
+    Case(
+        "F37",
+        "Wynik 3-2, w latach 1990-2020, mecz 12-14.",
+        "Wynik 3-2, w latach 1990-2020, mecz 12-14.",
+    ),
+    Case("F38", "Dzieci urodzonych w 2023 było 272 tys.", "Dzieci urodzonych w 2023 było 272 tys."),
 ]

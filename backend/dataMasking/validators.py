@@ -53,7 +53,7 @@ _ID_CARD_WEIGHTS = (7, 3, 1, 0, 7, 3, 1, 7, 3)
 
 def is_id_card(value: str) -> bool:
     """Polski dowód osobisty: 3 litery i 6 cyfr, pierwsza cyfra jest kontrolna."""
-    compact = value.replace(" ", "").upper()
+    compact = value.replace(" ", "").replace("-", "").upper()
     if not _ID_CARD.fullmatch(compact):
         return False
     values = [ord(ch) - 55 for ch in compact[:3]] + [int(ch) for ch in compact[3:]]

@@ -97,8 +97,13 @@ _FLAT = r"(?:\s?/\s?\d{1,4}[a-zA-Z]?|\s?(?i:m\.?|lok\.?|lokal|mieszk\.?|mieszkan
 # Bez słowa-klucza: pierwsze słowo musi wyglądać jak ulica („Długa”, „Długiej”, „Kościuszki”),
 # a nie jak nazwisko („Tusk 15/3”); numer bez zera z przodu („15/03” to data).
 _LOOKS_LIKE_STREET = rf"(?=(?:\d{{1,2}}\s+)?[{_UPPER}][{_LOWER}{_UPPER}'\-]*(?:[aeiouyąęó]|ej|ów|ow|ych|ich)(?![\w]))"
+# Po „na” miejscownik krajów („na Ukrainie”, „na Litwie”) kończy się na -e/-i/-u,
+# a ulice to dopełniacz albo -ej („na Kasprowicza”, „na Wolskiej”, „na Słowackiego”).
+_LOOKS_LIKE_STREET_AFTER_NA = (
+    rf"(?=(?:\d{{1,2}}\s+)?[{_UPPER}][{_LOWER}{_UPPER}'\-]*(?:ej|a|ego|ki|ów|ow|ich|ych)(?![\w]))"
+)
 _FLAT_STRICT = r"(?:\s?/\s?[1-9]\d{0,3}[a-zA-Z]?|\s?(?i:m\.?|lok\.?|lokal|mieszk\.?|mieszkania)\s?[1-9]\d{0,3})"
-_HOUSE = rf"\d{{1,4}}[a-zA-Z]?{_FLAT}?(?!\w)(?![.,]\d)"
+_HOUSE = rf"\d{{1,4}}[a-zA-Z]?{_FLAT}?(?!\w)(?![.,\-]\d)"
 _STREET_KW = (
     r"(?:(?i:ul|os)(?:\.|(?=\s))|(?i:ulic[aąyęe]\w*|al\.|alej[aąię]|aleje|aleja|pl\.|plac(?:u|em)?|"
     r"osiedl(?:e|u|em)))"
@@ -110,7 +115,8 @@ UNIT_AFTER = re.compile(
     r"mln|mld|bln|osób|osob|osoby|ludzi|mieszkańców|mieszkancow|polaków|polakow|km|kg|ton|t\b|"
     r"lat|latach|głos\w*|glos\w*|sztuk|szt|m2|m²|ha|razy|dawek|zgonów|zgonow|przypadków|"
     r"przypadkow|metr\w*|minut\w*|godzin\w*|dni|stron\w*|punkt\w*|pkt|posł\w*|posl\w*|państw|"
-    r"krajów|dzieci|uczniów|pacjentów|chorych|zakażeń|zakazen)(?!\w)",
+    r"krajów|dzieci|uczniów|pacjentów|chorych|zakażeń|zakazen|lata|roku|rok|r\.|tygodni\w*|"
+    rf"miesięc\w*|miesiac\w*|{_MONTHS})(?!\w)",
     re.IGNORECASE,
 )
 # Przed tym liczba jest odwołaniem prawnym albo przybliżoną wielkością.
@@ -203,6 +209,8 @@ RULES: tuple[Rule, ...] = (
         _c(rf"{_BS}\d(?:[ \-]?\d){{12,18}}{_ES}"),
         priority=2,
         validate=v.is_payment_card,
+        keyword=_kw(r"kart\w*|visa|mastercard|maestro|cvv|cvc"),
+        keyword_mode=Keyword.BYPASS,
     ),
     # PESEL także z separatorami: „4405 1401 359”, „44-05-14-01359”.
     Rule(
@@ -247,7 +255,7 @@ RULES: tuple[Rule, ...] = (
     ),
     Rule(
         "DOWOD",
-        _c(r"(?<!\w)[A-Za-z]{3} ?\d{6}(?!\w)"),
+        _c(r"(?<!\w)[A-Za-z]{3}[ \-]?\d{6}(?!\w)"),
         priority=6,
         validate=v.is_id_card,
         keyword=_kw(r"dow[oó]d\w*|seria|nr\s+dowodu"),
@@ -261,7 +269,7 @@ RULES: tuple[Rule, ...] = (
     Rule(
         "DATA_URODZENIA",
         _c(
-            r"(?<!\w)(?i:ur\.|urodz\w*|urodził\w*|urodzil\w*|data\s+urodzenia|d\.\s?ur\.)"
+            r"(?<!\w)(?i:ur(?:\.|(?=\s))|urodz\w*|urodził\w*|urodzil\w*|data\s+urodzenia|d\.\s?ur\.)"
             r"[^\d\n]{0,25}?"
             rf"(?P<v>\d{{1,2}}[./\-]\d{{1,2}}(?:[./\-](?:\d{{4}}|\d{{2}}))?(?![\d.]\d)"
             rf"|\d{{1,2}}\s+(?i:{_MONTHS})(?:\s+'?(?:\d{{4}}|\d{{2}}))?(?!\d)"
@@ -272,6 +280,20 @@ RULES: tuple[Rule, ...] = (
     Rule(
         "DATA_URODZENIA",
         _c(r"(?<!\w)(?i:rocznik\w*)\s*'?(?P<v>\d{4}|\d{2})(?!\d)"),
+        priority=7,
+    ),
+    # „(ur. 1971)” – sam rok w notce biograficznej.
+    Rule(
+        "DATA_URODZENIA",
+        _c(
+            r"(?<!\w)(?i:ur\.|urodzony|urodzona)\s*(?i:w\s+)?(?P<v>(?:19|20)\d{2})(?!\d)(?![./\-]\d)"
+        ),
+        priority=7,
+    ),
+    # „jestem z 1987 r.” – rok urodzenia w pierwszej osobie.
+    Rule(
+        "DATA_URODZENIA",
+        _c(r"(?<!\w)(?i:jestem|jesteśmy|jestesmy)\s+z\s+'?(?P<v>(?:19|20)\d{2}|\d{2})(?!\d)"),
         priority=7,
     ),
     # „ul. Długa 15/3”, „ul długa 15”, „os. Tysiąclecia 45”.
@@ -285,19 +307,22 @@ RULES: tuple[Rule, ...] = (
     Rule(
         "ADRES",
         _c(
-            r"(?<!\w)(?i:mieszka\w*|zamieszka\w*|adres\w*|meldun\w*|zameldowan\w*|zamelduj\w*)"
-            r"[^\n.!?]{0,40}?(?:\s(?i:na|przy)\s+|[:,]\s*)"
+            r"(?<!\w)(?i:mieszkam|mieszkasz|mieszka|mieszkamy|mieszkacie|mieszkają|mieszkaja|"
+            r"mieszkał\w*|mieszkal\w*|zamieszkał\w*|zamieszkal\w*|zamieszkuj\w*|zam\.|adres\w*|"
+            r"meldun\w*|zameldowan\w*|zamelduj\w*)"
+            r"(?:[^\n.!?]{0,40}?(?:\s(?i:na|przy)\s+|[:,]\s*)|\s+)"
             rf"(?P<v>{_STREET_KW}\s*{_STREET_ANY}(?:\s+(?:{_HOUSE}|(?i:{_NUMBER_WORDS})(?!\w)))?"
             rf"|{_STREET_CAP}\s+(?:{_HOUSE}|(?i:{_NUMBER_WORDS})(?!\w)))"
         ),
         priority=8,
+        weak=True,
     ),
     # Bez słowa-klucza tylko z numerem mieszkania: „Długa 15/3”, „Długiej 15 m 3”.
     Rule(
         "ADRES",
         _c(
             rf"(?<![\w.]){_LOOKS_LIKE_STREET}{_STREET_CAP}\s+[1-9]\d{{0,2}}[a-zA-Z]?{_FLAT_STRICT}"
-            r"(?!\w)(?![.,/]\d)"
+            r"(?!\w)(?![.,/\-]\d)"
         ),
         priority=8,
         weak=True,
@@ -307,10 +332,30 @@ RULES: tuple[Rule, ...] = (
         "ADRES",
         _c(
             rf"(?<!\w)(?i:przy)\s+(?P<v>{_LOOKS_LIKE_STREET}{_STREET_CAP}\s+[1-9]\d{{0,2}}[a-zA-Z]?"
-            rf"{_FLAT_STRICT}?)(?!\w)(?![.,/:]\d)"
+            rf"{_FLAT_STRICT}?)(?!\w)(?![.,/:\-]\d)"
         ),
         priority=8,
         weak=True,
+    ),
+    # „na Kasprowicza 8”, „na Wolskiej 23 m 81” – bez nazw krajów („na Ukrainie 24 lutego”).
+    Rule(
+        "ADRES",
+        _c(
+            rf"(?<!\w)(?i:na)\s+(?P<v>{_LOOKS_LIKE_STREET_AFTER_NA}{_STREET_CAP}\s+[1-9]\d{{0,2}}"
+            rf"[a-zA-Z]?{_FLAT_STRICT}?)(?!\w)(?![.,/:\-]\d)"
+        ),
+        priority=8,
+        weak=True,
+    ),
+    # Adres zagraniczny: „221B Baker Street”.
+    Rule(
+        "ADRES",
+        _c(
+            r"(?<!\w)\d{1,5}[A-Za-z]?\s+(?:[A-Z][a-z]+\s+){1,3}"
+            r"(?:Street|St\.?|Road|Rd\.?|Avenue|Ave\.?|Lane|Ln\.?|Drive|Dr\.?|Boulevard|Blvd\.?|"
+            r"Way|Square|Sq\.?|Place|Court|Ct\.?|Terrace|Close|Crescent|Gardens)(?!\w)"
+        ),
+        priority=8,
     ),
     # Z prefiksem kraju: pewny telefon. „48 600 100 200” bez plusa też.
     Rule(
@@ -318,6 +363,15 @@ RULES: tuple[Rule, ...] = (
         _c(rf"(?:(?<![\w+])(?:\+|00){_S}48|{_BS}48){_S}(?:{_MOBILE}|{_LANDLINE}){_ES}"),
         priority=9,
         weak=True,
+    ),
+    # Zagraniczny z prefiksem: „+44 7911 123456”, „+49 30 1234 5678”.
+    Rule(
+        "TELEFON",
+        _c(
+            r"(?<![\w+])\+(?!48)\d{1,3}[ .\-]?(?:\(\d{1,4}\)[ .\-]?)?\d(?:[ .\-]?\d){6,12}"
+            r"(?!\w)(?![.,]\d)"
+        ),
+        priority=9,
     ),
     # Po „tel.”, „mój nr”, „zadzwoń” numer jest pewny, w dowolnym zapisie.
     Rule(
@@ -383,5 +437,39 @@ RULES: tuple[Rule, ...] = (
         keyword=_CAR_WORDS,
         keyword_mode=Keyword.REQUIRED,
         keyword_after=True,
+    ),
+    Rule(
+        "MAC",
+        _c(r"(?<![\w:\-])[0-9A-Fa-f]{2}([:\-])[0-9A-Fa-f]{2}(?:\1[0-9A-Fa-f]{2}){4}(?![\w:\-])"),
+        priority=10,
+    ),
+    # Numer księgi wieczystej: „KR1P/00123456/7” wskazuje nieruchomość i właściciela.
+    Rule(
+        "KSIEGA_WIECZYSTA",
+        _c(r"(?<!\w)[A-Z]{2}\d[A-Z]/\d{8}/\d(?!\w)", re.IGNORECASE),
+        priority=6,
+    ),
+    # Kod po numerze domu: „Szeroka 7/3, 87-100”.
+    Rule(
+        "KOD_POCZTOWY",
+        _c(r"(?<!\w)\d{1,4}[a-zA-Z]?(?:\s?/\s?\d{1,4})?,\s*(?P<v>\d{2}-\d{3})(?![\w\-])"),
+        priority=11,
+        weak=True,
+    ),
+    # Kod po nazwie miejscowości: „Gdynia 81-391”.
+    Rule(
+        "KOD_POCZTOWY",
+        _c(
+            rf"(?<!\w){_NOT_STREET}[{_UPPER}][{_LOWER}]+(?:[\s\-][{_UPPER}][{_LOWER}]+)?,?\s+"
+            r"(?P<v>\d{2}-\d{3})(?![\w\-])"
+        ),
+        priority=11,
+        weak=True,
+    ),
+    # Brytyjski kod pocztowy: „NW1 6XE”.
+    Rule(
+        "KOD_POCZTOWY",
+        _c(r"(?<!\w)[A-Z]{1,2}\d[A-Z\d]?\s\d[A-Z]{2}(?!\w)"),
+        priority=11,
     ),
 )

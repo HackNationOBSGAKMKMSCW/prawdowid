@@ -41,7 +41,9 @@ litera O zamiast zera („6OO 1OO 2OO”) i e-maile zapisane słownie.
 
 ## Znane luki
 
-Numery telefonów słownie („sześćset sto dwieście”), adres bez numeru i bez słowa
+Dane o zdrowiu i wiek („mam 67 lat, choruję na cukrzycę”) zostają, bo są
+treścią sprawdzanych twierdzeń. Numery firm i infolinii są maskowane jak
+prywatne (reguły ich nie odróżnią). Numery telefonów słownie („sześćset sto dwieście”), adres bez numeru i bez słowa
 „mieszkam” („pracuję na Długiej”), opisowe identyfikatory („moja szefowa z urzędu w X”)
 oraz nazwisko zapisane tuż przed numerem mieszkania, jeśli kończy się jak ulica
 („Duda 15/3”).
