@@ -136,7 +136,21 @@ class ClaimVerdict(BaseModel):
         default=None, description="Werdykt zwrócony przez model przed kontrolą"
     )
     source_ids: list[str] = Field(default=[], description="Źródła pokazane modelowi")
+    security_warnings: list[str] = Field(
+        default=[], description="Wykryte próby manipulacji w treści twierdzenia"
+    )
     model: str | None = None
+
+
+class QuarantinedSource(BaseModel):
+    """Źródło pominięte, bo zawiera próbę wstrzyknięcia instrukcji (nie trafia do modelu)."""
+
+    source_id: str
+    kind: SourceKind
+    title: str = ""
+    publisher: str = ""
+    url: str | None = None
+    reasons: list[str]
 
 
 class TextVerdict(BaseModel):
@@ -145,6 +159,9 @@ class TextVerdict(BaseModel):
     claims: list[ClaimVerdict]
     sources: list[ReferenceSource] = Field(
         default=[], description="Wszystkie źródła wzorcowe użyte w analizie"
+    )
+    quarantined_sources: list[QuarantinedSource] = Field(
+        default=[], description="Źródła odrzucone przez ochronę przed wstrzyknięciem instrukcji"
     )
     warnings: list[str] = []
     prompt_version: str
