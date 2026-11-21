@@ -45,3 +45,25 @@ def test_api_reading_package_exports_only_its_entry_point() -> None:
     import apiReading
 
     assert apiReading.__all__ == ["run"]
+
+
+@pytest.mark.asyncio
+async def test_package_run_returns_final_claim_payload(monkeypatch) -> None:
+    monkeypatch.setenv("GOOGLE_FACT_CHECK_API_KEY", "test-key")
+    claim = {
+        "text": "claim text",
+        "claimReview": [
+            {
+                "publisher": {"name": "Demagog"},
+                "url": "https://example.test/review",
+                "textualRating": "Fałsz",
+            }
+        ],
+    }
+    analysis = AnalysisDataContainer(statements=["claim text"], language_code="pl")
+    with respx.mock(assert_all_called=True) as router:
+        router.get(GOOGLE_API_URL).respond(200, json={"claims": [claim]})
+        results = await run(analysis)
+
+    assert [item.payload for item in results[0].items] == [claim]
+    assert results[0].items[0].source == "google_fact_check"

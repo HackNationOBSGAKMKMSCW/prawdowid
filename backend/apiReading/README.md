@@ -27,3 +27,10 @@ the network client lifecycle and returns per-source errors with each result;
 callers do not need to construct requests or clients. Progress output identifies
 each statement by number, shows request duration and retry delays, and avoids
 printing the statement text or API key.
+
+## Smoke test with final data
+
+```bash
+cd backend && ../.venv/bin/python -m scripts.smoke_pipeline [--json] ["text"]
+RUN_LIVE_TESTS=1 .venv/bin/python -m pytest -m live -s   # opt-in live test
+```
