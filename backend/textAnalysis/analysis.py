@@ -13,7 +13,7 @@ from datetime import UTC, datetime
 from html.parser import HTMLParser
 
 from openai import AsyncOpenAI, OpenAIError
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from textAnalysis.container import AnalysisDataContainer, KeywordItem
 from textAnalysis.settings import Settings
@@ -21,18 +21,46 @@ from textAnalysis.settings import Settings
 
 class _ApiKeywordSchema(BaseModel):
     term: str = Field(max_length=120)
-    context_note: str = Field(max_length=400)
+    # Opis pomocniczy: model czasem go pomija, a jego brak nie unieważnia analizy.
+    context_note: str = Field(default="", max_length=400)
+
+
+_MAX_KEYWORDS = 25
+_MAX_STATEMENTS = 40
 
 
 class _ApiAnalysisSchema(BaseModel):
-    """Wewnętrzny schemat walidacji odpowiedzi z API nastawiony na gęste konkrety."""
+    """Wewnętrzny schemat walidacji odpowiedzi z API nastawiony na gęste konkrety.
+
+    Pola kluczowe (kategoria, pewność, stwierdzenia) są wymagane. Pola pomocnicze mają
+    wartości domyślne, a za długie listy są przycinane zamiast odrzucać całą odpowiedź,
+    bo jedna drobna niezgodność modelu przerywałaby cały potok.
+    """
 
     category: str = Field(max_length=100)
     language_code: str | None = Field(default=None, max_length=35)
     confidence: float = Field(ge=0.0, le=1.0)
-    context_reasoning: str = Field(max_length=800)
-    keywords: list[_ApiKeywordSchema] = Field(max_length=25)
-    statements: list[str] = Field(max_length=40)
+    context_reasoning: str = Field(default="", max_length=800)
+    keywords: list[_ApiKeywordSchema] = Field(default_factory=list, max_length=_MAX_KEYWORDS)
+    statements: list[str] = Field(max_length=_MAX_STATEMENTS)
+
+    @field_validator("keywords", mode="before")
+    @classmethod
+    def _usable_keywords(cls, value: object) -> object:
+        if not isinstance(value, list):
+            return value
+        usable = [k for k in value if not isinstance(k, dict) or str(k.get("term") or "").strip()]
+        return usable[:_MAX_KEYWORDS]
+
+    @field_validator("statements", mode="before")
+    @classmethod
+    def _limit_statements(cls, value: object) -> object:
+        return value[:_MAX_STATEMENTS] if isinstance(value, list) else value
+
+    @field_validator("context_reasoning", mode="before")
+    @classmethod
+    def _limit_reasoning(cls, value: object) -> object:
+        return value[:800] if isinstance(value, str) else value
 
 
 class _VisibleTextExtractor(HTMLParser):

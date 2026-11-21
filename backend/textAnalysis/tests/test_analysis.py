@@ -181,3 +181,43 @@ def test_output_security_rejects_unknown_category_and_canary_leak() -> None:
     assert reasoning == "Zablokowano treść uzasadnienia ze względów bezpieczeństwa."
     assert statements == []
     assert len(warnings) == 2
+
+
+@pytest.mark.asyncio
+async def test_analyzer_tolerates_incomplete_optional_fields() -> None:
+    """Brak opisu słowa kluczowego czy uzasadnienia nie może przerwać analizy."""
+    payload = (
+        '{"category":"Ogólne / Inne","language_code":"pl","confidence":0.8,'
+        '"keywords":[{"term":"Unia Europejska"},{"term":"","context_note":"pusty"},'
+        '{"term":"Rysy","context_note":"szczyt"}],'
+        '"statements":["Polska przystąpiła do UE w 2004 roku."]}'
+    )
+    create = AsyncMock(
+        return_value=SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content=payload))]
+        )
+    )
+    client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+    analyzer = ProxyContextAnalyzer(client=client)  # type: ignore[arg-type]
+
+    result = await analyzer.analyze("Polska przystąpiła do UE w 2004 roku.")
+    await analyzer.aclose()
+
+    assert result.keyword_terms == ["Unia Europejska", "Rysy"]
+    assert result.keywords[0].context_note == ""
+    assert result.statements == ["Polska przystąpiła do UE w 2004 roku."]
+
+
+@pytest.mark.asyncio
+async def test_analyzer_still_rejects_missing_statements() -> None:
+    payload = '{"category":"Ogólne / Inne","confidence":0.8,"keywords":[]}'
+    create = AsyncMock(
+        return_value=SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content=payload))]
+        )
+    )
+    client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+    analyzer = ProxyContextAnalyzer(client=client)  # type: ignore[arg-type]
+    with pytest.raises(AnalysisError):
+        await analyzer.analyze("Tekst.")
+    await analyzer.aclose()
