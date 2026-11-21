@@ -1,51 +1,12 @@
 from datetime import date
 
 import pytest
+from factories import claim, item, passage
 
-from prawdowid_analysis.schemas import Claim, Evidence, Passage
 from prawdowid_analysis.verdict.flags import compute_flags, is_stale, parse_date
-from prawdowid_analysis.verdict.sources import (
-    EvidenceItem,
-    independent_sources,
-    tier_of,
-)
+from prawdowid_analysis.verdict.sources import independent_sources, tier_of
 
 NOW = date(2026, 11, 21)
-
-
-def passage(i=1, source_type="official_primary", publisher="Urząd A", published_at="2026-10-01"):
-    return Passage(
-        chunk_id=f"doc_{i}_c0",
-        doc_id=f"doc_{i}",
-        title="T",
-        publisher=publisher,
-        url=f"https://example.org/{i}",
-        published_at=published_at,
-        fetched_at="2026-11-21T10:00:00Z",
-        source_type=source_type,
-        text="tekst",
-        char_start=0,
-        char_end=5,
-        text_hash="sha256:x",
-        rerank_score=0.5,
-    )
-
-
-def item(stance="supports", **kw) -> EvidenceItem:
-    p = passage(**kw)
-    ev = Evidence(
-        evidence_id=f"ev_{p.doc_id}",
-        claim_id="clm_001",
-        chunk_id=p.chunk_id,
-        quote="cytat",
-        quote_verified=True,
-        stance=stance,
-    )
-    return EvidenceItem(ev, p)
-
-
-def claim(type_="numeric"):
-    return Claim(claim_id="clm_001", text="...", type=type_, check_worthy=True)
 
 
 @pytest.mark.parametrize(
