@@ -86,3 +86,8 @@ def test_context_excerpt_short_text_long_text_and_no_value():
     assert "Prezydent Nowak przemawiał." in excerpt and "ustawę o lasach" in excerpt
     assert len(excerpt) <= 300
     assert context_excerpt("Kwantowa chromodynamika.", long_text, max_chars=300) is None
+
+
+def test_corpus_documents_have_publication_and_fetch_timestamps():
+    for document in load_documents():
+        assert document.published_at and document.fetched_at, document.source_id

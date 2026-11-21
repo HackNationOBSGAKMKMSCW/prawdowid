@@ -166,6 +166,7 @@ def load_documents(
                 publisher=raw.get("publisher", ""),
                 url=raw.get("url"),
                 published_at=raw.get("published_at"),
+                fetched_at=raw.get("fetched_at"),
                 text=raw["text"],
             )
         )

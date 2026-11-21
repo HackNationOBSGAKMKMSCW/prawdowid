@@ -10,6 +10,7 @@ Moduł nie importuje backendu: czyta pola obiektów (lub słowników po `model_d
 """
 
 import hashlib
+from datetime import UTC, datetime
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
@@ -151,11 +152,24 @@ def _provider(item: Any) -> str | None:
     return provider
 
 
-def fact_check_sources(items: Iterable[Any]) -> list[ReferenceSource]:
+def timestamp(value: Any) -> str | None:
+    """Znacznik czasu ISO 8601 UTC z `datetime` (backend) albo napisu (po `model_dump`)."""
+    if value is None or value == "":
+        return None
+    if isinstance(value, datetime):
+        moment = value if value.tzinfo else value.replace(tzinfo=UTC)
+        return moment.astimezone(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    return _clean(value) or None
+
+
+def fact_check_sources(
+    items: Iterable[Any], fetched_at: str | None = None
+) -> list[ReferenceSource]:
     """Zamienia elementy `Item` z `apiReading` na źródła wzorcowe.
 
     Format `payload` zależy od dostawcy (`item.source`); wpisy od dostawcy bez
-    parsera są pomijane i zgłaszane przez `reading_warnings`.
+    parsera są pomijane i zgłaszane przez `reading_warnings`. `fetched_at` to czas
+    pobrania danych przez backend (`ReadingResult.fetched_at`).
     """
     sources: dict[str, ReferenceSource] = {}
     for item in items:
@@ -163,6 +177,8 @@ def fact_check_sources(items: Iterable[Any]) -> list[ReferenceSource]:
         if parser is None:
             continue
         for source in parser(_get(item, "payload") or {}):
+            if fetched_at and source.fetched_at is None:
+                source = source.model_copy(update={"fetched_at": fetched_at})
             sources.setdefault(source.source_id, source)
     return list(sources.values())
 
@@ -176,8 +192,11 @@ def sources_from_reading_results(results: Iterable[Any]) -> dict[str, list[Refer
             continue
         bucket = grouped.setdefault(query, [])
         known = {s.source_id for s in bucket}
+        fetched_at = timestamp(_get(result, "fetched_at"))
         bucket.extend(
-            s for s in fact_check_sources(_get(result, "items") or []) if s.source_id not in known
+            s
+            for s in fact_check_sources(_get(result, "items") or [], fetched_at)
+            if s.source_id not in known
         )
     return grouped
 

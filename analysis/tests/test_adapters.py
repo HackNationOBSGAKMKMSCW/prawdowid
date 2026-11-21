@@ -165,3 +165,19 @@ def test_claims_from_analysis_reads_keywords_and_source_text():
     claims = claims_from_analysis(analysis)
     assert claims.keywords == ["Rysy", "Tatry"]
     assert claims.source_text == "Pełny tekst."
+
+
+def test_fetched_at_comes_from_reading_result():
+    from datetime import UTC, datetime
+
+    live = _reading_result("q", [FC_CLAIM])
+    live.fetched_at = datetime(2026, 11, 21, 8, 15, 30, 123, tzinfo=UTC)
+    [source] = sources_from_reading_results([live])["q"]
+    assert source.fetched_at == "2026-11-21T08:15:30Z"
+    dumped = {
+        "request": {"query": "q"},
+        "fetched_at": "2026-11-20T10:00:00Z",
+        "items": [{"source": "google_fact_check", "payload": FC_CLAIM}],
+    }
+    [source] = sources_from_reading_results([dumped])["q"]
+    assert source.fetched_at == "2026-11-20T10:00:00Z"

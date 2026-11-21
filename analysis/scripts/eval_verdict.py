@@ -50,6 +50,7 @@ def user_sources(case: dict[str, Any]) -> list[ReferenceSource]:
             publisher=s.get("publisher", ""),
             url=s.get("url"),
             published_at=s.get("published_at"),
+            fetched_at=s.get("fetched_at"),
             text=s["text"],
         )
         for s in case.get("sources", [])

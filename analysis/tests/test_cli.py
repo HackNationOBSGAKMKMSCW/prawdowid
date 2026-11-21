@@ -22,3 +22,15 @@ def test_missing_api_key_returns_exit_code_2(monkeypatch, capsys):
     monkeypatch.setattr(cli, "run_text", failing_run_text)
     assert cli.main(["Polska jest w Unii Europejskiej."]) == 2
     assert "FREELLM_API_KEY" in capsys.readouterr().err
+
+
+def test_load_user_sources_reads_fetched_at(tmp_path):
+    path = tmp_path / "zrodla.json"
+    path.write_text(
+        json.dumps(
+            [{"text": "T", "published_at": "2024-01-01", "fetched_at": "2026-11-20T10:00:00Z"}]
+        ),
+        encoding="utf-8",
+    )
+    [source] = cli.load_user_sources(path)
+    assert source.published_at == "2024-01-01" and source.fetched_at == "2026-11-20T10:00:00Z"

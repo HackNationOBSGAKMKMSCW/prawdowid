@@ -41,6 +41,7 @@ def load_user_sources(path: Path) -> list[ReferenceSource]:
             publisher=item.get("publisher", ""),
             url=item.get("url"),
             published_at=item.get("published_at"),
+            fetched_at=item.get("fetched_at"),
             text=item["text"],
         )
         for n, item in enumerate(raw, 1)
