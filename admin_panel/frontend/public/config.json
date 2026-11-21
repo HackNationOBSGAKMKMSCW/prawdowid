@@ -1,0 +1,7 @@
+{
+  "dataSource": "mock",
+  "apiBaseUrl": "/api/admin",
+  "requestTimeoutMs": 20000,
+  "environmentLabel": "demo",
+  "endpoints": {}
+}
