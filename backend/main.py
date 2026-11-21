@@ -4,6 +4,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+import llm
 from check import router as check_router
 
 MAX_BODY_BYTES = 64 * 1024
@@ -59,6 +60,11 @@ items: list[Item] = [Item(id=1, name="First item"), Item(id=2, name="Second item
 @api.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@api.get("/llm/health")
+def llm_health() -> dict:
+    return llm.health()
 
 
 @api.get("/items")
