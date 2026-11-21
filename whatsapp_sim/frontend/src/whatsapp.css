@@ -494,6 +494,7 @@
 .wa-panel {
   display: flex;
   flex-direction: column;
+  line-height: 1.5;
   width: 420px;
   max-height: min(860px, calc(100dvh - 48px));
   padding: 28px;
