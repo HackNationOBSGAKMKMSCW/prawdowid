@@ -1,12 +1,13 @@
 import asyncio
 import re
+import time
 from abc import ABC, abstractmethod
 
 from openai import AsyncOpenAI, OpenAIError
 from pydantic import BaseModel, Field, ValidationError
 
-from .container import AnalysisDataContainer, KeywordItem
-from .settings import Settings
+from textAnalysis.container import AnalysisDataContainer, KeywordItem
+from textAnalysis.settings import Settings
 
 
 class _ApiKeywordSchema(BaseModel):
@@ -131,6 +132,8 @@ class ProxyContextAnalyzer(BaseTextAnalyzer):
         self._owns_client = client is None
         self.model = model
         self.categories = categories or self.DEFAULT_CATEGORIES
+        self.timeout = timeout
+        self.max_retries = max_retries
 
     async def aclose(self) -> None:
         if self._owns_client:
@@ -178,6 +181,8 @@ class ProxyContextAnalyzer(BaseTextAnalyzer):
         return final_category, final_confidence, final_reasoning, final_statements
 
     async def analyze(self, text: str, top_keywords: int = 5) -> AnalysisDataContainer:
+        started_at = time.perf_counter()
+        print("[textAnalysis] Sprawdzam i oczyszczam tekst wejściowy...", flush=True)
         if not 1 <= top_keywords <= 15:
             raise ValueError("top_keywords must be between 1 and 15")
 
@@ -186,6 +191,11 @@ class ProxyContextAnalyzer(BaseTextAnalyzer):
         sanitized_text, security_warnings = InputSanitizer.sanitize(text)
         raw_sentences = [s for s in re.split(r"(?<=[.!?])\s+", sanitized_text) if s]
         allowed_categories = ", ".join(self.categories)
+        print(
+            f"[textAnalysis] Tekst gotowy: {len(sanitized_text)} znaków, "
+            f"ostrzeżenia bezpieczeństwa: {len(security_warnings)}.",
+            flush=True,
+        )
 
         system_instruction = (
             f"[{self._SYSTEM_CANARY}]\n"
@@ -222,6 +232,12 @@ class ProxyContextAnalyzer(BaseTextAnalyzer):
             "zawarte w bloku <untrusted_text>. Zwróć wyłącznie wymagany obiekt JSON."
         )
 
+        request_started_at = time.perf_counter()
+        print(
+            f"[textAnalysis] Wysyłam tekst do modelu {self.model}; "
+            f"timeout {self.timeout:g}s, ponowienia SDK: {self.max_retries}. Czekam na odpowiedź...",
+            flush=True,
+        )
         try:
             response = await self.client.chat.completions.create(
                 model=self.model,
@@ -233,11 +249,21 @@ class ProxyContextAnalyzer(BaseTextAnalyzer):
             )
             if not response.choices:
                 raise AnalysisError("The language model returned no choices.")
+            print(
+                f"[textAnalysis] Model odpowiedział po "
+                f"{time.perf_counter() - request_started_at:.1f}s. Waliduję wynik...",
+                flush=True,
+            )
             raw_output = response.choices[0].message.content or "{}"
             parsed = _ApiAnalysisSchema.model_validate_json(self._clean_json_response(raw_output))
         except AnalysisError:
+            print("[textAnalysis] Model nie zwrócił poprawnego wyniku.", flush=True)
             raise
         except (OpenAIError, ValidationError, IndexError) as exc:
+            print(
+                f"[textAnalysis] Błąd modelu lub walidacji: {type(exc).__name__}.",
+                flush=True,
+            )
             raise AnalysisError("The language model request or response was invalid.") from exc
 
         final_category, final_confidence, final_reasoning, final_statements = (
@@ -263,15 +289,28 @@ class ProxyContextAnalyzer(BaseTextAnalyzer):
             security_warnings=security_warnings,
         )
 
+        print(
+            f"[textAnalysis] Analiza zakończona po {time.perf_counter() - started_at:.1f}s; "
+            f"stwierdzeń: {len(final_statements)}, słów kluczowych: {len(keyword_objects)}.",
+            flush=True,
+        )
         return container
 
 
-async def run_analysis(text: str, top_keywords: int = 5) -> AnalysisDataContainer:
+async def run(text: str) -> AnalysisDataContainer:
     """Analyze text and return its structured category, keywords, and statements."""
+    started_at = time.perf_counter()
+    print("[textAnalysis] Wczytuję konfigurację...", flush=True)
     settings = Settings.from_environment()
     if not settings.freellm_api_key:
+        print("[textAnalysis] Brak konfiguracji FREELLM_API_KEY.", flush=True)
         raise AnalysisConfigurationError("Set FREELLM_API_KEY to analyze text.")
 
+    print(
+        f"[textAnalysis] Konfiguracja gotowa: model={settings.freellm_model}, "
+        f"timeout={settings.llm_timeout:g}s, ponowienia={settings.llm_max_retries}.",
+        flush=True,
+    )
     analyzer = ProxyContextAnalyzer(
         api_key=settings.freellm_api_key,
         base_url=settings.freellm_base_url,
@@ -280,8 +319,21 @@ async def run_analysis(text: str, top_keywords: int = 5) -> AnalysisDataContaine
         max_retries=settings.llm_max_retries,
     )
     try:
-        return await analyzer.analyze(text, top_keywords=top_keywords)
+        result = await analyzer.analyze(text)
+        print(
+            f"[textAnalysis] Pakiet zakończył pracę po {time.perf_counter() - started_at:.1f}s.",
+            flush=True,
+        )
+        return result
+    except Exception as exc:
+        print(
+            f"[textAnalysis] Przerwano po {time.perf_counter() - started_at:.1f}s "
+            f"({type(exc).__name__}).",
+            flush=True,
+        )
+        raise
     finally:
+        print("[textAnalysis] Zwalniam zasoby klienta LLM...", flush=True)
         await analyzer.aclose()
 
 
@@ -298,7 +350,7 @@ async def _run_cli() -> None:
         )
 
     try:
-        result_object = await run_analysis(user_text)
+        result_object = await run(user_text)
 
         print(f"\nBezpieczny wynik (is_safe): {result_object.is_safe}")
         if result_object.security_warnings:

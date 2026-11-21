@@ -5,23 +5,23 @@ from datetime import UTC, datetime
 import httpx
 import pytest
 import respx
-
-from backend.dataPreparation.apiReading import (
+from apiReading.aggregator import fetch_all
+from apiReading.base import BaseApiClient, RequestSpec
+from apiReading.clients import GoogleFactCheckClient
+from apiReading.exceptions import (
     ApiAuthError,
     ApiConnectionError,
     ApiHttpError,
     ApiRateLimitError,
     ApiResponseError,
     ApiTimeoutError,
-    BaseApiClient,
+    InvalidFiltersError,
+)
+from apiReading.models import (
     Category,
     FetchResult,
-    GoogleFactCheckClient,
-    InvalidFiltersError,
     Item,
     ReadingRequest,
-    RequestSpec,
-    fetch_all,
 )
 
 TEST_API_A_URL = "https://api.test-a.invalid/items"

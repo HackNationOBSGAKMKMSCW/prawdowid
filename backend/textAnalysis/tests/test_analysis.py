@@ -2,13 +2,63 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
-
-from backend.dataPreparation.analysis import (
+from textAnalysis.analysis import (
     AnalysisError,
     InputSanitizer,
     ProxyContextAnalyzer,
     _ApiAnalysisSchema,
 )
+from textAnalysis.container import AnalysisDataContainer
+from textAnalysis.settings import Settings
+
+
+def test_text_analysis_package_exports_only_its_entry_point() -> None:
+    import textAnalysis
+
+    assert textAnalysis.__all__ == ["run"]
+
+
+@pytest.mark.asyncio
+async def test_package_run_reads_settings_and_closes_analyzer(monkeypatch, capsys) -> None:
+    import textAnalysis.analysis as analysis_module
+
+    monkeypatch.setenv("FREELLM_API_KEY", "test-key")
+    monkeypatch.setenv("FREELLM_BASE_URL", "https://llm.example/v1")
+    monkeypatch.setenv("FREELLM_MODEL", "test-model")
+    monkeypatch.setenv("FREELLM_TIMEOUT", "12")
+    monkeypatch.setenv("FREELLM_MAX_RETRIES", "3")
+    result = AnalysisDataContainer(category="Science", statements=["A claim."])
+    analyzer_options: dict[str, object] = {}
+    closed = False
+
+    class FakeAnalyzer:
+        def __init__(self, **kwargs) -> None:
+            analyzer_options.update(kwargs)
+
+        async def analyze(self, text: str) -> AnalysisDataContainer:
+            assert text == "A claim."
+            return result
+
+        async def aclose(self) -> None:
+            nonlocal closed
+            closed = True
+
+    monkeypatch.setattr(analysis_module, "ProxyContextAnalyzer", FakeAnalyzer)
+
+    assert await analysis_module.run("A claim.") == result
+    assert analyzer_options == {
+        "api_key": "test-key",
+        "base_url": "https://llm.example/v1",
+        "model": "test-model",
+        "timeout": 12.0,
+        "max_retries": 3,
+    }
+    assert closed
+    assert Settings.from_environment().freellm_api_key == "test-key"
+    output = capsys.readouterr().out
+    assert "[textAnalysis] Wczytuję konfigurację" in output
+    assert "[textAnalysis] Pakiet zakończył pracę" in output
+    assert "[textAnalysis] Zwalniam zasoby klienta LLM" in output
 
 
 def test_input_sanitizer_removes_control_characters_and_neutralizes_tags() -> None:

@@ -13,6 +13,22 @@ python -m venv .venv
 
 Copy `backend/.env.example` to `backend/.env` (or configure the same environment
 variables in the runtime) to enable the language-model and Google Fact Check
-providers. The two operations can also be run separately through
-`POST /api/analyze` and `POST /api/check`; the latter accepts the analysis object
-returned by the former.
+providers. Run the packages directly from Python; no web server is needed:
+execute the host application from `backend/` or put that directory on
+`PYTHONPATH`.
+
+```python
+import asyncio
+
+import apiReading
+import textAnalysis
+
+
+async def main() -> None:
+    analysis = await textAnalysis.run("A written claim to verify.")
+    results = await apiReading.run(analysis)
+    print(analysis.category, results)
+
+
+asyncio.run(main())
+```
