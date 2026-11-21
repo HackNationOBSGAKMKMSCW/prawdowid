@@ -5,11 +5,15 @@ import threading
 import time
 from collections.abc import Sequence
 from datetime import UTC, datetime
+from typing import Literal
+from urllib.parse import urlsplit
 
 from apiReading.exceptions import (
     ApiAuthError,
+    ApiHttpError,
     ApiRateLimitError,
     ApiReadingError,
+    ApiResponseError,
     ApiTimeoutError,
 )
 from apiReading.models import ReadingResult
@@ -22,15 +26,17 @@ from .links import (
     MAX_USER_TEXT_LINKS,
     FactCheckLinkSource,
     TextLinkSource,
+    select_candidates,
 )
+from .local import LocalArticleExtractor
 from .mapping import map_article
 from .models import ArticleFailure, ScrapedArticle, ScrapingReport
 from .protocols import ArticleExtractor, CandidateLink, Clock, LinkSource, RawArticle, SystemClock
-from .url_validation import InvalidUrlError, validate_url
 
 CACHE_TTL_SECONDS = 300
 _article_cache: dict[str, tuple[float, ScrapedArticle | ArticleFailure]] = {}
 _cache_lock = threading.Lock()
+_RETRYABLE_HTTP_STATUSES = {429, 502, 503, 504}
 
 
 def _as_utc(value: datetime) -> datetime:
@@ -38,7 +44,11 @@ def _as_utc(value: datetime) -> datetime:
 
 
 def _failure(
-    url: str, error: ApiReadingError | None = None, *, kind: str | None = None
+    url: str,
+    error: ApiReadingError | None = None,
+    *,
+    kind: str | None = None,
+    source: Literal["fact_check", "user_text"] | None = None,
 ) -> ArticleFailure:
     if kind is None and isinstance(error, ApiRateLimitError):
         kind = "RateLimited"
@@ -50,7 +60,16 @@ def _failure(
         url=url,
         kind=kind or (type(error).__name__ if error is not None else "ApiResponseError"),
         status_code=error.status_code if error is not None else None,
+        source=source,
     )
+
+
+def _is_cacheable_failure(error: ApiReadingError) -> bool:
+    if isinstance(error, (ApiAuthError, ApiRateLimitError)):
+        return False
+    if isinstance(error, (NotAnArticleError, ApiResponseError)):
+        return True
+    return isinstance(error, ApiHttpError) and error.status_code not in _RETRYABLE_HTTP_STATUSES
 
 
 def _cache_read(url: str) -> ScrapedArticle | ArticleFailure | None:
@@ -81,38 +100,24 @@ def _select_candidates(
     analysis: AnalysisDataContainer,
     reading_results: Sequence[ReadingResult],
     link_sources: Sequence[LinkSource],
-) -> tuple[list[CandidateLink], list[ArticleFailure]]:
+    max_links: int = MAX_LINKS,
+    max_user_links: int = MAX_USER_TEXT_LINKS,
+) -> tuple[list[CandidateLink], list[ArticleFailure], int]:
     candidates = [
         candidate
         for source in link_sources
         for candidate in source.extract(analysis, reading_results)
     ]
-    # Fact-check publisher links have priority over the smaller user-text quota.
-    candidates.sort(key=lambda candidate: candidate.source != "fact_check")
-    selected: list[CandidateLink] = []
-    failures: list[ArticleFailure] = []
-    seen: set[str] = set()
-    source_counts = {"fact_check": 0, "user_text": 0}
-
-    for candidate in candidates:
-        try:
-            url = validate_url(candidate.url)
-        except InvalidUrlError:
-            failures.append(ArticleFailure(url=candidate.url[:2048], kind="InvalidUrl"))
-            continue
-        if url in seen:
-            continue
-        seen.add(url)
-
-        if len(selected) >= MAX_LINKS or (
-            candidate.source == "user_text" and source_counts["user_text"] >= MAX_USER_TEXT_LINKS
-        ):
-            failures.append(ArticleFailure(url=url, kind="LinkLimitExceeded"))
-            continue
-        if candidate.source in source_counts:
-            source_counts[candidate.source] += 1
-        selected.append(CandidateLink(url=url, source=candidate.source))
-    return selected, failures
+    selected, rejected = select_candidates(candidates, max_links, max_user_links)
+    failures = [
+        _failure(
+            candidate.url[:2048] if kind == "InvalidUrl" else candidate.url,
+            kind=kind,
+            source=candidate.source,
+        )
+        for candidate, kind in rejected
+    ]
+    return selected, failures, len(candidates)
 
 
 async def _extract_all(
@@ -130,7 +135,19 @@ async def _extract_all(
         if cached is None:
             pending.append(index)
         else:
-            results[index] = cached
+            results[index] = cached.model_copy(update={"source": candidate.source})
+            host = urlsplit(candidate.url).hostname or "unknown"
+            if isinstance(cached, ArticleFailure):
+                print(
+                    f"[articleScraping] Link {index + 1}/{len(candidates)} ({host}): "
+                    f"błąd: {cached.kind}",
+                    flush=True,
+                )
+            else:
+                print(
+                    f"[articleScraping] Link {index + 1}/{len(candidates)} ({host}): OK po 0.0s",
+                    flush=True,
+                )
 
     queue: asyncio.Queue[int] = asyncio.Queue()
     for index in pending:
@@ -141,21 +158,41 @@ async def _extract_all(
         while not queue.empty():
             index = queue.get_nowait()
             candidate = candidates[index]
+            host = urlsplit(candidate.url).hostname or "unknown"
             if abort_batch.is_set():
-                results[index] = _failure(candidate.url, kind="BatchAborted")
+                results[index] = _failure(
+                    candidate.url, kind="BatchAborted", source=candidate.source
+                )
+                print(
+                    f"[articleScraping] Link {index + 1}/{len(candidates)} ({host}): "
+                    "błąd: BatchAborted",
+                    flush=True,
+                )
                 continue
+            link_started_at = time.perf_counter()
             try:
                 raw_article: RawArticle = await extractor.extract(candidate.url)
-                article = map_article(candidate.url, raw_article)
+                article = map_article(candidate.url, raw_article, source=candidate.source)
                 results[index] = article
                 if use_cache:
                     _cache_write(candidate.url, article)
+                print(
+                    f"[articleScraping] Link {index + 1}/{len(candidates)} ({host}): "
+                    f"OK po {time.perf_counter() - link_started_at:.1f}s",
+                    flush=True,
+                )
             except ApiReadingError as exc:
-                results[index] = _failure(candidate.url, exc)
-                if use_cache:
-                    _cache_write(candidate.url, results[index])
+                failure = _failure(candidate.url, exc, source=candidate.source)
+                results[index] = failure
+                if use_cache and _is_cacheable_failure(exc):
+                    _cache_write(candidate.url, failure)
                 if isinstance(exc, (ApiAuthError, ApiRateLimitError)):
                     abort_batch.set()
+                print(
+                    f"[articleScraping] Link {index + 1}/{len(candidates)} ({host}): "
+                    f"błąd: {failure.kind}",
+                    flush=True,
+                )
 
     worker_count = min(max(1, max_concurrency), len(pending)) if pending else 0
     try:
@@ -164,9 +201,29 @@ async def _extract_all(
     except TimeoutError:
         for index, result in enumerate(results):
             if result is None:
-                results[index] = _failure(candidates[index].url, kind="Timeout")
+                candidate = candidates[index]
+                results[index] = _failure(candidate.url, kind="Timeout", source=candidate.source)
+                host = urlsplit(candidate.url).hostname or "unknown"
+                print(
+                    f"[articleScraping] Link {index + 1}/{len(candidates)} ({host}): błąd: Timeout",
+                    flush=True,
+                )
 
     return [result for result in results if result is not None]
+
+
+def _build_extractor(settings: Settings) -> ArticleExtractor:
+    """Local trafilatura extraction by default; Diffbot only when explicitly selected."""
+
+    choice = settings.article_extractor
+    if choice == "diffbot":
+        return DiffbotArticleClient(
+            api_key=settings.diffbot_api_token,
+            max_concurrency=settings.article_max_concurrency,
+        )
+    if choice != "local":
+        raise ValueError("ARTICLE_EXTRACTOR must be 'local' or 'diffbot'")
+    return LocalArticleExtractor()
 
 
 async def run(
@@ -179,18 +236,35 @@ async def run(
 ) -> ScrapingReport:
     """Extract article bodies from analysis and fact-check URLs, isolating failures."""
 
+    run_started_at = time.perf_counter()
     clock = clock or SystemClock()
     started_at = _as_utc(analysis.started_at or clock.now())
     user_text = analysis.original_text or analysis.source_text
     sources = (
         link_sources if link_sources is not None else (FactCheckLinkSource(), TextLinkSource())
     )
-    candidates, failures = _select_candidates(analysis, reading_results, sources)
-
     settings = Settings.from_environment() if extractor is None else None
+    candidates, failures, found_count = _select_candidates(
+        analysis,
+        reading_results,
+        sources,
+        settings.article_max_links if settings else MAX_LINKS,
+        settings.article_max_user_links if settings else MAX_USER_TEXT_LINKS,
+    )
+    print(
+        f"[articleScraping] Znaleziono kandydatów: {found_count}; wybrano: {len(candidates)}.",
+        flush=True,
+    )
+
     if settings is not None and not settings.article_scraping_enabled:
         failures.extend(
-            _failure(candidate.url, kind="ScrapingDisabled") for candidate in candidates
+            _failure(candidate.url, kind="ScrapingDisabled", source=candidate.source)
+            for candidate in candidates
+        )
+        print(
+            f"[articleScraping] Zakończono: artykułów 0, błędów {len(failures)} "
+            f"po {time.perf_counter() - run_started_at:.1f}s.",
+            flush=True,
         )
         return ScrapingReport(
             started_at=started_at,
@@ -201,14 +275,7 @@ async def run(
         )
 
     owns_extractor = extractor is None
-    active_extractor = (
-        extractor
-        if extractor is not None
-        else DiffbotArticleClient(
-            api_key=settings.diffbot_api_token,
-            max_concurrency=settings.article_max_concurrency,
-        )
-    )
+    active_extractor = extractor if extractor is not None else _build_extractor(settings)
     try:
         extracted = await _extract_all(
             candidates,
@@ -223,6 +290,11 @@ async def run(
 
     articles = [item for item in extracted if isinstance(item, ScrapedArticle)]
     failures.extend(item for item in extracted if isinstance(item, ArticleFailure))
+    print(
+        f"[articleScraping] Zakończono: artykułów {len(articles)}, błędów {len(failures)} "
+        f"po {time.perf_counter() - run_started_at:.1f}s.",
+        flush=True,
+    )
     return ScrapingReport(
         started_at=started_at,
         user_text=user_text,

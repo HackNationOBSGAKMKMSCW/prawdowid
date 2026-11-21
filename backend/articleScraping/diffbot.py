@@ -46,6 +46,7 @@ class DiffbotArticleClient(BaseApiClient):
     name = "diffbot_article"
     base_url = "https://api.diffbot.com"
     supported_categories: ClassVar[frozenset[Category]] = frozenset({Category.ARTICLE_EXTRACT})
+    retry_transport_errors: ClassVar[bool] = False
 
     def __init__(self, *, max_response_bytes: int = MAX_RESPONSE_BYTES, **kwargs: Any) -> None:
         kwargs.setdefault("max_retries", 1)

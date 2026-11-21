@@ -7,6 +7,7 @@ from apiReading.models import ReadingResult
 from textAnalysis.container import AnalysisDataContainer
 
 from .protocols import CandidateLink
+from .url_validation import InvalidUrlError, validate_url
 
 _URL_PATTERN = re.compile(r"https?://[^\s<>\"']+", re.IGNORECASE)
 MAX_TEXT_SCAN_CHARS = 50_000
@@ -76,28 +77,41 @@ def extract_links(
     reading_results: Sequence[ReadingResult] = (),
 ) -> list[str]:
     """Return normalized unique candidates, fact-check URLs before user URLs."""
-
-    from .url_validation import InvalidUrlError, validate_url
-
     sources = (FactCheckLinkSource(), TextLinkSource())
     candidates = [
         candidate for source in sources for candidate in source.extract(analysis, reading_results)
     ]
-    urls: list[str] = []
+    selected, _ = select_candidates(candidates)
+    return [candidate.url for candidate in selected]
+
+
+def select_candidates(
+    candidates: Sequence[CandidateLink],
+    max_links: int = MAX_LINKS,
+    max_user_links: int = MAX_USER_TEXT_LINKS,
+) -> tuple[list[CandidateLink], list[tuple[CandidateLink, str]]]:
+    """Canonicalize and apply shared deduplication and per-source link limits."""
+
+    prioritized = sorted(candidates, key=lambda candidate: candidate.source != "fact_check")
+    selected: list[CandidateLink] = []
+    rejected: list[tuple[CandidateLink, str]] = []
     seen: set[str] = set()
     user_text_count = 0
-    for candidate in candidates:
+    for candidate in prioritized:
         try:
             url = validate_url(candidate.url)
         except InvalidUrlError:
+            rejected.append((candidate, "InvalidUrl"))
             continue
-        if url not in seen:
-            seen.add(url)
-            if len(urls) >= MAX_LINKS or (
-                candidate.source == "user_text" and user_text_count >= MAX_USER_TEXT_LINKS
-            ):
-                continue
-            urls.append(url)
-            if candidate.source == "user_text":
-                user_text_count += 1
-    return urls
+        if url in seen:
+            continue
+        seen.add(url)
+        if len(selected) >= max_links or (
+            candidate.source == "user_text" and user_text_count >= max_user_links
+        ):
+            rejected.append((CandidateLink(url=url, source=candidate.source), "LinkLimitExceeded"))
+            continue
+        selected.append(CandidateLink(url=url, source=candidate.source))
+        if candidate.source == "user_text":
+            user_text_count += 1
+    return selected, rejected

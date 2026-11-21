@@ -4,6 +4,7 @@ import unicodedata
 from contextlib import suppress
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
+from typing import Literal
 
 from .models import ScrapedArticle
 from .protocols import RawArticle
@@ -36,7 +37,11 @@ def _published_at(value: str | None) -> datetime | None:
     return parsed.astimezone(UTC)
 
 
-def map_article(url: str, article: RawArticle) -> ScrapedArticle:
+def map_article(
+    url: str,
+    article: RawArticle,
+    source: Literal["fact_check", "user_text"] | None = None,
+) -> ScrapedArticle:
     """Create the public whitelist model and validate Diffbot's redirect output."""
 
     text = _clean_text(article.text)
@@ -51,4 +56,5 @@ def map_article(url: str, article: RawArticle) -> ScrapedArticle:
         published_at=_published_at(article.date),
         text=text[:MAX_ARTICLE_CHARS],
         truncated=len(text) > MAX_ARTICLE_CHARS,
+        source=source,
     )

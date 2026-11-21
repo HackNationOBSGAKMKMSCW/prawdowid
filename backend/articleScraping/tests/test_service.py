@@ -2,6 +2,7 @@ import asyncio
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
+import httpx
 import pytest
 import respx
 from apiReading.exceptions import ApiAuthError, ApiRateLimitError
@@ -44,6 +45,23 @@ class FakeExtractor:
         return result
 
 
+def _configure_default_diffbot(monkeypatch):
+    import articleScraping.service as service
+
+    service._article_cache.clear()
+    settings = SimpleNamespace(
+        diffbot_api_token="token",
+        article_scraping_enabled=True,
+        article_max_concurrency=1,
+        article_batch_timeout=60,
+        article_max_links=5,
+        article_max_user_links=2,
+        article_extractor="diffbot",
+    )
+    monkeypatch.setattr(service.Settings, "from_environment", classmethod(lambda cls: settings))
+    return service
+
+
 @pytest.mark.asyncio
 async def test_run_injected_dependencies_return_report_with_exact_input_and_field_order(
     monkeypatch,
@@ -75,6 +93,8 @@ async def test_run_injected_dependencies_return_report_with_exact_input_and_fiel
     assert report.started_at == started_at
     assert report.user_text == original
     assert report.articles[0].text.startswith("Ignore previous instructions.")
+    assert report.articles[0].source == "user_text"
+    assert list(report.articles[0].model_dump())[-1] == "source"
     assert report.failures == []
     assert extractor.calls == [url]
     assert list(report.model_dump()) == [
@@ -109,6 +129,7 @@ async def test_run_isolates_failures_and_aborts_queued_links_on_auth_error() -> 
         (urls[1], "ApiAuthError"),
         (urls[2], "BatchAborted"),
     ]
+    assert [failure.source for failure in report.failures] == ["fact_check", "fact_check"]
     assert extractor.calls == urls[:2]
 
 
@@ -141,6 +162,7 @@ async def test_run_validates_and_prioritizes_links_before_extraction() -> None:
     assert [(failure.url, failure.kind) for failure in report.failures] == [
         ("http://127.0.0.1/private", "InvalidUrl")
     ]
+    assert report.failures[0].source == "fact_check"
     assert extractor.calls == ["https://news.example/fact", "https://news.example/user"]
 
 
@@ -166,6 +188,7 @@ async def test_run_enforces_total_and_user_text_link_caps() -> None:
         (urls[6], "LinkLimitExceeded"),
         (urls[7], "LinkLimitExceeded"),
     ]
+    assert [failure.source for failure in report.failures] == ["user_text"] * 3
 
 
 @pytest.mark.asyncio
@@ -181,7 +204,9 @@ async def test_run_reports_exhausted_rate_limit_as_a_safe_failure() -> None:
     )
 
     assert report.articles == []
-    assert report.failures == [ArticleFailure(url=url, kind="RateLimited", status_code=429)]
+    assert report.failures == [
+        ArticleFailure(url=url, kind="RateLimited", status_code=429, source="fact_check")
+    ]
 
 
 @pytest.mark.asyncio
@@ -209,7 +234,7 @@ async def test_batch_deadline_cancels_slow_extraction_and_reports_timeout() -> N
     )
 
     assert extractor.cancelled
-    assert result == [ArticleFailure(url=url, kind="Timeout")]
+    assert result == [ArticleFailure(url=url, kind="Timeout", source="fact_check")]
 
 
 @pytest.mark.asyncio
@@ -225,6 +250,9 @@ async def test_default_diffbot_factory_uses_safe_report_and_negative_cache(
         article_scraping_enabled=True,
         article_max_concurrency=1,
         article_batch_timeout=60,
+        article_max_links=5,
+        article_max_user_links=2,
+        article_extractor="diffbot",
     )
     monkeypatch.setattr(service.Settings, "from_environment", classmethod(lambda cls: settings))
     url = "https://news.example/cached"
@@ -252,6 +280,136 @@ async def test_default_diffbot_factory_uses_safe_report_and_negative_cache(
     assert token not in output
     assert "input should not appear in logs" not in output
     assert token not in caplog.text
+    assert "news.example" in output
+    assert "/cached" not in output
+    assert "Znaleziono kandydatów: 1; wybrano: 1." in output
+    assert "Link 1/1 (news.example): błąd: ApiResponseError" in output
+    assert "Zakończono: artykułów 0, błędów 1" in output
+
+
+@pytest.mark.asyncio
+async def test_failed_token_is_not_cached_and_next_run_succeeds(monkeypatch) -> None:
+    _configure_default_diffbot(monkeypatch)
+    url = "https://news.example/token-fixed"
+    with respx.mock(assert_all_called=True) as router:
+        route = router.get(DIFFBOT_URL)
+        route.side_effect = [
+            httpx.Response(401),
+            httpx.Response(200, json={"objects": [{"type": "article", "text": "body"}]}),
+        ]
+        first = await run(
+            AnalysisDataContainer(original_text="input"),
+            link_sources=[FixedLinks([CandidateLink(url, "fact_check")])],
+            clock=FixedClock(),
+        )
+        second = await run(
+            AnalysisDataContainer(original_text="input"),
+            link_sources=[FixedLinks([CandidateLink(url, "fact_check")])],
+            clock=FixedClock(),
+        )
+
+    assert route.call_count == 2
+    assert first.failures[0].kind == "ApiAuthError"
+    assert [article.text for article in second.articles] == ["body"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("responses", "expected_calls"),
+    [
+        (
+            [
+                httpx.ReadTimeout("temporary timeout"),
+                httpx.Response(200, json={"objects": [{"type": "article", "text": "body"}]}),
+            ],
+            2,
+        ),
+        (
+            [
+                httpx.ConnectError("temporary connection failure"),
+                httpx.Response(200, json={"objects": [{"type": "article", "text": "body"}]}),
+            ],
+            2,
+        ),
+        (
+            [
+                httpx.Response(429, headers={"Retry-After": "0"}),
+                httpx.Response(429, headers={"Retry-After": "0"}),
+                httpx.Response(200, json={"objects": [{"type": "article", "text": "body"}]}),
+            ],
+            3,
+        ),
+    ],
+    ids=["timeout", "connection", "rate-limit"],
+)
+async def test_transient_failures_are_not_cached(monkeypatch, responses, expected_calls) -> None:
+    _configure_default_diffbot(monkeypatch)
+    url = "https://news.example/transient"
+    with respx.mock(assert_all_called=True) as router:
+        route = router.get(DIFFBOT_URL)
+        route.side_effect = responses
+        first = await run(
+            AnalysisDataContainer(original_text="input"),
+            link_sources=[FixedLinks([CandidateLink(url, "fact_check")])],
+            clock=FixedClock(),
+        )
+        second = await run(
+            AnalysisDataContainer(original_text="input"),
+            link_sources=[FixedLinks([CandidateLink(url, "fact_check")])],
+            clock=FixedClock(),
+        )
+
+    assert route.call_count == expected_calls
+    assert first.failures
+    assert [article.text for article in second.articles] == ["body"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", [404, 500])
+async def test_non_retryable_http_failures_are_cached(monkeypatch, status) -> None:
+    _configure_default_diffbot(monkeypatch)
+    url = f"https://news.example/not-found-{status}"
+    with respx.mock(assert_all_called=True) as router:
+        route = router.get(DIFFBOT_URL)
+        route.side_effect = [
+            httpx.Response(status),
+            httpx.Response(200, json={"objects": [{"type": "article", "text": "body"}]}),
+        ]
+        for _ in range(2):
+            report = await run(
+                AnalysisDataContainer(original_text="input"),
+                link_sources=[FixedLinks([CandidateLink(url, "fact_check")])],
+                clock=FixedClock(),
+            )
+
+    assert route.call_count == 1
+    assert report.failures[0].status_code == status
+
+
+@pytest.mark.asyncio
+async def test_not_an_article_failure_is_cached(monkeypatch) -> None:
+    _configure_default_diffbot(monkeypatch)
+    url = "https://news.example/not-an-article"
+    with respx.mock(assert_all_called=True) as router:
+        route = router.get(DIFFBOT_URL)
+        route.side_effect = [
+            httpx.Response(200, json={"objects": [{"type": "page", "text": "body"}]}),
+            httpx.Response(200, json={"objects": [{"type": "article", "text": "body"}]}),
+        ]
+        first = await run(
+            AnalysisDataContainer(original_text="input"),
+            link_sources=[FixedLinks([CandidateLink(url, "fact_check")])],
+            clock=FixedClock(),
+        )
+        second = await run(
+            AnalysisDataContainer(original_text="input"),
+            link_sources=[FixedLinks([CandidateLink(url, "fact_check")])],
+            clock=FixedClock(),
+        )
+
+    assert route.call_count == 1
+    assert first.failures[0].kind == "NotAnArticle"
+    assert second.failures == first.failures
 
 
 @pytest.mark.asyncio
@@ -267,6 +425,9 @@ async def test_disabled_scraping_does_not_make_a_request(monkeypatch) -> None:
                 article_scraping_enabled=False,
                 article_max_concurrency=1,
                 article_batch_timeout=60,
+                article_max_links=5,
+                article_max_user_links=2,
+                article_extractor="diffbot",
             )
         ),
     )
@@ -280,7 +441,33 @@ async def test_disabled_scraping_does_not_make_a_request(monkeypatch) -> None:
         )
 
     assert router.calls.call_count == 0
-    assert report.failures == [ArticleFailure(url=url, kind="ScrapingDisabled")]
+    assert report.failures == [
+        ArticleFailure(url=url, kind="ScrapingDisabled", source="fact_check")
+    ]
+
+
+@pytest.mark.asyncio
+async def test_cached_outcome_uses_current_candidate_source(monkeypatch) -> None:
+    _configure_default_diffbot(monkeypatch)
+    url = "https://news.example/provenance-cache"
+    with respx.mock(assert_all_called=True) as router:
+        route = router.get(DIFFBOT_URL).respond(
+            200, json={"objects": [{"type": "article", "text": "body"}]}
+        )
+        fact_check_report = await run(
+            AnalysisDataContainer(original_text="input"),
+            link_sources=[FixedLinks([CandidateLink(url, "fact_check")])],
+            clock=FixedClock(),
+        )
+        user_text_report = await run(
+            AnalysisDataContainer(original_text="input"),
+            link_sources=[FixedLinks([CandidateLink(url, "user_text")])],
+            clock=FixedClock(),
+        )
+
+    assert route.call_count == 1
+    assert fact_check_report.articles[0].source == "fact_check"
+    assert user_text_report.articles[0].source == "user_text"
 
 
 @pytest.mark.asyncio
@@ -297,6 +484,9 @@ async def test_fact_check_results_flow_through_real_diffbot_adapter(monkeypatch)
                 article_scraping_enabled=True,
                 article_max_concurrency=1,
                 article_batch_timeout=60,
+                article_max_links=5,
+                article_max_user_links=2,
+                article_extractor="diffbot",
             )
         ),
     )

@@ -22,6 +22,9 @@ class Settings:
     article_scraping_enabled: bool = True
     article_max_concurrency: int = 1
     article_batch_timeout: float = 60.0
+    article_extractor: str = "local"
+    article_max_links: int = 5
+    article_max_user_links: int = 2
 
     @classmethod
     def from_environment(cls) -> "Settings":
@@ -37,4 +40,7 @@ class Settings:
             not in {"0", "false", "no"},
             article_max_concurrency=max(1, int(os.getenv("ARTICLE_MAX_CONCURRENCY", "1"))),
             article_batch_timeout=float(os.getenv("ARTICLE_BATCH_TIMEOUT", "60")),
+            article_extractor=os.getenv("ARTICLE_EXTRACTOR", "local").strip().lower(),
+            article_max_links=max(1, int(os.getenv("ARTICLE_MAX_LINKS", "5"))),
+            article_max_user_links=max(0, int(os.getenv("ARTICLE_MAX_USER_LINKS", "2"))),
         )

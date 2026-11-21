@@ -60,3 +60,21 @@ def test_extract_links_deduplicates_canonical_urls_with_fact_checks_first() -> N
         "https://fact.example/review/2",
         "https://user.example/article",
     ]
+
+
+def test_extract_links_and_service_share_candidate_selection() -> None:
+    from articleScraping.service import _select_candidates
+
+    analysis = AnalysisDataContainer(
+        original_text="See https://fact.example/review/1#section and https://user.example/article."
+    )
+    sources = [FactCheckLinkSource(), TextLinkSource()]
+    service_candidates, failures, found_count = _select_candidates(
+        analysis, [_reading_result()], sources
+    )
+
+    assert [candidate.url for candidate in service_candidates] == extract_links(
+        analysis, [_reading_result()]
+    )
+    assert failures == []
+    assert found_count == 4

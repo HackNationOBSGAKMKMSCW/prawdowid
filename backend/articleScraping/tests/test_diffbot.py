@@ -3,7 +3,13 @@ import traceback
 import httpx
 import pytest
 import respx
-from apiReading.exceptions import ApiAuthError, ApiConnectionError, ApiHttpError, ApiResponseError
+from apiReading.exceptions import (
+    ApiAuthError,
+    ApiConnectionError,
+    ApiHttpError,
+    ApiResponseError,
+    ApiTimeoutError,
+)
 from articleScraping.diffbot import DIFFBOT_URL, DiffbotArticleClient
 
 
@@ -65,7 +71,54 @@ async def test_diffbot_retries_429_with_retry_after_then_extracts() -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(("status", "error_type"), [(401, ApiAuthError), (404, ApiHttpError)])
+@pytest.mark.parametrize(
+    ("error", "error_type"),
+    [
+        (httpx.ReadTimeout("timed out"), ApiTimeoutError),
+        (httpx.ConnectError("disconnected"), ApiConnectionError),
+    ],
+)
+async def test_diffbot_does_not_retry_transport_errors(error, error_type) -> None:
+    calls = 0
+
+    async def handler(_: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        raise error
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    try:
+        with pytest.raises(error_type):
+            await DiffbotArticleClient(client=client, api_key="token", max_retries=1).extract(
+                "https://news.example/article"
+            )
+    finally:
+        await client.aclose()
+
+    assert calls == 1
+
+
+@pytest.mark.asyncio
+async def test_diffbot_retries_503_then_succeeds() -> None:
+    with respx.mock(assert_all_called=True) as router:
+        route = router.get(DIFFBOT_URL)
+        route.side_effect = [
+            httpx.Response(503),
+            httpx.Response(200, json={"objects": [{"type": "article", "text": "body"}]}),
+        ]
+        article = await DiffbotArticleClient(api_key="token", retry_backoff=0).extract(
+            "https://news.example/article"
+        )
+
+    assert route.call_count == 2
+    assert article.text == "body"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("status", "error_type"),
+    [(401, ApiAuthError), (404, ApiHttpError), (500, ApiHttpError)],
+)
 async def test_diffbot_http_auth_and_not_found_statuses_are_not_retried(status, error_type) -> None:
     with respx.mock(assert_all_called=True) as router:
         route = router.get(DIFFBOT_URL).respond(status_code=status)

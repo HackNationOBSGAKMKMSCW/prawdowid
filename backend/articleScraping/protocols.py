@@ -3,7 +3,7 @@
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Protocol
+from typing import Literal, Protocol
 
 from apiReading.models import ReadingResult
 from textAnalysis.container import AnalysisDataContainer
@@ -14,7 +14,7 @@ class CandidateLink:
     """A discovered link with its trust tier retained until quota selection."""
 
     url: str
-    source: str
+    source: Literal["fact_check", "user_text"]
 
 
 @dataclass(frozen=True)

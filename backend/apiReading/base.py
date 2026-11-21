@@ -55,6 +55,7 @@ class BaseApiClient(ABC):
     name: ClassVar[str]
     base_url: ClassVar[str]
     supported_categories: ClassVar[frozenset[Category]]
+    retry_transport_errors: ClassVar[bool] = True
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
         super().__init_subclass__(**kwargs)
@@ -170,7 +171,7 @@ class BaseApiClient(ABC):
                     async with self._semaphore:
                         response = await self._send(client, spec)
             except httpx.TimeoutException as exc:
-                if retryable and attempt < self.max_retries:
+                if retryable and self.retry_transport_errors and attempt < self.max_retries:
                     await self._sleep_before_retry(attempt, reason="timeout")
                     attempt += 1
                     continue
@@ -178,7 +179,7 @@ class BaseApiClient(ABC):
                 logger.warning("API request timed out: source=%s", self.name)
                 raise ApiTimeoutError(self.name, "request timed out", cause=exc) from exc
             except httpx.TransportError as exc:
-                if retryable and attempt < self.max_retries:
+                if retryable and self.retry_transport_errors and attempt < self.max_retries:
                     await self._sleep_before_retry(attempt, reason="błąd połączenia")
                     attempt += 1
                     continue

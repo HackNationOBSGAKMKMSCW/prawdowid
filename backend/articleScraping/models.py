@@ -1,6 +1,7 @@
 """Public, token-safe data models for the article extraction stage."""
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel
 
@@ -14,6 +15,7 @@ class ScrapedArticle(BaseModel):
     published_at: datetime | None = None
     text: str
     truncated: bool = False
+    source: Literal["fact_check", "user_text"] | None = None
 
 
 class ArticleFailure(BaseModel):
@@ -22,6 +24,7 @@ class ArticleFailure(BaseModel):
     url: str
     kind: str
     status_code: int | None = None
+    source: Literal["fact_check", "user_text"] | None = None
 
 
 class ScrapingReport(BaseModel):

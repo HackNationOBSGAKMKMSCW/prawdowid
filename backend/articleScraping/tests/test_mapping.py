@@ -43,3 +43,14 @@ def test_cleaning_preserves_paragraph_boundaries() -> None:
     )
 
     assert article.text == "First paragraph.\nSecond paragraph."
+
+
+def test_map_article_defaults_provenance_to_none_and_accepts_a_source() -> None:
+    raw_article = RawArticle(text="body")
+
+    assert map_article("https://news.example/default", raw_article).source is None
+    assert (
+        map_article("https://news.example/user", raw_article, source="user_text").source
+        == "user_text"
+    )
+    assert list(map_article("https://news.example/order", raw_article).model_dump())[-1] == "source"

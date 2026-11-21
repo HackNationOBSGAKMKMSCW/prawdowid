@@ -180,6 +180,27 @@ async def test_transient_server_error_retries_once() -> None:
 
 
 @pytest.mark.asyncio
+async def test_base_client_retries_timeout_by_default() -> None:
+    calls = 0
+
+    async def handler(_: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise httpx.ReadTimeout("temporary timeout")
+        return httpx.Response(200, json={"items": [{"id": "ok"}]})
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    try:
+        result = await _TestApiClient(client=client, max_retries=1, retry_backoff=0).fetch_data()
+    finally:
+        await client.aclose()
+
+    assert calls == 2
+    assert result.items[0].id == "ok"
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("body", "error_type"),
     [
