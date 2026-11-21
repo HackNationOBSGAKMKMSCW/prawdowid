@@ -22,6 +22,15 @@ from .flags import stale_items
 from .sources import MIN_INDEPENDENT_STRONG, EvidenceItem, independent_sources, is_strong
 
 
+def plural(n: int, one: str, few: str, many: str) -> str:
+    """Polska odmiana: 1 źródło, 2–4 źródła (bez 12–14), 0 i 5+ źródeł."""
+    if n == 1:
+        return one
+    if 2 <= n % 10 <= 4 and not 12 <= n % 100 <= 14:
+        return few
+    return many
+
+
 @dataclass(frozen=True)
 class StrengthFactors:
     independent_strong: int  # niezależni wydawcy T1–T2 po stronie werdyktu
@@ -41,17 +50,30 @@ class StrengthFactors:
 
     def describe(self) -> list[str]:
         tier = " (w tym T1)" if self.has_t1 else ""
+        n = self.independent_strong
         out = [
-            f"{self.independent_strong} niezależnych źródeł T1–T2{tier}, "
-            f"wymagane {MIN_INDEPENDENT_STRONG}",
-            f"{self.verified_quotes} cytatów zweryfikowanych w tekście źródła",
+            f"{n} {plural(n, 'niezależne źródło', 'niezależne źródła', 'niezależnych źródeł')}"
+            f" T1–T2{tier}, wymagane {MIN_INDEPENDENT_STRONG}",
+            f"{self.verified_quotes} "
+            f"{plural(self.verified_quotes, 'cytat', 'cytaty', 'cytatów')} "
+            "zweryfikowane w tekście źródła",
         ]
         if self.weak_sources:
-            out.append(f"{self.weak_sources} źródeł niższej rangi (T3+), nie liczą się do progu")
+            out.append(
+                f"{self.weak_sources} {plural(self.weak_sources, 'źródło', 'źródła', 'źródeł')} "
+                "niższej rangi (T3+), nie liczą się do progu"
+            )
         if self.stale:
-            out.append(f"{self.stale} źródeł nieaktualnych dla tego typu twierdzenia")
+            out.append(
+                f"{self.stale} "
+                f"{plural(self.stale, 'źródło nieaktualne', 'źródła nieaktualne', 'źródeł nieaktualnych')}"
+                " dla tego typu twierdzenia"
+            )
         if self.missing_date:
-            out.append(f"{self.missing_date} źródeł bez daty publikacji")
+            out.append(
+                f"{self.missing_date} {plural(self.missing_date, 'źródło', 'źródła', 'źródeł')} "
+                "bez daty publikacji"
+            )
         if self.conflicting:
             out.append("część źródeł mówi coś przeciwnego")
         return out

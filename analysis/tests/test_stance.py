@@ -66,6 +66,13 @@ def _answer(stance: str, quote: str = "") -> str:
         ("", ("insufficient", "", False)),
         ('{"stance": ["supports"]}', ("insufficient", "", False)),
         ('{"stance": "supports", "quote": 5}', ("supports", "", True)),
+        # modele „myślące”: rozumowanie z klamrami przed właściwym JSON
+        (
+            '<think>Format {stance, quote}; {"x": 1}</think>\n{"stance": "refutes", "quote": "q"}',
+            ("refutes", "q", True),
+        ),
+        ('Rozważam {"x": 1}. Wynik: {"stance": "neutral", "quote": ""}', ("neutral", "", True)),
+        ("<think>długie rozumowanie ucięte limitem", ("insufficient", "", False)),
     ],
 )
 def test_parse_response_validates_and_falls_back(text, expected):

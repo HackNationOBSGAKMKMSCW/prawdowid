@@ -6,6 +6,7 @@ from factories import claim, item
 from prawdowid_analysis.verdict.strength import (
     StrengthFactors,
     compute_strength,
+    plural,
     strength_factors,
 )
 
@@ -46,9 +47,27 @@ def test_factors_are_listed_in_strength():
     s = compute_strength(factors(stale=1, weak_sources=1, conflicting=True))
     assert s.level == "medium"
     text = " | ".join(s.factors)
-    assert "2 niezależnych źródeł T1–T2 (w tym T1)" in text
-    assert "nieaktualnych" in text and "T3+" in text and "przeciwnego" in text
+    assert "2 niezależne źródła T1–T2 (w tym T1)" in text
+    assert "1 źródło nieaktualne" in text and "1 źródło niższej rangi" in text
+    assert "T3+" in text and "przeciwnego" in text
     assert not any("%" in f for f in s.factors)  # bez procentów
+
+
+@pytest.mark.parametrize(
+    "n, form",
+    [
+        (0, "źródeł"),
+        (1, "źródło"),
+        (2, "źródła"),
+        (4, "źródła"),
+        (5, "źródeł"),
+        (12, "źródeł"),
+        (22, "źródła"),
+        (25, "źródeł"),
+    ],
+)
+def test_polish_plural(n, form):
+    assert plural(n, "źródło", "źródła", "źródeł") == form
 
 
 def test_strength_factors_from_evidence():

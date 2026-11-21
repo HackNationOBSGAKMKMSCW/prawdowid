@@ -47,7 +47,9 @@ Odpowiedz wyłącznie obiektem JSON: {"stance": "...", "quote": "..."}"""
 
 # Znaczniki, które mogłyby udawać strukturę promptu (np. "</source>", "<claim>").
 _TAG_LIKE_RE = re.compile(r"<\s*/?\s*(source|claim|system|user|assistant)\b[^>]*>", re.I)
-_JSON_OBJECT_RE = re.compile(r"\{.*\}", re.S)
+_THINK_RE = re.compile(r"<think>.*?(</think>|$)", re.S | re.I)
+# Modele „myślące” zużywają część limitu na rozumowanie; za mały limit ucina JSON.
+MAX_TOKENS = 1024
 
 
 @dataclass(frozen=True)
@@ -78,16 +80,25 @@ def build_messages(claim: Claim, passage: Passage) -> list[dict]:
     return [{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": user}]
 
 
+def _first_stance_object(text: str) -> dict | None:
+    """Pierwszy obiekt JSON z polem `stance`. Router FreeLLMAPI może trafić na model
+    „myślący”, który dopisuje rozumowanie (`<think>…</think>`, tekst z klamrami) przed JSON."""
+    text = _THINK_RE.sub("", text or "")
+    decoder = json.JSONDecoder()
+    for start in (i for i, ch in enumerate(text) if ch == "{"):
+        try:
+            data, _ = decoder.raw_decode(text, start)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(data, dict) and "stance" in data:
+            return data
+    return None
+
+
 def parse_response(text: str) -> tuple[str, str, bool]:
     """Zwraca (stance, quote, parse_ok). Każdy błąd formatu -> fallback `insufficient`."""
-    match = _JSON_OBJECT_RE.search(text or "")
-    if not match:
-        return FALLBACK_STANCE, "", False
-    try:
-        data = json.loads(match.group(0))
-    except json.JSONDecodeError:
-        return FALLBACK_STANCE, "", False
-    if not isinstance(data, dict):
+    data = _first_stance_object(text)
+    if data is None:
         return FALLBACK_STANCE, "", False
     stance = data.get("stance")
     stance = stance.strip().lower() if isinstance(stance, str) else None
@@ -99,7 +110,7 @@ def parse_response(text: str) -> tuple[str, str, bool]:
 
 def assess_passage(claim: Claim, passage: Passage, client: ChatClient) -> StanceAssessment:
     """Jedno wywołanie LLM dla pary (twierdzenie, pasaż). `LLMError` przechodzi wyżej."""
-    result = client.chat(build_messages(claim, passage), json_mode=True, max_tokens=400)
+    result = client.chat(build_messages(claim, passage), json_mode=True, max_tokens=MAX_TOKENS)
     stance, quote, parse_ok = parse_response(result.text)
     match = verify_quote(quote, passage.text) if quote else None
     verified = bool(match and match.verified)

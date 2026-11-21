@@ -24,7 +24,7 @@ from datetime import date
 from ..schemas import Claim, Evidence, Handover, Passage, Strength, Verdict
 from .flags import compute_flags, has_conflict, today_utc
 from .sources import MIN_INDEPENDENT_STRONG, EvidenceItem, independent_sources
-from .strength import compute_strength, strength_factors
+from .strength import compute_strength, plural, strength_factors
 
 DECISIVE_STANCES = ("supports", "refutes")
 
@@ -71,6 +71,10 @@ def _verdict(claim: Claim, outcome: str, explanation: str, strength: Strength, *
         handover=Handover(recommended=handover),
         **kw,
     )
+
+
+def _sources(n: int) -> str:
+    return plural(n, "niezależne źródło", "niezależne źródła", "niezależnych źródeł")
 
 
 def _low(*factors: str) -> Strength:
@@ -141,8 +145,8 @@ def aggregate(
             "Wiarygodne źródła są ze sobą sprzeczne: część potwierdza, a część obala to "
             "twierdzenie. Pokazujemy obie strony zamiast rozstrzygać.",
             _low(
-                f"{strong_support} niezależnych źródeł T1–T2 potwierdza",
-                f"{strong_refute} niezależnych źródeł T1–T2 obala",
+                f"{strong_support} {_sources(strong_support)} T1–T2 potwierdza",
+                f"{strong_refute} {_sources(strong_refute)} T1–T2 obala",
             ),
             evidence_ids=ids,
             flags=flags,
