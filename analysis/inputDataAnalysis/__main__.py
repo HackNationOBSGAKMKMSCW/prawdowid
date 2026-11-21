@@ -1,6 +1,6 @@
-"""Demo: ``python -m inputDataAnalysis [nazwa_przykładu ...]`` (z katalogu backend/).
+"""Demo: ``python -m inputDataAnalysis [nazwa_przykładu ...]`` (z katalogu analysis/).
 
-Wymaga uzupełnionego ``backend/.env``. Bez argumentów uruchamia wszystkie przykłady.
+Wymaga uzupełnionego ``analysis/inputDataAnalysis/.env``. Bez argumentów uruchamia wszystkie przykłady.
 """
 
 from __future__ import annotations

@@ -14,7 +14,7 @@ def main() -> None:
     lines = [
         "# Oczekiwane wyniki testów modułu `inputDataAnalysis`",
         "",
-        "Plik generowany: `python -m inputDataAnalysis.tests.generuj_tabele` (z katalogu `backend/`).",
+        "Plik generowany: `python -m inputDataAnalysis.tests.generuj_tabele` (z katalogu `analysis/`).",
         "Uruchomienie: `python -m pytest inputDataAnalysis/tests -v`. Przypadki `LV` wymagają `RUN_LLM_TESTS=1`.",
         "Kolumna „Status”: ✅ oczekiwany wynik jest wymagany; ⚠️ znany błąd (test `xfail`, opis pod tabelą).",
         "",

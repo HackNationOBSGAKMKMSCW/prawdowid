@@ -1,4 +1,4 @@
-"""Konfiguracja LLM z pliku ``backend/.env`` (lub ze zmiennych środowiskowych)."""
+"""Konfiguracja LLM z pliku ``analysis/inputDataAnalysis/.env`` (lub ze zmiennych środowiskowych)."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-ENV_PATH = Path(__file__).resolve().parent.parent / ".env"
+ENV_PATH = Path(__file__).resolve().parent / ".env"
 
 
 @dataclass(frozen=True)
@@ -28,7 +28,7 @@ def get_settings() -> Settings:
     missing = [k for k in ("LLM_API_KEY", "LLM_BASE_URL", "LLM_MODEL") if not os.getenv(k)]
     if missing:
         raise RuntimeError(
-            f"Brak zmiennych {', '.join(missing)}. Uzupełnij {ENV_PATH} (wzór: backend/.env.example)."
+            f"Brak zmiennych {', '.join(missing)}. Uzupełnij {ENV_PATH} (wzór: analysis/inputDataAnalysis/.env.example)."
         )
     return Settings(
         api_key=os.environ["LLM_API_KEY"],
