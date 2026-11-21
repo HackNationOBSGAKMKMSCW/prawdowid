@@ -28,6 +28,11 @@
   --wa-error-bg: #fde2e4;
   --wa-error-text: #8a1c2b;
   --wa-shadow: 0 1px 0.5px rgb(11 20 26 / 13%);
+  --wa-tone-false: #d92d3a;
+  --wa-tone-misleading: #b86e00;
+  --wa-tone-true: #11864a;
+  --wa-tone-conflicting: #d1540b;
+  --wa-tone-neutral: #54656f;
 
   color: var(--wa-text);
   font-family:
@@ -66,6 +71,11 @@
     --wa-error-bg: #3b1c22;
     --wa-error-text: #ffb3bd;
     --wa-shadow: 0 1px 0.5px rgb(0 0 0 / 25%);
+    --wa-tone-false: #ff6b74;
+    --wa-tone-misleading: #f5b335;
+    --wa-tone-true: #3ccf7c;
+    --wa-tone-conflicting: #ff8f4d;
+    --wa-tone-neutral: #8696a0;
   }
 }
 
@@ -461,6 +471,70 @@
   .wa-spinner {
     animation-duration: 2.4s;
   }
+}
+
+/* Verdict card (Cloud API cta_url message) */
+
+.wa-card {
+  --wa-tone: var(--wa-tone-neutral);
+
+  min-width: min(260px, 86%);
+  overflow: hidden;
+}
+
+.wa-row--first .wa-card {
+  overflow: visible;
+}
+
+.wa-card[data-tone='false'] {
+  --wa-tone: var(--wa-tone-false);
+}
+
+.wa-card[data-tone='misleading'] {
+  --wa-tone: var(--wa-tone-misleading);
+}
+
+.wa-card[data-tone='true'] {
+  --wa-tone: var(--wa-tone-true);
+}
+
+.wa-card[data-tone='conflicting'] {
+  --wa-tone: var(--wa-tone-conflicting);
+}
+
+.wa-card-header {
+  padding: 10px 12px 9px;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--wa-tone);
+  background: color-mix(in srgb, var(--wa-tone) 13%, var(--wa-in-bg));
+  border-left: 5px solid var(--wa-tone);
+  border-radius: 0 8px 0 0;
+}
+
+.wa-row--first .wa-card::before {
+  background: color-mix(in srgb, var(--wa-tone) 13%, var(--wa-in-bg));
+}
+
+.wa-card .wa-bubble-body {
+  border-left: 5px solid var(--wa-tone);
+}
+
+.wa-card .wa-buttons {
+  border-left: 5px solid var(--wa-tone);
+  border-radius: 0 0 8px 8px;
+}
+
+.wa-card-footer {
+  display: block;
+  margin-top: 6px;
+  font-size: 12.5px;
+  color: var(--wa-meta);
+}
+
+a.wa-reply-button {
+  text-decoration: none;
 }
 
 /* Composer */

@@ -16,6 +16,7 @@ import {
   ClockIcon,
   DoubleTickIcon,
   EmojiIcon,
+  ExternalLinkIcon,
   FailedIcon,
   ForwardIcon,
   LockIcon,
@@ -36,6 +37,7 @@ import {
   toBotMessages,
   type Health,
   type IncomingPart,
+  type LinkButton,
   type ReplyButton,
 } from './webhook.ts';
 import WhatsAppText from './WhatsAppText.tsx';
@@ -52,7 +54,14 @@ type ChatItem =
       status: Status;
       forwarded?: boolean;
     }
-  | { kind: 'bot'; id: string; text: string; time: number; buttons?: ReplyButton[] }
+  | {
+      kind: 'bot';
+      id: string;
+      text: string;
+      time: number;
+      buttons?: ReplyButton[];
+      card?: { header: string; footer: string; link: LinkButton };
+    }
   | { kind: 'notice'; id: string; text: string; time: number };
 
 // A pending check: hidden until the bot "reads" the message, then shown as
@@ -104,6 +113,15 @@ function dayLabel(time: number): string {
   if (date.toDateString() === today.toDateString()) return 'Dzisiaj';
   if (date.toDateString() === yesterday.toDateString()) return 'Wczoraj';
   return date.toLocaleDateString('pl-PL', { day: 'numeric', month: 'long', year: 'numeric' });
+}
+
+// Card colour follows the verdict emoji the adapter puts in the header.
+function cardTone(header: string): string {
+  if (header.startsWith('❌')) return 'false';
+  if (header.startsWith('⚠')) return 'misleading';
+  if (header.startsWith('✅')) return 'true';
+  if (header.startsWith('🔀')) return 'conflicting';
+  return 'neutral';
 }
 
 function StatusIcon({ status }: { status: Status }) {
@@ -241,6 +259,10 @@ export default function WhatsAppSimulator() {
             text: message.text,
             time: Date.now(),
             buttons: message.type === 'buttons' ? message.buttons : undefined,
+            card:
+              message.type === 'card'
+                ? { header: message.header, footer: message.footer, link: message.link }
+                : undefined,
           });
         }
       } catch (error) {
@@ -348,7 +370,15 @@ export default function WhatsAppSimulator() {
                         first ? ' wa-row--first' : ''
                       }`}
                     >
-                      <div className="wa-bubble">
+                      <div
+                        className={`wa-bubble${item.kind === 'bot' && item.card ? ' wa-card' : ''}`}
+                        data-tone={
+                          item.kind === 'bot' && item.card ? cardTone(item.card.header) : undefined
+                        }
+                      >
+                        {item.kind === 'bot' && item.card?.header && (
+                          <div className="wa-card-header">{item.card.header}</div>
+                        )}
                         <div className="wa-bubble-body">
                           {item.kind === 'user' && item.forwarded && (
                             <span className="wa-forwarded">
@@ -357,12 +387,28 @@ export default function WhatsAppSimulator() {
                             </span>
                           )}
                           <WhatsAppText text={item.text} />
+                          {item.kind === 'bot' && item.card?.footer && (
+                            <span className="wa-card-footer">{item.card.footer}</span>
+                          )}
                           <span className="wa-meta-spacer" aria-hidden="true" />
                           <span className="wa-meta">
                             {formatTime(item.time)}
                             {item.kind === 'user' && <StatusIcon status={item.status} />}
                           </span>
                         </div>
+                        {item.kind === 'bot' && item.card && (
+                          <div className="wa-buttons">
+                            <a
+                              className="wa-reply-button"
+                              href={item.card.link.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                            >
+                              <ExternalLinkIcon width={16} height={16} />
+                              {item.card.link.label}
+                            </a>
+                          </div>
+                        )}
                         {item.kind === 'bot' && item.buttons && item.buttons.length > 0 && (
                           <div className="wa-buttons">
                             {item.buttons.map((button) => (

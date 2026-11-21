@@ -16,7 +16,13 @@ export interface ReplyButton {
 
 export type BotMessage =
   | { type: 'text'; text: string }
-  | { type: 'buttons'; text: string; buttons: ReplyButton[] };
+  | { type: 'buttons'; text: string; buttons: ReplyButton[] }
+  | { type: 'card'; header: string; text: string; footer: string; link: LinkButton };
+
+export interface LinkButton {
+  label: string;
+  url: string;
+}
 
 interface CloudApiTextMessage {
   type: 'text';
@@ -27,8 +33,14 @@ interface CloudApiInteractiveMessage {
   type: 'interactive';
   interactive: {
     type: string;
+    header?: { type?: string; text?: string };
     body?: { text?: string };
-    action?: { buttons?: { reply?: { id?: string; title?: string } }[] };
+    footer?: { text?: string };
+    action?: {
+      buttons?: { reply?: { id?: string; title?: string } }[];
+      name?: string;
+      parameters?: { display_text?: string; url?: string };
+    };
   };
 }
 
@@ -135,6 +147,19 @@ export function toBotMessages(messages: CloudApiMessage[]): BotMessage[] {
     if (message.type === 'text' && 'text' in message) {
       result.push({ type: 'text', text: message.text.body });
     } else if (message.type === 'interactive' && 'interactive' in message) {
+      const { interactive } = message;
+      const url = interactive.action?.parameters?.url ?? '';
+      if (interactive.type === 'cta_url' && /^https?:\/\//.test(url)) {
+        // "Call to action URL" message: rendered as a verdict card with a link button.
+        result.push({
+          type: 'card',
+          header: interactive.header?.text ?? '',
+          text: interactive.body?.text ?? '',
+          footer: interactive.footer?.text ?? '',
+          link: { label: interactive.action?.parameters?.display_text ?? 'Otwórz', url },
+        });
+        continue;
+      }
       const buttons = (message.interactive.action?.buttons ?? [])
         .map((button) => button.reply)
         .filter((reply): reply is ReplyButton => Boolean(reply?.id && reply.title));
