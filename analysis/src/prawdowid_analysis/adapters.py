@@ -35,17 +35,25 @@ class AnalysisClaims:
     language_code: str | None = None
     category: str | None = None
     warnings: list[str] = field(default_factory=list)
+    keywords: list[str] = field(default_factory=list)
+    source_text: str = ""
 
 
 def claims_from_analysis(analysis: Any) -> AnalysisClaims:
-    """Wyciąga stwierdzenia z obiektu zwróconego przez `textAnalysis.run()`."""
+    """Wyciąga stwierdzenia, słowa kluczowe i tekst z wyniku `textAnalysis.run()`.
+
+    `keywords` to lista `KeywordItem` (pole `term`) albo słowników po `to_dict()`.
+    """
     statements = [_clean(s) for s in (_get(analysis, "statements") or [])]
     warnings = [str(w) for w in (_get(analysis, "security_warnings") or [])]
+    keywords = [_clean(_get(k, "term")) for k in (_get(analysis, "keywords") or [])]
     return AnalysisClaims(
         statements=[s for s in statements if s],
         language_code=_get(analysis, "language_code"),
         category=_get(analysis, "category") or None,
         warnings=warnings,
+        keywords=[k for k in keywords if k],
+        source_text=str(_get(analysis, "source_text") or ""),
     )
 
 

@@ -28,7 +28,7 @@ from .llm import ChatClient, OpenAIChatClient
 from .prompts import prompt_version
 from .schemas import ClaimVerdict, QuarantinedSource, ReferenceSource, TextVerdict
 from .security import screen_claim, screen_sources
-from .sources import Retriever, split_source
+from .sources import Retriever, expand_query, split_source
 from .verdict import assess_claim
 
 TOP_K_CORPUS = 5
@@ -97,6 +97,7 @@ async def verify_claims(
     client: ChatClient | None = None,
     settings: Settings | None = None,
     warnings: Sequence[str] = (),
+    keywords: Sequence[str] = (),
 ) -> TextVerdict:
     started = time.perf_counter()
     settings = settings or Settings.from_environment()
@@ -128,7 +129,7 @@ async def verify_claims(
         claim_warnings.extend(f"T{index}: {w}" for w in screened.warnings)
         claim_sources = keep(
             sources_for_claim(
-                screened.text,
+                expand_query(screened.text, keywords),
                 corpus=corpus if use_corpus else None,
                 user_passages=user_passages,
                 user_retriever=user_retriever,
@@ -214,6 +215,7 @@ async def run(
         shared_fact_checks=pools.shared,
         extra_sources=extra_sources,
         warnings=[*warnings, *claims.warnings, *reading_warnings(results)],
+        keywords=claims.keywords,
         **kwargs,
     )
 

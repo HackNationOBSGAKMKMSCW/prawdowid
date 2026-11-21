@@ -50,3 +50,25 @@ def test_retriever_returns_nothing_for_unrelated_query():
 
 def test_retriever_handles_empty_pool():
     assert Retriever([]).search("cokolwiek") == []
+
+
+def test_expand_query_adds_only_matching_keywords():
+    from prawdowid_analysis.sources import expand_query
+
+    keywords = ["Rysy", "szczepionka", "Unia Europejska"]
+    assert (
+        expand_query("Wysokość Rysów wynosi 2499 m.", keywords)
+        == "Wysokość Rysów wynosi 2499 m. Rysy"
+    )
+    assert expand_query("Ala ma kota.", keywords) == "Ala ma kota."
+
+
+def test_keyword_expansion_finds_passage_missed_by_stemming():
+    from prawdowid_analysis.schemas import ReferenceSource
+    from prawdowid_analysis.sources import expand_query
+
+    doc = ReferenceSource(source_id="D", kind="korpus", text="Rysy są najwyższym szczytem.")
+    retriever = Retriever([doc])
+    claim = "Rysów nikt nie zdobył."
+    assert retriever.search(claim, min_score=1e-9) == []
+    assert retriever.search(expand_query(claim, ["Rysy"]), min_score=1e-9)

@@ -16,6 +16,7 @@ podmienić wyszukiwarkę (np. na wektorową) bez zmian w reszcie potoku.
 
 import json
 import math
+import os
 import re
 import unicodedata
 from collections import Counter
@@ -50,6 +51,39 @@ def tokenize(text: str) -> list[str]:
             continue
         tokens.append(token if token.isdigit() else token[:STEM_CHARS])
     return tokens
+
+
+KEYWORD_MATCH_CHARS = 4
+
+
+def _words(text: str) -> list[str]:
+    return [t for t in re.findall(r"\w+", _fold(text)) if t not in _STOPWORDS]
+
+
+def expand_query(claim: str, keywords: Iterable[str]) -> str:
+    """Dopisuje do zapytania słowa kluczowe (w mianowniku) pasujące do twierdzenia.
+
+    Słowo kluczowe pasuje, gdy któreś jego słowo ma wspólny początek ze słowem
+    twierdzenia (`_same_stem`), np. „Rysy” do „Rysów”. Dzięki temu forma podstawowa
+    pomaga trafić w korpus tam, gdzie obcięcie do `STEM_CHARS` nie wystarcza;
+    słowa kluczowe dotyczące innych twierdzeń nie są dodawane.
+    """
+    claim_words = _words(claim)
+    extra = [
+        keyword
+        for keyword in keywords
+        if any(_same_stem(k, c) for k in _words(keyword) for c in claim_words)
+    ]
+    return " ".join([claim, *extra]) if extra else claim
+
+
+def _same_stem(a: str, b: str) -> bool:
+    """Wspólny początek ≥ 3 znaki i najwyżej o 1 krótszy od krótszego słowa
+    (maks. `KEYWORD_MATCH_CHARS`): „rysy”/„rysow”, „szczepionka”/„szczepionki”."""
+    if a == b:
+        return True
+    common = len(os.path.commonprefix([a, b]))
+    return common >= 3 and common >= min(len(a), len(b), KEYWORD_MATCH_CHARS + 1) - 1
 
 
 def chunk_text(text: str, max_chars: int = CHUNK_CHARS) -> list[str]:

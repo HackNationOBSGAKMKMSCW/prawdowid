@@ -154,3 +154,14 @@ def test_reading_warnings_report_truncation_and_unknown_providers():
     assert any("1000 znaków" in w for w in warnings)
     assert any("„nowy_dostawca”" in w for w in warnings)
     assert sources_from_reading_results([result])["pełny tekst"], "wpis Google nadal użyty"
+
+
+def test_claims_from_analysis_reads_keywords_and_source_text():
+    analysis = {
+        "statements": ["A b c."],
+        "keywords": [{"term": "Rysy", "context_note": "x"}, SimpleNamespace(term=" Tatry ")],
+        "source_text": "Pełny tekst.",
+    }
+    claims = claims_from_analysis(analysis)
+    assert claims.keywords == ["Rysy", "Tatry"]
+    assert claims.source_text == "Pełny tekst."
