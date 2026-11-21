@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "prawdowid-analysis"
+version = "0.1.0"
+description = "Werdykt prawdziwości twierdzeń na podstawie źródeł wzorcowych (LLM + kontrola deterministyczna)"
+requires-python = ">=3.11"
+dependencies = [
+    "openai>=1.68,<4",
+    "pydantic>=2.9,<3",
+    "python-dotenv>=1,<2",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8,<10", "ruff>=0.11,<1"]
+
+[project.scripts]
+prawdowid-werdykt = "prawdowid_analysis.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+prawdowid_analysis = ["prompts/*.md"]
+
+[tool.ruff]
+extend = "../ruff.toml"
+src = ["src", "tests", "."]
+
+[tool.ruff.lint.isort]
+known-first-party = ["prawdowid_analysis", "tests", "scripts"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src", "."]
+addopts = "-m 'not live'"
+markers = ["live: wywołuje prawdziwy model LLM (uruchamiane ręcznie)"]
