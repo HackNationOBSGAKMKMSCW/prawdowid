@@ -163,6 +163,36 @@ class QuarantinedSource(BaseModel):
     reasons: list[str]
 
 
+InputSourceStatus = Literal["cytowane", "pokazane_modelowi", "nieuzyte", "kwarantanna"]
+
+
+class InputSourceOut(BaseModel):
+    """Źródło, które przyszło na wejściu (od użytkownika albo z backendu), z linkiem.
+
+    Status (od najważniejszego):
+    - `kwarantanna`: odrzucone przez ochronę przed wstrzyknięciem, model go nie widział;
+    - `cytowane`: zweryfikowany cytat z tego źródła jest dowodem w werdykcie;
+    - `pokazane_modelowi`: model je ocenił, ale nie jest dowodem;
+    - `nieuzyte`: nie pasowało do żadnego twierdzenia, więc nie trafiło do modelu.
+    """
+
+    source_id: str
+    kind: SourceKind
+    title: str = ""
+    publisher: str = ""
+    url: str | None = None
+    published_at: str | None = None
+    provider: str | None = None
+    rating: str | None = None
+    status: InputSourceStatus
+    shown_for_claims: list[str] = Field(
+        default=[], description="Twierdzenia, przy których pokazano je modelowi"
+    )
+    cited_in_claims: list[str] = Field(
+        default=[], description="Twierdzenia, w których jest zweryfikowanym dowodem"
+    )
+
+
 class TextVerdict(BaseModel):
     verdict: TextVerdictValue
     summary: str
@@ -172,6 +202,10 @@ class TextVerdict(BaseModel):
     )
     quarantined_sources: list[QuarantinedSource] = Field(
         default=[], description="Źródła odrzucone przez ochronę przed wstrzyknięciem instrukcji"
+    )
+    input_sources: list[InputSourceOut] = Field(
+        default=[],
+        description="Wszystkie źródła z wejścia (użytkownik, backend) z linkami i statusem użycia",
     )
     warnings: list[str] = []
     models: dict[str, str] = Field(

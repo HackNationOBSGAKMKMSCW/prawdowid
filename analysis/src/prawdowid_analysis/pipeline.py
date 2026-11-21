@@ -26,7 +26,13 @@ from .aggregate import aggregate
 from .config import Settings
 from .llm import ChatClient, OpenAIChatClient
 from .prompts import prompt_version
-from .schemas import ClaimVerdict, QuarantinedSource, ReferenceSource, TextVerdict
+from .schemas import (
+    ClaimVerdict,
+    InputSourceOut,
+    QuarantinedSource,
+    ReferenceSource,
+    TextVerdict,
+)
 from .security import detect_injection, screen_claim, screen_sources
 from .sources import CORPUS_LANGUAGE, Retriever, context_excerpt, expand_query, split_source
 from .verdict import assess_claim
@@ -113,10 +119,21 @@ async def verify_claims(
             quarantined.setdefault(item.source_id, item)
         return clean
 
+    fact_checks = fact_checks or {}
+    extra_sources = list(extra_sources)
+    shared_fact_checks = list(shared_fact_checks)
+    # Wszystkie źródła z wejścia (dokumenty, nie fragmenty) – do raportu z linkami.
+    inputs: dict[str, ReferenceSource] = {}
+    for source in [
+        *extra_sources,
+        *(s for v in fact_checks.values() for s in v),
+        *shared_fact_checks,
+    ]:
+        inputs.setdefault(source.source_id, source)
+
     # Źródła użytkownika sprawdzamy w całości: zatruty fragment odrzuca cały dokument.
     user_passages = [p for s in keep(extra_sources) for p in split_source(s)]
     user_retriever = Retriever(user_passages) if len(user_passages) > TOP_K_USER else None
-    fact_checks = fact_checks or {}
     shared_pool = keep(shared_fact_checks)
     shared_retriever = Retriever(shared_pool) if shared_pool else None
 
@@ -186,10 +203,71 @@ async def verify_claims(
         claims=claims,
         sources=list(all_sources.values()),
         quarantined_sources=list(quarantined.values()),
+        input_sources=input_source_report(list(inputs.values()), claims, quarantined),
         warnings=[*warnings, *sorted(claim_warnings), *quarantine_warnings],
         models={**(models or {}), "werdykt": settings.model},
         prompt_version=prompt_version(),
     )
+
+
+def input_source_report(
+    inputs: Sequence[ReferenceSource],
+    claims: Sequence[ClaimVerdict],
+    quarantined_ids: Iterable[str],
+) -> list[InputSourceOut]:
+    """Każde źródło z wejścia z linkiem i informacją, co się z nim stało.
+
+    Źródła użytkownika są dzielone na fragmenty (`ID#n`); status i powiązane
+    twierdzenia liczymy dla całego dokumentu.
+    """
+    ids = {s.source_id for s in inputs}
+
+    def document_id(passage_id: str) -> str | None:
+        if passage_id in ids:
+            return passage_id
+        base = passage_id.rsplit("#", 1)[0]
+        return base if base in ids else None
+
+    shown: dict[str, list[str]] = {}
+    cited: dict[str, list[str]] = {}
+    for claim in claims:
+        for passage_id in claim.source_ids:
+            doc = document_id(passage_id)
+            if doc and claim.claim_id not in shown.setdefault(doc, []):
+                shown[doc].append(claim.claim_id)
+        for evidence in claim.evidence:
+            doc = document_id(evidence.source_id)
+            if doc and evidence.quote_verified and claim.claim_id not in cited.setdefault(doc, []):
+                cited[doc].append(claim.claim_id)
+
+    rejected = set(quarantined_ids)
+    report = []
+    for source in inputs:
+        sid = source.source_id
+        if sid in rejected:
+            status = "kwarantanna"
+        elif cited.get(sid):
+            status = "cytowane"
+        elif shown.get(sid):
+            status = "pokazane_modelowi"
+        else:
+            status = "nieuzyte"
+        report.append(
+            InputSourceOut(
+                source_id=sid,
+                kind=source.kind,
+                title=source.title,
+                publisher=source.publisher,
+                url=source.url,
+                published_at=source.published_at,
+                provider=source.provider,
+                rating=source.rating,
+                status=status,
+                shown_for_claims=shown.get(sid, []),
+                cited_in_claims=cited.get(sid, []),
+            )
+        )
+    return report
 
 
 def language_mismatch_warnings(language_code: str | None, use_corpus: bool) -> list[str]:
