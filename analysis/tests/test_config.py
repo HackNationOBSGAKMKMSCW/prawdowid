@@ -54,3 +54,18 @@ def test_defaults_and_legacy_names(tmp_path, clean_env):
     settings = Settings.from_environment(tmp_path / "brak.env", tmp_path / "brak2.env")
     assert settings.api_key == "stary-klucz"
     assert settings.model == "gpt-4o-mini"
+
+
+def test_legacy_names_are_mirrored_for_backend(tmp_path, clean_env):
+    analysis_env = write(tmp_path / "analysis.env", OPENAI_API_KEY="stary", LLM_MODEL="model-stary")
+    settings = Settings.from_environment(analysis_env, tmp_path / "brak.env")
+    assert os.environ["FREELLM_API_KEY"] == "stary"
+    assert os.environ["FREELLM_MODEL"] == "model-stary"
+    assert settings.model == backend_model() == "model-stary"
+
+
+def test_mirroring_never_overrides_new_names(tmp_path, clean_env):
+    clean_env.setenv("FREELLM_MODEL", "nowy")
+    analysis_env = write(tmp_path / "analysis.env", LLM_MODEL="stary")
+    Settings.from_environment(analysis_env, tmp_path / "brak.env")
+    assert os.environ["FREELLM_MODEL"] == "nowy"

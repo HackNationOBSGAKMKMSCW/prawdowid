@@ -23,9 +23,24 @@ BACKEND_ENV_FILE = ANALYSIS_DIR.parent / "backend" / ".env"
 DEFAULT_MODEL = "gpt-4o-mini"  # ta sama wartość domyślna co w backend/textAnalysis
 
 
+# Starsze nazwy z analysis/.env -> nazwy czytane przez backend/textAnalysis.
+LEGACY_ALIASES = {
+    "OPENAI_API_KEY": "FREELLM_API_KEY",
+    "OPENAI_BASE_URL": "FREELLM_BASE_URL",
+    "LLM_MODEL": "FREELLM_MODEL",
+    "LLM_TIMEOUT_S": "FREELLM_TIMEOUT",
+}
+
+
 def load_environment(env_file: Path | None = None, backend_env_file: Path | None = None) -> None:
     load_dotenv(env_file or ANALYSIS_DIR / ".env", override=False)
     load_dotenv(backend_env_file or BACKEND_ENV_FILE, override=False)
+    # Backend zna tylko FREELLM_*: przepisujemy starsze nazwy, gdy nowych brak,
+    # żeby ekstrakcja stwierdzeń widziała ten sam klucz i model co werdykt.
+    for legacy, current in LEGACY_ALIASES.items():
+        value = os.environ.get(legacy, "").strip()
+        if value and not os.environ.get(current, "").strip():
+            os.environ[current] = value
 
 
 def _env(name: str, *fallbacks: str, default: str | None = None) -> str | None:
