@@ -35,6 +35,14 @@ export interface CheckOptions {
   scenario?: Scenario;
 }
 
+/** Po tym czasie sprawdzenie kończy się ekranem „Coś poszło nie tak”. */
+const CHECK_TIMEOUT_MS = 90_000;
+
+function withTimeout(signal: AbortSignal | undefined, ms: number): AbortSignal {
+  const timeout = AbortSignal.timeout(ms);
+  return signal ? AbortSignal.any([signal, timeout]) : timeout;
+}
+
 /** Sprawdza wiadomość albo link. */
 export function checkMessage(text: string, options: CheckOptions = {}): Promise<CheckResponse> {
   if (options.scenario || API_MODE === 'mock') {
@@ -43,7 +51,7 @@ export function checkMessage(text: string, options: CheckOptions = {}): Promise<
   return request<CheckResponse>('/check', {
     method: 'POST',
     body: JSON.stringify({ text }),
-    signal: options.signal,
+    signal: withTimeout(options.signal, CHECK_TIMEOUT_MS),
   });
 }
 
