@@ -1,49 +1,8 @@
-from fastapi import APIRouter, FastAPI, HTTPException, Request
-from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, FastAPI, HTTPException
 from pydantic import BaseModel
-from starlette.exceptions import HTTPException as StarletteHTTPException
-
-import llm
-from check import router as check_router
-
-MAX_BODY_BYTES = 64 * 1024
 
 app = FastAPI(title="Prawdowid API")
 api = APIRouter(prefix="/api")
-
-
-@app.middleware("http")
-async def limit_body_size(request: Request, call_next):
-    length = request.headers.get("content-length")
-    if length and length.isdigit() and int(length) > MAX_BODY_BYTES:
-        return _error(413, "payload_too_large", "Zgłoszenie jest za duże.")
-    return await call_next(request)
-
-
-@app.exception_handler(RequestValidationError)
-async def validation_error(_: Request, exc: RequestValidationError) -> JSONResponse:
-    details = [
-        {"field": ".".join(str(p) for p in e["loc"][1:]), "message": e["msg"]}
-        for e in exc.errors()
-    ]
-    return _error(422, "invalid_input", "Nie udało się przyjąć zgłoszenia.", details)
-
-
-_ERROR_CODES = {404: "not_found", 405: "method_not_allowed", 429: "rate_limited"}
-
-
-@app.exception_handler(StarletteHTTPException)
-async def http_error(_: Request, exc: StarletteHTTPException) -> JSONResponse:
-    response = _error(exc.status_code, _ERROR_CODES.get(exc.status_code, "http_error"), exc.detail)
-    for name, value in (exc.headers or {}).items():
-        response.headers[name] = value
-    return response
-
-
-def _error(status: int, code: str, message_pl: str, details: list | None = None) -> JSONResponse:
-    body = {"error": {"code": code, "message_pl": message_pl, "details": details or []}}
-    return JSONResponse(status_code=status, content=body)
 
 
 class ItemCreate(BaseModel):
@@ -60,11 +19,6 @@ items: list[Item] = [Item(id=1, name="First item"), Item(id=2, name="Second item
 @api.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
-
-
-@api.get("/llm/health")
-def llm_health() -> dict:
-    return llm.health()
 
 
 @api.get("/items")
@@ -101,5 +55,4 @@ def test(element: int) -> int:
     return element
 
 
-api.include_router(check_router)
 app.include_router(api)
