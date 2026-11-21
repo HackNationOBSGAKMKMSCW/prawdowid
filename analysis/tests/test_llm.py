@@ -13,7 +13,9 @@ from prawdowid_analysis.verdict.llm import (
     is_router_model,
 )
 
-SETTINGS = LLMSettings(base_url="http://llm.test/v1", api_key="freellmapi-test")
+SETTINGS = LLMSettings(
+    base_url="http://llm.test/v1", api_key="freellmapi-test", retry_backoff_s=0.0
+)
 
 
 def _completion(content='{"stance": "neutral"}', model="auto") -> dict:
@@ -121,6 +123,38 @@ def test_quota_exceeded_is_not_retried_and_keeps_retry_after():
         _chat(handler)
     assert exc.value.kind == "quota_exceeded" and len(calls) == 1
     assert exc.value.status_code == 429 and exc.value.retry_after_s == 3600.0
+
+
+def test_transient_503_is_retried_then_succeeds():
+    calls = []
+
+    def handler(request):
+        calls.append(1)
+        if len(calls) == 1:
+            return httpx.Response(503, json={})
+        return httpx.Response(200, json=_completion())
+
+    assert _chat(handler).text == '{"stance": "neutral"}'
+    assert len(calls) == 2
+
+
+def test_persistent_503_gives_up_after_retries():
+    calls = []
+
+    def handler(request):
+        calls.append(1)
+        return httpx.Response(503, json={})
+
+    with pytest.raises(LLMError) as exc:
+        _chat(handler)
+    assert exc.value.kind == "provider_error" and len(calls) == SETTINGS.retries + 1
+
+
+def test_list_models_strips_gemini_prefix():
+    def handler(request):
+        return httpx.Response(200, json={"object": "list", "data": [{"id": "models/g-flash"}]})
+
+    assert _client(handler).list_models() == ["g-flash"]
 
 
 @pytest.mark.parametrize(

@@ -24,7 +24,7 @@ z `kind`; potok zamienia go na status `error`, nigdy na werdykt. Funkcje wołaj�
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from time import perf_counter
+from time import perf_counter, sleep
 from typing import Protocol
 from urllib.parse import unquote
 
@@ -43,6 +43,10 @@ ROUTER_MODEL = "auto"
 DEFAULT_TIMEOUT_S = 60.0
 # Statusy, przy których wybrany przez router dostawca mógł odrzucić `response_format`.
 _JSON_MODE_REJECTED = (400, 422)
+# Chwilowe awarie dostawcy (np. 503 „overloaded” z Gemini), po których warto ponowić.
+# 429 celowo pominięte: przy wyczerpanym limicie ponawianie tylko wydłuża odpowiedź.
+_TRANSIENT_STATUSES = (500, 502, 503, 504)
+DEFAULT_RETRIES = 2
 
 
 class LLMError(Exception):
@@ -69,6 +73,8 @@ class LLMSettings:
     api_key: str
     model: str = ROUTER_MODEL
     timeout_s: float = DEFAULT_TIMEOUT_S
+    retries: int = DEFAULT_RETRIES  # ponowienia po chwilowym 5xx (bez routera z failoverem)
+    retry_backoff_s: float = 1.0  # odstęp: backoff * 2**próba
 
     @classmethod
     def from_env(cls) -> "LLMSettings":
@@ -90,6 +96,7 @@ class LLMSettings:
             api_key=api_key,
             model=env("LLM_MODEL") or ROUTER_MODEL,
             timeout_s=float(env("LLM_TIMEOUT_S") or DEFAULT_TIMEOUT_S),
+            retries=int(env("LLM_RETRIES") or DEFAULT_RETRIES),
         )
 
 
@@ -171,15 +178,24 @@ class FreeLLMClient:
     def from_env(cls) -> "FreeLLMClient":
         return cls(LLMSettings.from_env())
 
-    def _create(self, **kwargs):
+    def _create_once(self, **kwargs):
         try:
             return self._client.chat.completions.with_raw_response.create(**kwargs)
         except openai.APITimeoutError as exc:
             raise LLMError("Przekroczono czas oczekiwania na LLM", kind="timeout") from exc
         except openai.APIConnectionError as exc:
-            raise LLMError("Brak połączenia z FreeLLMAPI", kind="connection") from exc
+            raise LLMError("Brak połączenia z API LLM", kind="connection") from exc
         except openai.APIStatusError as exc:
             raise _status_error(exc) from exc
+
+    def _create(self, **kwargs):
+        for attempt in range(self.settings.retries + 1):
+            try:
+                return self._create_once(**kwargs)
+            except LLMError as exc:
+                if exc.status_code not in _TRANSIENT_STATUSES or attempt == self.settings.retries:
+                    raise
+                sleep(self.settings.retry_backoff_s * 2**attempt)
 
     def chat(
         self,
@@ -235,7 +251,8 @@ class FreeLLMClient:
 
     def list_models(self) -> list[str]:
         try:
-            return sorted(m.id for m in self._client.models.list())
+            # Gemini (endpoint zgodny z OpenAI) zwraca id z prefiksem `models/`.
+            return sorted(m.id.removeprefix("models/") for m in self._client.models.list())
         except openai.OpenAIError as exc:
             raise LLMError(
                 f"Nie udało się pobrać listy modeli: {type(exc).__name__}", kind="connection"
