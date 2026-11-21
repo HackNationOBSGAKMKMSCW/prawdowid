@@ -92,6 +92,30 @@ export const ReplyIcon = (props: IconProps) => (
   </svg>
 );
 
+export const ForwardIcon = (props: IconProps) => (
+  <svg {...base(props)}>
+    <path fill="currentColor" d="M14 9V5l7 7-7 7v-4.1c-5 0-8.5 1.6-11 5.1 1-5 4-10 11-11z" />
+  </svg>
+);
+
+export const CloseIcon = (props: IconProps) => (
+  <svg {...base(props)}>
+    <path
+      fill="currentColor"
+      d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
+    />
+  </svg>
+);
+
+export const ChainIcon = (props: IconProps) => (
+  <svg {...base(props)}>
+    <path
+      fill="currentColor"
+      d="M20 2H4a2 2 0 0 0-2 2v18l4-4h14a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2zm-7 12h-2v-2h2v2zm0-4h-2V6h2v4z"
+    />
+  </svg>
+);
+
 export const LockIcon = (props: IconProps) => (
   <svg {...base(props)}>
     <path

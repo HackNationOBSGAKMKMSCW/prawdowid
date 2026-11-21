@@ -5,7 +5,7 @@
 export const SIM_USER = { waId: '48500100200', name: 'Ty' } as const;
 
 export type IncomingPart =
-  | { type: 'text'; body: string }
+  | { type: 'text'; body: string; forwarded?: boolean }
   | { type: 'button_reply'; id: string; title: string }
   | { type: 'request_welcome' };
 
@@ -52,7 +52,12 @@ export function buildWebhook(part: IncomingPart, id: string, sentAt: number) {
   const base = { from: SIM_USER.waId, id, timestamp: String(Math.floor(sentAt / 1000)) };
   const message =
     part.type === 'text'
-      ? { ...base, type: 'text', text: { body: part.body } }
+      ? {
+          ...base,
+          type: 'text',
+          text: { body: part.body },
+          ...(part.forwarded ? { context: { forwarded: true } } : {}),
+        }
       : part.type === 'button_reply'
         ? {
             ...base,

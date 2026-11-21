@@ -75,6 +75,14 @@ NOT_CONFIGURED_TEXT = (
 ANALYSIS_FAILED_TEXT = (
     "😕 Nie udało mi się przeanalizować tej wiadomości. Spróbuj ponownie za chwilę."
 )
+FORWARDED_NOTE = (
+    "↪️ _To wiadomość przekazana dalej. Łańcuszki to częste źródło dezinformacji — "
+    "nie przesyłaj jej dalej, dopóki nie sprawdzisz źródła._"
+)
+FREQUENTLY_FORWARDED_NOTE = (
+    "⏩ _Ta wiadomość była przekazywana wiele razy. Im szybciej coś krąży, "
+    "tym ostrożniej warto do tego podejść._"
+)
 GENERIC_ERROR_TEXT = "😕 Coś poszło nie tak po mojej stronie. Spróbuj ponownie za chwilę."
 
 _GREETINGS = {
@@ -166,6 +174,10 @@ class SprawdzToBot:
             async with asyncio.timeout(self.check_timeout):
                 report = await self.pipeline.check(text)
             body = format_report(report)
+            if message.frequently_forwarded:
+                body = f"{body}\n\n{FREQUENTLY_FORWARDED_NOTE}"
+            elif message.forwarded:
+                body = f"{body}\n\n{FORWARDED_NOTE}"
         except TimeoutError:
             body = TIMEOUT_TEXT
         except AnalysisConfigurationError:

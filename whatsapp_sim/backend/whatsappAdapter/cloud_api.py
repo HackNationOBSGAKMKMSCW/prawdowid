@@ -44,6 +44,12 @@ class _ButtonContent(_Lenient):
     text: str = ""
 
 
+class _Context(_Lenient):
+    # Set by WhatsApp on messages the user forwarded from another chat.
+    forwarded: bool = False
+    frequently_forwarded: bool = False
+
+
 class WebhookMessage(_Lenient):
     sender: str = Field(alias="from", min_length=1, max_length=64)
     id: str = Field(min_length=1, max_length=256)
@@ -52,6 +58,7 @@ class WebhookMessage(_Lenient):
     text: _TextContent | None = None
     interactive: _InteractiveContent | None = None
     button: _ButtonContent | None = None
+    context: _Context | None = None
 
 
 class _ChangeValue(_Lenient):
@@ -91,6 +98,8 @@ class IncomingMessage:
     text: str = ""
     button_id: str | None = None
     raw_type: str = ""
+    forwarded: bool = False
+    frequently_forwarded: bool = False
 
 
 def parse_webhook(payload: dict[str, Any]) -> list[IncomingMessage]:
@@ -111,7 +120,14 @@ def parse_webhook(payload: dict[str, Any]) -> list[IncomingMessage]:
 
 
 def _to_incoming(message: WebhookMessage) -> IncomingMessage:
-    common = {"sender": message.sender, "message_id": message.id, "raw_type": message.type}
+    context = message.context or _Context()
+    common = {
+        "sender": message.sender,
+        "message_id": message.id,
+        "raw_type": message.type,
+        "forwarded": context.forwarded or context.frequently_forwarded,
+        "frequently_forwarded": context.frequently_forwarded,
+    }
     if message.type == "text" and message.text is not None:
         return IncomingMessage(kind=IncomingKind.TEXT, text=message.text.body, **common)
     if message.type == "interactive" and message.interactive is not None:

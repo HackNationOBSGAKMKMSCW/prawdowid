@@ -103,3 +103,29 @@ def test_split_text_keeps_short_text_and_splits_long_text_at_paragraphs() -> Non
     hard = split_text("x" * 25, limit=10)
     assert hard == ["x" * 10, "x" * 10, "x" * 5]
     assert all(len(chunk) <= 10 for chunk in hard)
+
+
+def test_parse_webhook_reads_forwarded_context() -> None:
+    payload = webhook(
+        {
+            "from": "48500",
+            "id": "wamid.1",
+            "type": "text",
+            "text": {"body": "Łańcuszek"},
+            "context": {"forwarded": True},
+        },
+        {
+            "from": "48500",
+            "id": "wamid.2",
+            "type": "text",
+            "text": {"body": "Łańcuszek"},
+            "context": {"frequently_forwarded": True},
+        },
+        {"from": "48500", "id": "wamid.3", "type": "text", "text": {"body": "Własny tekst"}},
+    )
+
+    first, second, third = parse_webhook(payload)
+
+    assert first.forwarded and not first.frequently_forwarded
+    assert second.forwarded and second.frequently_forwarded
+    assert not third.forwarded

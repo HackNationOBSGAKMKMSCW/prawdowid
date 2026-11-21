@@ -420,6 +420,7 @@
 /* Composer */
 
 .wa-composer {
+  position: relative;
   display: flex;
   gap: 6px;
   align-items: flex-end;
@@ -480,6 +481,112 @@
 
 .wa-send:disabled {
   cursor: default;
+}
+
+/* Forwarded messages and attach menu */
+
+.wa-forwarded {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  margin-bottom: 2px;
+  font-size: 13px;
+  font-style: italic;
+  color: var(--wa-meta);
+}
+
+.wa-input-button {
+  padding: 0;
+  cursor: pointer;
+  background: none;
+  border: 0;
+  border-radius: 50%;
+}
+
+.wa-input-button[aria-expanded='true'] {
+  color: var(--wa-accent);
+}
+
+.wa-attach-menu {
+  position: absolute;
+  right: 60px;
+  bottom: calc(100% + 6px);
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  min-width: 250px;
+  padding: 6px;
+  background: var(--wa-in-bg);
+  border-radius: 14px;
+  box-shadow: 0 8px 28px rgb(11 20 26 / 22%);
+}
+
+.wa-attach-menu button {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 14.5px;
+  color: var(--wa-text);
+  text-align: left;
+  cursor: pointer;
+  background: none;
+  border: 0;
+  border-radius: 10px;
+}
+
+.wa-attach-menu button:hover {
+  background: rgb(127 127 127 / 10%);
+}
+
+.wa-attach-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  color: #ffffff;
+  border-radius: 50%;
+}
+
+.wa-attach-icon--chain {
+  background: #f1a33c;
+}
+
+.wa-attach-icon--forward {
+  background: #7f66ff;
+}
+
+.wa-forward-banner {
+  position: absolute;
+  right: 8px;
+  bottom: 100%;
+  left: 8px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 6px 8px 12px;
+  font-size: 13px;
+  font-style: italic;
+  color: var(--wa-meta);
+  background: var(--wa-composer-bg);
+  border-left: 4px solid #7f66ff;
+  border-radius: 10px 10px 0 0;
+}
+
+.wa-forward-banner span {
+  flex: 1;
+}
+
+.wa-forward-banner button {
+  display: inline-grid;
+  place-items: center;
+  padding: 2px;
+  color: var(--wa-icon);
+  cursor: pointer;
+  background: none;
+  border: 0;
+  border-radius: 50%;
 }
 
 /* Small screens: the chat fills the screen like the real app. */

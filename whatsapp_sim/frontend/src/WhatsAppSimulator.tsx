@@ -11,10 +11,13 @@ import {
   AttachIcon,
   BackIcon,
   CameraIcon,
+  ChainIcon,
+  CloseIcon,
   ClockIcon,
   DoubleTickIcon,
   EmojiIcon,
   FailedIcon,
+  ForwardIcon,
   LockIcon,
   MenuIcon,
   MicIcon,
@@ -41,12 +44,24 @@ import './whatsapp.css';
 type Status = 'pending' | 'sent' | 'delivered' | 'read' | 'failed';
 
 type ChatItem =
-  | { kind: 'user'; id: string; text: string; time: number; status: Status }
+  | {
+      kind: 'user';
+      id: string;
+      text: string;
+      time: number;
+      status: Status;
+      forwarded?: boolean;
+    }
   | { kind: 'bot'; id: string; text: string; time: number; buttons?: ReplyButton[] }
   | { kind: 'notice'; id: string; text: string; time: number };
 
 const STORAGE_KEY = 'sprawdzto-whatsapp-chat-v1';
 const START_COMMAND = 'cd whatsapp_sim/backend && ../../.venv/bin/python -m whatsappAdapter --demo';
+
+// A typical chain message, used by the attach menu to demo forwarded content.
+const SAMPLE_CHAIN =
+  'UWAGA!!! Od poniedziałku maszty 5G w całej Polsce będą roznosić koronawirusa. ' +
+  'Lekarze to ukrywają! Przekaż dalej wszystkim znajomym, zanim to usuną!!!';
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
@@ -127,6 +142,8 @@ function StatusBar() {
 export default function WhatsAppSimulator() {
   const [items, setItems] = useState<ChatItem[]>(loadItems);
   const [draft, setDraft] = useState('');
+  const [forwardDraft, setForwardDraft] = useState(false);
+  const [attachOpen, setAttachOpen] = useState(false);
   const [typing, setTyping] = useState(0);
   const [health, setHealth] = useState<Health | 'offline' | null>(null);
   const initialItemCount = useRef(items.length);
@@ -169,7 +186,16 @@ export default function WhatsAppSimulator() {
       const sentAt = Date.now();
       const payload = buildWebhook(part, id, sentAt);
       const fromUser = display !== null;
-      if (fromUser) append({ kind: 'user', id, text: display, time: sentAt, status: 'pending' });
+      if (fromUser) {
+        append({
+          kind: 'user',
+          id,
+          text: display,
+          time: sentAt,
+          status: 'pending',
+          forwarded: part.type === 'text' && part.forwarded,
+        });
+      }
 
       const outcome = postWebhook(payload).then(
         (response) => ({ response }) as const,
@@ -229,12 +255,15 @@ export default function WhatsAppSimulator() {
 
   const sendDraft = () => {
     const body = draft.trim();
-    if (body) void deliver({ type: 'text', body }, body);
+    if (body) void deliver({ type: 'text', body, forwarded: forwardDraft }, body);
+    setForwardDraft(false);
+    setAttachOpen(false);
     setDraft('');
     inputRef.current?.focus();
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key === 'Escape') setAttachOpen(false);
     if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
       event.preventDefault();
       sendDraft();
@@ -299,6 +328,12 @@ export default function WhatsAppSimulator() {
                     >
                       <div className="wa-bubble">
                         <div className="wa-bubble-body">
+                          {item.kind === 'user' && item.forwarded && (
+                            <span className="wa-forwarded">
+                              <ForwardIcon width={14} height={14} />
+                              Przekazano dalej
+                            </span>
+                          )}
                           <WhatsAppText text={item.text} />
                           <span className="wa-meta-spacer" aria-hidden="true" />
                           <span className="wa-meta">
@@ -345,6 +380,52 @@ export default function WhatsAppSimulator() {
           </div>
 
           <div className="wa-composer">
+            {attachOpen && (
+              <div className="wa-attach-menu" role="menu">
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setDraft(SAMPLE_CHAIN);
+                    setForwardDraft(true);
+                    setAttachOpen(false);
+                    inputRef.current?.focus();
+                  }}
+                >
+                  <span className="wa-attach-icon wa-attach-icon--chain">
+                    <ChainIcon width={20} height={20} />
+                  </span>
+                  Przykładowy łańcuszek
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setForwardDraft((value) => !value);
+                    setAttachOpen(false);
+                    inputRef.current?.focus();
+                  }}
+                >
+                  <span className="wa-attach-icon wa-attach-icon--forward">
+                    <ForwardIcon width={20} height={20} />
+                  </span>
+                  {forwardDraft ? 'Wyślij jako zwykłą wiadomość' : 'Wyślij jako przekazaną dalej'}
+                </button>
+              </div>
+            )}
+            {forwardDraft && (
+              <div className="wa-forward-banner">
+                <ForwardIcon width={16} height={16} />
+                <span>Wiadomość zostanie wysłana jako przekazana dalej</span>
+                <button
+                  type="button"
+                  aria-label="Wyślij jako zwykłą wiadomość"
+                  onClick={() => setForwardDraft(false)}
+                >
+                  <CloseIcon width={18} height={18} />
+                </button>
+              </div>
+            )}
             <div className="wa-input">
               <span className="wa-input-icon" title="Niedostępne w symulatorze">
                 <EmojiIcon />
@@ -359,9 +440,15 @@ export default function WhatsAppSimulator() {
                 onChange={(event) => setDraft(event.target.value)}
                 onKeyDown={onKeyDown}
               />
-              <span className="wa-input-icon" title="Niedostępne w symulatorze">
+              <button
+                type="button"
+                className="wa-input-icon wa-input-button"
+                aria-label="Załącz"
+                aria-expanded={attachOpen}
+                onClick={() => setAttachOpen((open) => !open)}
+              >
                 <AttachIcon />
-              </span>
+              </button>
               {!draft.trim() && (
                 <span className="wa-input-icon" title="Niedostępne w symulatorze">
                   <CameraIcon />
