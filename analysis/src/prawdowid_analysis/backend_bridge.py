@@ -24,7 +24,7 @@ from pathlib import Path
 from types import ModuleType
 from typing import Any, Literal
 
-from .config import ANALYSIS_DIR
+from .config import ANALYSIS_DIR, backend_model, load_environment
 
 BACKEND_DIR = ANALYSIS_DIR.parent / "backend"
 FactCheckMode = Literal["stwierdzenia", "pelny-tekst", "oba", "brak"]
@@ -40,9 +40,13 @@ class BackendOutput:
     analysis: Any
     reading_results: list[Any] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    extraction_model: str | None = None
 
 
 def load_backend(backend_dir: Path = BACKEND_DIR) -> tuple[ModuleType, ModuleType]:
+    # Najpierw konfiguracja analysis, potem import backendu: backend przy imporcie
+    # czyta .env bez nadpisywania, więc obie części użyją tych samych wartości.
+    load_environment()
     if str(backend_dir) not in sys.path:
         sys.path.insert(0, str(backend_dir))
     try:
@@ -76,7 +80,7 @@ async def run_backend(
                 f"{type(exc).__name__}: {exc}"
             ) from exc
 
-        output = BackendOutput(analysis=analysis)
+        output = BackendOutput(analysis=analysis, extraction_model=backend_model())
         if mode in ("stwierdzenia", "oba"):
             try:
                 output.reading_results.extend(await api_reading.run(analysis))

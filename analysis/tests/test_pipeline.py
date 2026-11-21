@@ -250,3 +250,16 @@ def test_suspicious_context_is_skipped_with_warning():
     assert "<context>\n" not in client.calls[0][1]["content"]
     assert result.claims[0].context is None
     assert any("kontekst z oryginalnego tekstu pominięto" in w for w in result.warnings)
+
+
+def test_result_lists_models_per_stage():
+    client = FakeChatClient(corpus_answer())
+    result = asyncio.run(
+        run(
+            {"statements": [EU_CLAIM], "security_warnings": []},
+            client=client,
+            settings=SETTINGS,
+            models={"ekstrakcja_stwierdzen": "model-backend"},
+        )
+    )
+    assert result.models == {"ekstrakcja_stwierdzen": "model-backend", "werdykt": "atrapa"}

@@ -49,7 +49,14 @@ def load_user_sources(path: Path) -> list[ReferenceSource]:
 
 async def _run_with_backend(text: str, mode: FactCheckMode, **kwargs: Any) -> TextVerdict:
     output = await run_backend(text, mode)
-    return await run(output.analysis, output.reading_results, warnings=output.warnings, **kwargs)
+    models = {"ekstrakcja_stwierdzen": output.extraction_model} if output.extraction_model else {}
+    return await run(
+        output.analysis,
+        output.reading_results,
+        warnings=output.warnings,
+        models=models,
+        **kwargs,
+    )
 
 
 def _write_json(payload: str) -> None:

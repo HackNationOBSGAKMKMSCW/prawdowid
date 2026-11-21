@@ -174,4 +174,8 @@ class TextVerdict(BaseModel):
         default=[], description="Źródła odrzucone przez ochronę przed wstrzyknięciem instrukcji"
     )
     warnings: list[str] = []
+    models: dict[str, str] = Field(
+        default={},
+        description="Skonfigurowane modele per etap, np. ekstrakcja_stwierdzen i werdykt",
+    )
     prompt_version: str

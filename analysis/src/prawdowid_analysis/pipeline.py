@@ -99,6 +99,7 @@ async def verify_claims(
     warnings: Sequence[str] = (),
     keywords: Sequence[str] = (),
     source_text: str = "",
+    models: Mapping[str, str] | None = None,
 ) -> TextVerdict:
     started = time.perf_counter()
     settings = settings or Settings.from_environment()
@@ -186,6 +187,7 @@ async def verify_claims(
         sources=list(all_sources.values()),
         quarantined_sources=list(quarantined.values()),
         warnings=[*warnings, *sorted(claim_warnings), *quarantine_warnings],
+        models={**(models or {}), "werdykt": settings.model},
         prompt_version=prompt_version(),
     )
 
