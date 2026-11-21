@@ -81,12 +81,20 @@ async def assess_claim(
     client: ChatClient,
     *,
     security_warnings: Sequence[str] = (),
+    context: str | None = None,
 ) -> ClaimVerdict:
-    """Werdykt dla twierdzenia; `security_warnings` pochodzą z `security.screen_claim`."""
-    result = await _assess(claim_id, claim, sources, client, bool(security_warnings))
+    """Werdykt dla twierdzenia.
+
+    `security_warnings` pochodzą z `security.screen_claim`; `context` to fragment
+    oryginalnego tekstu do interpretacji twierdzenia (reguła R17, nie dowód).
+    """
+    result = await _assess(claim_id, claim, sources, client, bool(security_warnings), context)
+    update: dict = {}
     if security_warnings:
-        result = result.model_copy(update={"security_warnings": list(security_warnings)})
-    return result
+        update["security_warnings"] = list(security_warnings)
+    if context and sources:  # bez źródeł model nie jest pytany, więc kontekstu nie widział
+        update["context"] = context
+    return result.model_copy(update=update) if update else result
 
 
 async def _assess(
@@ -95,6 +103,7 @@ async def _assess(
     sources: Sequence[ReferenceSource],
     client: ChatClient,
     suspicious_claim: bool,
+    context: str | None,
 ) -> ClaimVerdict:
     if not sources:
         return no_sources_verdict(claim_id, claim)
@@ -103,7 +112,9 @@ async def _assess(
         {"role": "system", "content": system_prompt()},
         {
             "role": "user",
-            "content": build_user_message(claim, sources, suspicious_claim=suspicious_claim),
+            "content": build_user_message(
+                claim, sources, suspicious_claim=suspicious_claim, context=context
+            ),
         },
     ]
     problem = ""

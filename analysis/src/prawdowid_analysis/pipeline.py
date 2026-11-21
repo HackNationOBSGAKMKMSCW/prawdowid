@@ -27,8 +27,8 @@ from .config import Settings
 from .llm import ChatClient, OpenAIChatClient
 from .prompts import prompt_version
 from .schemas import ClaimVerdict, QuarantinedSource, ReferenceSource, TextVerdict
-from .security import screen_claim, screen_sources
-from .sources import CORPUS_LANGUAGE, Retriever, expand_query, split_source
+from .security import detect_injection, screen_claim, screen_sources
+from .sources import CORPUS_LANGUAGE, Retriever, context_excerpt, expand_query, split_source
 from .verdict import assess_claim
 
 TOP_K_CORPUS = 5
@@ -98,6 +98,7 @@ async def verify_claims(
     settings: Settings | None = None,
     warnings: Sequence[str] = (),
     keywords: Sequence[str] = (),
+    source_text: str = "",
 ) -> TextVerdict:
     started = time.perf_counter()
     settings = settings or Settings.from_environment()
@@ -127,6 +128,13 @@ async def verify_claims(
     async def one(index: int, statement: str) -> ClaimVerdict:
         screened = screen_claim(statement)
         claim_warnings.extend(f"T{index}: {w}" for w in screened.warnings)
+        context = context_excerpt(screened.text, source_text) if source_text else None
+        if context and detect_injection(context):
+            claim_warnings.append(
+                f"T{index}: kontekst z oryginalnego tekstu pominięto – zawiera tekst "
+                "przypominający polecenia dla modelu."
+            )
+            context = None
         claim_sources = keep(
             sources_for_claim(
                 expand_query(screened.text, keywords),
@@ -148,6 +156,7 @@ async def verify_claims(
                 claim_sources,
                 chat,
                 security_warnings=screened.warnings,
+                context=context,
             )
             _log(
                 f"Twierdzenie {index}/{len(statements)}: {result.verdict} "
@@ -237,6 +246,7 @@ async def run(
         extra_sources=extra_sources,
         warnings=[*warnings, *claims.warnings, *reading_warnings(results), *language_warnings],
         keywords=claims.keywords,
+        source_text=claims.source_text,
         **kwargs,
     )
 
@@ -245,4 +255,6 @@ async def run_text(
     text: str, *, extra_sources: Iterable[ReferenceSource] = (), **kwargs: Any
 ) -> TextVerdict:
     """Werdykt dla zwykłego tekstu dzielonego na zdania."""
-    return await verify_claims(split_sentences(text), extra_sources=extra_sources, **kwargs)
+    return await verify_claims(
+        split_sentences(text), extra_sources=extra_sources, source_text=text, **kwargs
+    )

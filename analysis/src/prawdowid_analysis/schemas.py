@@ -145,6 +145,10 @@ class ClaimVerdict(BaseModel):
     security_warnings: list[str] = Field(
         default=[], description="Wykryte próby manipulacji w treści twierdzenia"
     )
+    context: str | None = Field(
+        default=None,
+        description="Fragment oryginalnego tekstu pokazany modelowi do interpretacji (nie dowód)",
+    )
     model: str | None = None
 
 

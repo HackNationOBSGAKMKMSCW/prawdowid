@@ -72,3 +72,17 @@ def test_keyword_expansion_finds_passage_missed_by_stemming():
     claim = "Rysów nikt nie zdobył."
     assert retriever.search(claim, min_score=1e-9) == []
     assert retriever.search(expand_query(claim, ["Rysy"]), min_score=1e-9)
+
+
+def test_context_excerpt_short_text_long_text_and_no_value():
+    from prawdowid_analysis.sources import context_excerpt
+
+    assert context_excerpt("Ala ma kota.", "Ala ma kota.") is None
+    short = "Prezydent Nowak przemawiał w Sejmie. On podpisał ustawę."
+    assert context_excerpt("On podpisał ustawę.", short) == short
+    filler = " ".join(f"Zdanie wypełniające numer {i}." for i in range(80))
+    long_text = f"{filler} Prezydent Nowak przemawiał. On podpisał ustawę o lasach. {filler}"
+    excerpt = context_excerpt("Podpisał ustawę o lasach.", long_text, max_chars=300)
+    assert "Prezydent Nowak przemawiał." in excerpt and "ustawę o lasach" in excerpt
+    assert len(excerpt) <= 300
+    assert context_excerpt("Kwantowa chromodynamika.", long_text, max_chars=300) is None

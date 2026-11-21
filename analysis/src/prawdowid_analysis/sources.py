@@ -87,6 +87,33 @@ def _same_stem(a: str, b: str) -> bool:
     return common >= 3 and common >= min(len(a), len(b), KEYWORD_MATCH_CHARS + 1) - 1
 
 
+CONTEXT_CHARS = 1_000
+
+
+def context_excerpt(claim: str, text: str, max_chars: int = CONTEXT_CHARS) -> str | None:
+    """Fragment oryginalnego tekstu wokół miejsca, z którego pochodzi twierdzenie.
+
+    Krótki tekst wraca w całości; dłuższy – zdanie najlepiej pasujące do twierdzenia
+    z sąsiednimi zdaniami. None, gdy kontekst nic nie wnosi (tekst = twierdzenie)
+    albo żadne zdanie nie pasuje.
+    """
+    normalized = " ".join((text or "").split())
+    if not normalized or tokenize(normalized) == tokenize(claim):
+        return None
+    if len(normalized) <= max_chars:
+        return normalized
+    sentences = re.split(r"(?<=[.!?])\s+", normalized)
+    claim_terms = set(tokenize(claim))
+    scores = [len(claim_terms & set(tokenize(s))) for s in sentences]
+    best = max(range(len(sentences)), key=scores.__getitem__)
+    if scores[best] == 0:
+        return None
+    window = " ".join(sentences[max(best - 1, 0) : best + 2])
+    if len(window) > max_chars:
+        window = sentences[best][:max_chars]
+    return window
+
+
 def chunk_text(text: str, max_chars: int = CHUNK_CHARS) -> list[str]:
     """Dzieli tekst po akapitach, sklejając krótkie akapity do `max_chars`."""
     paragraphs = [" ".join(p.split()) for p in re.split(r"\n\s*\n", text)]
