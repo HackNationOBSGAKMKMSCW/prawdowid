@@ -59,14 +59,30 @@ function isDemoId(id?: string): boolean {
   return !id || id.startsWith('demo-') || API_MODE === 'mock';
 }
 
+export type ReportReason = 'wrong_verdict' | 'bad_source' | 'misunderstood' | 'other';
+
+export interface ReportPayload {
+  reason: ReportReason;
+  comment?: string;
+}
+
 /** Zgłasza błędny wynik do przejrzenia przez zespół. */
-export async function reportCheck(id?: string): Promise<void> {
-  if (isDemoId(id)) return;
-  await request<void>(`/check/${encodeURIComponent(id!)}/report`, { method: 'POST', body: '{}' });
+export async function reportCheck(id: string | undefined, report: ReportPayload): Promise<void> {
+  if (isDemoId(id)) {
+    await new Promise((resolve) => window.setTimeout(resolve, 600));
+    return;
+  }
+  await request<void>(`/check/${encodeURIComponent(id!)}/report`, {
+    method: 'POST',
+    body: JSON.stringify(report),
+  });
 }
 
 /** Usuwa zapisaną wiadomość użytkownika. */
 export async function deleteCheck(id?: string): Promise<void> {
-  if (isDemoId(id)) return;
+  if (isDemoId(id)) {
+    await new Promise((resolve) => window.setTimeout(resolve, 600));
+    return;
+  }
   await request<void>(`/check/${encodeURIComponent(id!)}`, { method: 'DELETE' });
 }

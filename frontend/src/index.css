@@ -876,7 +876,7 @@ a:focus-visible {
 
 /* ---------- Wysoki kontrast ---------- */
 
-[data-hc='true'] *:not(.btn-primary, .dot, .pill-toggle[aria-pressed='true']) {
+[data-hc='true'] *:not(.btn-primary, .btn-danger, .dot, .pill-toggle[aria-pressed='true']) {
   background-color: #fff !important;
   color: #000 !important;
   border-color: #000 !important;
@@ -925,4 +925,231 @@ a:focus-visible {
     animation-iteration-count: 1 !important;
     transition: none !important;
   }
+}
+
+/* ---------- Okna modalne ---------- */
+
+.modal {
+  width: min(100% - 32px, 520px);
+  max-height: calc(100dvh - 32px);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-card);
+  background: var(--c-surface);
+  color: var(--c-text);
+  box-shadow: 0 24px 64px rgb(20 26 36 / 28%);
+  overflow: auto;
+}
+
+.modal::backdrop {
+  background: rgb(20 26 36 / 55%);
+}
+
+.modal[open] {
+  animation: pw-modal-in 0.18s ease-out;
+}
+
+@keyframes pw-modal-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+}
+
+.modal__box {
+  position: relative;
+  padding: 28px 24px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.modal__close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 48px;
+  height: 48px;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--c-text-subtle);
+  font: 700 20px var(--font);
+  cursor: pointer;
+}
+
+.modal__close:hover {
+  background: var(--c-page);
+  color: var(--c-text);
+}
+
+.modal__icon {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font: 800 32px var(--font);
+}
+
+.modal__icon[data-tone='info'] {
+  background: #e9eef6;
+  color: #2f4366;
+}
+
+.modal__icon[data-tone='warning'] {
+  background: #fdf2de;
+  color: #8a4b00;
+}
+
+.modal__icon[data-tone='danger'] {
+  background: #fcebee;
+  color: #a3122a;
+}
+
+.modal__icon[data-tone='success'] {
+  background: #e6f4ea;
+  color: #17603a;
+}
+
+.modal__title {
+  margin: 0;
+  padding-right: 40px;
+  font: 800 28px/1.15 var(--font);
+  text-wrap: balance;
+}
+
+.modal__text {
+  margin: 0;
+  font-size: 20px;
+  line-height: 1.5;
+  color: var(--c-text-body);
+  text-wrap: pretty;
+}
+
+.modal__form {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.modal__field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.modal__label {
+  font: 700 19px var(--font);
+}
+
+.modal__optional {
+  font-weight: 400;
+  color: var(--c-text-subtle);
+}
+
+.modal__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.textarea--sm {
+  font-size: 19px;
+  padding: 14px 16px;
+}
+
+.choice-group {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.choice-group__legend {
+  padding: 0;
+  margin-bottom: 8px;
+  font: 700 19px var(--font);
+}
+
+.choice {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 56px;
+  padding: 10px 16px;
+  border: 2px solid var(--c-line);
+  border-radius: 14px;
+  font-size: 19px;
+  line-height: 1.35;
+  cursor: pointer;
+}
+
+.choice:hover {
+  border-color: var(--c-line-strong);
+}
+
+.choice:has(input:checked) {
+  border-color: var(--c-navy);
+  background: #eef3fa;
+}
+
+.choice:has(input:focus-visible) {
+  outline: 3px solid var(--c-navy);
+  outline-offset: 2px;
+}
+
+.choice input {
+  width: 22px;
+  height: 22px;
+  margin: 0;
+  flex: none;
+  accent-color: var(--c-navy);
+}
+
+.choice-group[aria-invalid='true'] .choice {
+  border-color: var(--c-error);
+}
+
+.field-error--flat {
+  margin: 0;
+}
+
+.btn-danger {
+  min-height: 62px;
+  padding: 10px 20px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: var(--c-error);
+  color: #fff;
+  font: 800 21px var(--font);
+  cursor: pointer;
+}
+
+.btn-danger:hover {
+  background: #8a0f23;
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btn-link:disabled {
+  opacity: 1;
+  color: var(--c-text-subtle);
+  text-decoration: none;
+}
+
+[data-hc='true'] .btn-danger {
+  background: #000 !important;
+  color: #fff !important;
+}
+
+[data-hc='true'] .choice:has(input:checked) {
+  border-width: 4px;
 }

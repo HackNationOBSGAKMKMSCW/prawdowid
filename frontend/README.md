@@ -89,11 +89,17 @@ Odpowiedź – jeden z trzech wariantów:
 
 ### `POST /api/check/{id}/report` → `204`
 
-Przycisk „Zgłoś błąd”.
+Okno „Zgłoś błąd”:
+
+```json
+{ "reason": "bad_source", "comment": "Link do źródła nie działa." }
+```
+
+`reason`: `wrong_verdict` | `bad_source` | `misunderstood` | `other`; `comment` jest opcjonalny (do 1000 znaków).
 
 ### `DELETE /api/check/{id}` → `204`
 
-Przycisk „Usuń moje dane”.
+Przycisk „Usuń moje dane” – najpierw okno „Czy na pewno?”, potem potwierdzenie usunięcia.
 
 ## Dostępność
 
