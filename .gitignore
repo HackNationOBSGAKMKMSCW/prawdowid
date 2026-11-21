@@ -221,3 +221,9 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Claude Code
+# Nie ma głównego CLAUDE.md. Każdy obszar trzyma własny, np. analysis/CLAUDE.md.
+/CLAUDE.md
+CLAUDE.local.md
+**/.claude/settings.local.json

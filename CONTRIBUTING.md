@@ -20,6 +20,21 @@ Powiązane dokumenty:
 Granica między rolami to funkcja `retrieve(query) -> list[Passage]` opisana w `CONTRACTS.md`.
 Dopóki prawdziwy retriever nie działa, B pracuje na atrapie zwracającej dane w tym formacie.
 
+### Przestrzenie robocze
+
+Każdy obszar ma własny folder z własną konfiguracją, żeby zmiany jednych osób nie nadpisywały plików innych.
+
+| Folder | Obszar | Własna konfiguracja |
+| --- | --- | --- |
+| `analysis/` | analiza danych: logika werdyktu, ewaluacja, analiza korpusu | `pyproject.toml`, `.venv`, `.env`, `CLAUDE.md` |
+| `backend/` | API | `requirements.txt`, `.venv` |
+| `frontend/` | interfejs WWW | `package.json` |
+| `docs/` | dokumentacja wspólna | brak |
+
+- **Nie ma głównego `CLAUDE.md`.** Jest ignorowany przez Git. Instrukcje dla Claude Code trzymamy w folderze obszaru (np. `analysis/CLAUDE.md`) i uruchamiamy Claude Code z tego folderu.
+- Prywatne notatki dla Claude zapisujemy w `CLAUDE.local.md`, a prywatne ustawienia w `.claude/settings.local.json`. Oba pliki są ignorowane.
+- Konfiguracja wspólna dla całego repo (`ruff.toml`, `.prettierrc.json`, `.editorconfig`, główny `.gitignore`) zmienia się tylko przez PR. Foldery obszarów dziedziczą ją, a nie kopiują (np. `analysis/pyproject.toml` rozszerza `ruff.toml`).
+
 ## 2. Git
 
 - **`main` zawsze działa.** To wersja, którą może uruchomić jury. Nie pushujemy bezpośrednio na `main`, wszystko trafia przez pull request.

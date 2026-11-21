@@ -1,0 +1,4 @@
+# Dane lokalne i wyniki: nie trafiają do repozytorium
+data/raw/
+data/cache/
+outputs/

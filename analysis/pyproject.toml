@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "prawdowid-analysis"
+version = "0.1.0"
+description = "Prawdowid: analiza danych, logika werdyktu i ewaluacja"
+requires-python = ">=3.11"
+dependencies = [
+  "pydantic>=2",
+  "pandas",
+  "scikit-learn",
+  "rapidfuzz",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest",
+  "ruff",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+extend = "../ruff.toml"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
