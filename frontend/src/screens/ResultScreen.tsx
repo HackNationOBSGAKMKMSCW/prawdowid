@@ -2,7 +2,6 @@ import { useCallback, useMemo, useState } from 'react';
 import type { CheckResult } from '../api/types.ts';
 import AnalysisCard from '../components/AnalysisCard.tsx';
 import ClaimCard from '../components/ClaimCard.tsx';
-import DeleteDialog from '../components/DeleteDialog.tsx';
 import ReportDialog from '../components/ReportDialog.tsx';
 import { useAnnounce } from '../lib/announce.ts';
 import { useChecker } from '../lib/checker.ts';
@@ -17,8 +16,7 @@ export default function ResultScreen({ result }: { result: CheckResult }) {
 
   const [copied, setCopied] = useState(false);
   const [reported, setReported] = useState(false);
-  const [deleted, setDeleted] = useState(false);
-  const [dialog, setDialog] = useState<'report' | 'delete' | null>(null);
+  const [dialog, setDialog] = useState<'report' | null>(null);
 
   const onSpeechUnsupported = useCallback(
     () => announce('Twoja przeglądarka nie umie czytać na głos.'),
@@ -129,49 +127,6 @@ export default function ResultScreen({ result }: { result: CheckResult }) {
             </span>
           </span>
         </button>
-        <button
-          type="button"
-          className="minor-action"
-          data-tone="delete"
-          data-done={deleted || undefined}
-          onClick={() => !deleted && setDialog('delete')}
-          aria-disabled={deleted}
-          aria-haspopup="dialog"
-        >
-          <span className="minor-action__icon" aria-hidden="true">
-            {deleted ? (
-              <svg viewBox="0 0 24 24" width="22" height="22" focusable="false">
-                <path
-                  d="m5 12.5 4.5 4.5L19 7.5"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2.4"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            ) : (
-              <svg viewBox="0 0 24 24" width="22" height="22" focusable="false">
-                <path
-                  d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2.2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            )}
-          </span>
-          <span className="minor-action__text">
-            <span className="minor-action__label">
-              {deleted ? 'Dane usunięte' : 'Usuń moje dane'}
-            </span>
-            <span className="minor-action__hint">
-              {deleted ? 'Nie przechowujemy już wiadomości' : 'Wiadomość i ten wynik'}
-            </span>
-          </span>
-        </button>
       </div>
 
       <ReportDialog
@@ -181,20 +136,6 @@ export default function ResultScreen({ result }: { result: CheckResult }) {
         onSent={() => {
           setReported(true);
           announce('Dziękujemy za zgłoszenie.');
-        }}
-      />
-      <DeleteDialog
-        open={dialog === 'delete'}
-        checkId={result.id}
-        onClose={() => setDialog(null)}
-        onDeleted={() => {
-          setDeleted(true);
-          announce('Usunęliśmy Twoją wiadomość.');
-        }}
-        onCheckAnother={() => {
-          setDialog(null);
-          speech.stop();
-          goStart(true);
         }}
       />
     </div>

@@ -2,8 +2,7 @@
  * Kontrakt API między frontendem a backendem Prawdowida.
  *
  *   POST   /api/check              { text }  → CheckResponse
- *   POST   /api/check/{id}/report  { }       → 204
- *   DELETE /api/check/{id}                   → 204
+ *   POST   /api/check/{id}/report  { reason, comment? } → 204
  */
 
 export type Verdict = 'confirmed' | 'false' | 'misleading' | 'insufficient' | 'unverifiable';

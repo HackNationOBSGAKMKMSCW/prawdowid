@@ -17,6 +17,7 @@ dołączona lokalnie (`@fontsource`), bez Google Fonts.
 ```bash
 npm install
 npm run dev        # http://localhost:5173
+npm run dev:host   # to samo, ale dostępne też z telefonu w tej samej sieci Wi-Fi
 npm run build      # kontrola typów + build produkcyjny do dist/
 npm run lint
 ```
@@ -36,14 +37,14 @@ W dev Vite przekierowuje `/api` na `http://127.0.0.1:8000`.
 
 ## Ekrany
 
-| Ekran | Kiedy |
-| --- | --- |
-| Start | formularz, „Jak to działa”, legenda werdyktów, grupy źródeł |
-| Sprawdzamy… | w trakcie zapytania |
-| Wynik | karty zdań (werdykt, wyjaśnienie, źródła) i karty analizy (daty, manipulacja) |
-| Napisz trochę więcej | backend zwrócił `clarify` |
-| Tego nie sprawdzamy | backend zwrócił `out_of_scope` |
-| Coś poszło nie tak | błąd sieci, błąd HTTP albo limit czasu (90 s) |
+| Ekran                | Kiedy                                                                         |
+| -------------------- | ----------------------------------------------------------------------------- |
+| Start                | formularz, „Jak to działa”, legenda werdyktów, grupy źródeł                   |
+| Sprawdzamy…          | w trakcie zapytania                                                           |
+| Wynik                | karty zdań (werdykt, wyjaśnienie, źródła) i karty analizy (daty, manipulacja) |
+| Napisz trochę więcej | backend zwrócił `clarify`                                                     |
+| Tego nie sprawdzamy  | backend zwrócił `out_of_scope`                                                |
+| Coś poszło nie tak   | błąd sieci, błąd HTTP albo limit czasu (90 s)                                 |
 
 Podstrony: `/zrodla` (pełna lista źródeł), `/pomoc`, `/deklaracja-dostepnosci`.
 
@@ -102,10 +103,6 @@ Okno „Zgłoś błąd”:
 
 `reason`: `wrong_verdict` | `bad_source` | `misunderstood` | `other`; `comment` jest opcjonalny (do 1000 znaków).
 
-### `DELETE /api/check/{id}` → `204`
-
-Przycisk „Usuń moje dane” – najpierw okno „Czy na pewno?”, potem potwierdzenie usunięcia.
-
 ## Dostępność
 
 Cel: WCAG 2.2 na poziomie AA.
@@ -123,14 +120,14 @@ Cel: WCAG 2.2 na poziomie AA.
 
 ### Co zostało sprawdzone
 
-| Test | Wynik |
-| --- | --- |
-| axe-core 4.10 (WCAG 2.0/2.1/2.2 A i AA + dobre praktyki), 13 stanów × komputer i telefon: start, błąd pola, wynik, analiza, awaria, okna, Pomoc, wysoki kontrast, WhatsApp | 0 błędów |
-| Kontrast całej palety (tekst ≥ 4,5:1, elementy interfejsu ≥ 3:1) | wszystkie pary spełniają |
-| Klawiatura: kolejność Tab, widoczny fokus na każdym elemencie, brak pułapek | OK |
-| Powiększenie 200% i 400% (szerokość 640 i 320 px), bez przewijania w poziomie (1.4.10) | OK |
-| Zwiększone odstępy tekstu (1.4.12) | OK |
-| Fokus nie chowa się pod przyciskiem demo w rogu (2.4.11) | OK |
+| Test                                                                                                                                                                       | Wynik                    |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------ |
+| axe-core 4.10 (WCAG 2.0/2.1/2.2 A i AA + dobre praktyki), 13 stanów × komputer i telefon: start, błąd pola, wynik, analiza, awaria, okna, Pomoc, wysoki kontrast, WhatsApp | 0 błędów                 |
+| Kontrast całej palety (tekst ≥ 4,5:1, elementy interfejsu ≥ 3:1)                                                                                                           | wszystkie pary spełniają |
+| Klawiatura: kolejność Tab, widoczny fokus na każdym elemencie, brak pułapek                                                                                                | OK                       |
+| Powiększenie 200% i 400% (szerokość 640 i 320 px), bez przewijania w poziomie (1.4.10)                                                                                     | OK                       |
+| Zwiększone odstępy tekstu (1.4.12)                                                                                                                                         | OK                       |
+| Fokus nie chowa się pod przyciskiem demo w rogu (2.4.11)                                                                                                                   | OK                       |
 
 **Nie zostało sprawdzone:** testy z prawdziwymi czytnikami ekranu (NVDA, JAWS,
 VoiceOver, TalkBack) i z udziałem użytkowników. Automatyczne narzędzia wykrywają

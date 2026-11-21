@@ -140,7 +140,7 @@ export function HelpContent({ onShowSources }: { onShowSources?: () => void }) {
     { q: 'Czy muszę się logować?', a: 'Nie. Prawdowid jest za darmo i bez logowania.' },
     {
       q: 'Co dzieje się z moją wiadomością?',
-      a: 'Używamy jej tylko do sprawdzenia. Na stronie wyniku możesz kliknąć „Usuń moje dane”, a usuniemy ją od razu.',
+      a: 'Używamy jej tylko do sprawdzenia wyniku.',
     },
     {
       q: 'Wynik jest błędny. Co zrobić?',

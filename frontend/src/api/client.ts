@@ -77,12 +77,3 @@ export async function reportCheck(id: string | undefined, report: ReportPayload)
     body: JSON.stringify(report),
   });
 }
-
-/** Usuwa zapisaną wiadomość użytkownika. */
-export async function deleteCheck(id?: string): Promise<void> {
-  if (isDemoId(id)) {
-    await new Promise((resolve) => window.setTimeout(resolve, 600));
-    return;
-  }
-  await request<void>(`/check/${encodeURIComponent(id!)}`, { method: 'DELETE' });
-}
