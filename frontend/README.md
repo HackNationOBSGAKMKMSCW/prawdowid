@@ -139,7 +139,8 @@ Cel: WCAG 2.2 na poziomie AA.
 | Test                                                                                                                                                                       | Wynik                    |
 | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------ |
 | axe-core 4.10 (WCAG 2.0/2.1/2.2 A i AA + dobre praktyki), 13 stanów × komputer i telefon: start, błąd pola, wynik, analiza, awaria, okna, Pomoc, wysoki kontrast, WhatsApp | 0 błędów                 |
-| Kontrast całej palety (tekst ≥ 4,5:1, elementy interfejsu ≥ 3:1)                                                                                                           | wszystkie pary spełniają |
+| Kontrast całej palety, jasnej i ciemnej (tekst ≥ 4,5:1, elementy interfejsu ≥ 3:1)                                                                                         | wszystkie pary spełniają |
+| axe-core w ciemnym motywie, te same stany                                                                                                                                  | 0 błędów                 |
 | Klawiatura: kolejność Tab, widoczny fokus na każdym elemencie, brak pułapek                                                                                                | OK                       |
 | Powiększenie 200% i 400% (szerokość 640 i 320 px), bez przewijania w poziomie (1.4.10)                                                                                     | OK                       |
 | Zwiększone odstępy tekstu (1.4.12)                                                                                                                                         | OK                       |
