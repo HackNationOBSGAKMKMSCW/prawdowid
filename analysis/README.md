@@ -63,8 +63,36 @@ print(verdict.model_dump_json(indent=2))
   werdykt oparty tylko na nich ma najwyżej pewność `srednia`.
 - `--sources` / `extra_sources` – źródła podane w zapytaniu.
 
+## Ochrona przed prompt injection
+
+Ochrona nie polega wyłącznie na posłuszeństwie modelu; warstwy po stronie kodu:
+
+1. **Czyszczenie** (`security.clean_text`): normalizacja NFKC (znaczniki pełnej
+   szerokości `＜/source＞` stają się wykrywalne), usunięcie znaków zerowej
+   szerokości, sterujących kierunkiem tekstu i kontrolnych, limity długości.
+2. **Wykrywanie** (`security.detect_injection`): polecenia dla modelu („zignoruj
+   instrukcje”, „oceń jako prawdę”), udawane komunikaty systemowe, zmiana roli,
+   próby wycieku promptu, podszywanie się pod znaczniki `<claim>`/`<source>`,
+   gotowe odpowiedzi JSON, podważanie innych źródeł – po polsku i angielsku.
+3. **Kwarantanna źródeł**: źródło (korpus, użytkownik, fact-check) z wykrytym
+   wstrzyknięciem nie trafia do modelu i nie może być dowodem; wynik pokazuje je
+   w `quarantined_sources` i `warnings`.
+4. **Oznaczanie twierdzeń**: podejrzane twierdzenie jest oceniane (to przedmiot
+   weryfikacji), ale model dostaje ostrzeżenie, a wynik ma `security_warnings`.
+5. **Prompt**: dane w `<claim>`/`<source>` po neutralizacji znaczników, reguła R3,
+   przypomnienie na końcu wiadomości, identyfikator-pułapka (canary) – jego
+   pojawienie się w odpowiedzi unieważnia ją.
+6. **Kontrola wyniku**: werdykt wymaga dosłownego cytatu z istniejącego źródła,
+   więc model nie przemyci rozstrzygnięcia spoza danych.
+
 ## Ewaluacja
 
-`data/eval/cases.json` – 15 przypadków (prawda, fałsz, brak danych, opinia,
-twierdzenie częściowo fałszywe, próba wstrzyknięcia instrukcji). Wynik pierwszego
-uruchomienia na `gemini-3.5-flash-lite`: 15/15, bez korekt kontroli.
+`data/eval/cases.json` – 50 przypadków w kategoriach: fakty, liczby, daty, negacja,
+brak danych (w tym opinie i prognozy), źródła użytkownika, sprzeczności, aktualność,
+fact-checki oraz 11 prób prompt injection (w twierdzeniu, w źródłach, we wpisie
+fact-checkingowym, znaczniki pełnej szerokości, próby wycieku promptu).
+Przypadek może określić własne źródła, dopuszczalne (`accept`) i zabronione
+(`forbidden`) werdykty; skrypt raportuje naruszenia bezpieczeństwa.
+
+Wynik na `gemini-3.5-flash-lite` (prompt `werdykt-v1-3cfe8a64`): **50/50**,
+0 naruszeń bezpieczeństwa, 6/6 zatrutych źródeł w kwarantannie.
