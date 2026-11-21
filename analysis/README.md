@@ -76,6 +76,11 @@ print(verdict.model_dump_json(indent=2))
   `source_text` trafia do modelu jako `<context>` – tylko do interpretacji
   twierdzenia, nigdy jako dowód (reguła R17). Kontekst z podejrzaną treścią jest
   pomijany.
+- **Linki do źródeł z wejścia** (`input_sources`): każde źródło od użytkownika i każdy
+  wpis fact-checkingowy z backendu – także te, które nie pasowały do żadnego
+  twierdzenia – z `url`, wydawcą, oceną i statusem: `cytowane` (dowód w werdykcie,
+  `cited_in_claims`), `pokazane_modelowi` (`shown_for_claims`), `nieuzyte` albo
+  `kwarantanna`. Dla cytowanych źródeł link jest też w `claims[].evidence[].url`.
 - **Ostrzeżenia** (`warnings`): błędy dostawców raz, po polsku i z liczbą zapytań
   (np. brak `GOOGLE_FACT_CHECK_API_KEY`), obcięte zapytanie pełnym tekstem,
   nieobsługiwani dostawcy, różnica języka.
