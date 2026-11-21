@@ -33,7 +33,7 @@ export default function App() {
         <Route
           path="/whatsapp"
           element={
-            <Suspense fallback={<ViewSwitch />}>
+            <Suspense fallback={null}>
               <WhatsAppView />
             </Suspense>
           }

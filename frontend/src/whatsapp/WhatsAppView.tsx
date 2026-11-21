@@ -8,8 +8,8 @@ export default function WhatsAppView() {
 
   return (
     <div className="wa-view">
-      <ViewSwitch />
       <WhatsAppSimulator />
+      <ViewSwitch />
     </div>
   );
 }
