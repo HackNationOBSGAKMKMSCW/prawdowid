@@ -10,9 +10,9 @@ Moduł nie importuje backendu: czyta pola obiektów (lub słowników po `model_d
 """
 
 import hashlib
-from datetime import UTC, datetime
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from typing import Any
 
 from .schemas import ReferenceSource
