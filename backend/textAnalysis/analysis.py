@@ -501,17 +501,19 @@ class ProxyContextAnalyzer(BaseTextAnalyzer):
         extracted_text = await self.url_fetcher.fetch_text(url)
         return await self.analyze(extracted_text, top_keywords=top_keywords, source_url=url)
 
-        submitted_at = submitted_at.astimezone(UTC)
-    else:
-        submitted_at = submitted_at.replace(tzinfo=UTC)
-    if submitted_at.tzinfo is None:
-    submitted_at = started_at or datetime.now(UTC)
-    """Analyze text and return its structured category, keywords, and statements."""
-) -> AnalysisDataContainer:
-    started_at: datetime | None = None,
-    *,
-    text: str,
+
 async def run(
+    text: str,
+    top_keywords: int = 8,
+    *,
+    started_at: datetime | None = None,
+) -> AnalysisDataContainer:
+    """Analyze text (or URL starting with http/https) and return structured analysis."""
+    submitted_at = started_at or datetime.now(UTC)
+    if submitted_at.tzinfo is None:
+        submitted_at = submitted_at.replace(tzinfo=UTC)
+    else:
+        submitted_at = submitted_at.astimezone(UTC)
     started_at = time.perf_counter()
     print("[textAnalysis] Wczytuję konfigurację...", flush=True)
     settings = Settings.from_environment()
@@ -532,14 +534,14 @@ async def run(
         max_retries=settings.llm_max_retries,
     )
     try:
-        result = await analyzer.analyze(text)
+        candidate = text.strip()
+        if candidate.startswith(("http://", "https://")):
+            result = await analyzer.analyze_url(candidate, top_keywords=top_keywords)
+        else:
+            # Tekst trafia do analizatora bez zmian (sanityzację robi InputSanitizer).
+            result = await analyzer.analyze(text, top_keywords=top_keywords)
         result.original_text = text
         result.started_at = submitted_at
-        candidate = text.strip()
-            result = await analyzer.analyze_url(candidate, top_keywords=top_keywords)
-        if candidate.startswith(("http://", "https://")):
-        else:
-            result = await analyzer.analyze(candidate, top_keywords=top_keywords)
         print(
             f"[textAnalysis] Pakiet zakończył pracę po {time.perf_counter() - started_at:.1f}s.",
             flush=True,

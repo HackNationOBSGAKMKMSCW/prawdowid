@@ -36,7 +36,7 @@ async def test_package_run_reads_settings_and_closes_analyzer(monkeypatch, capsy
         def __init__(self, **kwargs) -> None:
             analyzer_options.update(kwargs)
 
-        async def analyze(self, text: str) -> AnalysisDataContainer:
+        async def analyze(self, text: str, top_keywords: int = 8) -> AnalysisDataContainer:
             assert text == "A claim."
             return result
 
@@ -76,7 +76,7 @@ async def test_package_run_stamps_utc_time_and_preserves_unmodified_input(monkey
         def __init__(self, **kwargs) -> None:
             pass
 
-        async def analyze(self, text: str) -> AnalysisDataContainer:
+        async def analyze(self, text: str, top_keywords: int = 8) -> AnalysisDataContainer:
             assert text == "  Original input  "
             return result
 
@@ -113,8 +113,10 @@ def test_input_sanitizer_removes_control_characters_and_neutralizes_tags() -> No
 def test_input_sanitizer_rejects_empty_and_oversized_text() -> None:
     with pytest.raises(ValueError):
         InputSanitizer.sanitize("  ")
-    with pytest.raises(ValueError, match="maksymalny"):
-        InputSanitizer.sanitize("x" * (InputSanitizer.MAX_INPUT_LENGTH + 1))
+    # Od 7ccfd14 (analiza treści z URL) za długi tekst jest przycinany z ostrzeżeniem.
+    text, warnings = InputSanitizer.sanitize("x" * (InputSanitizer.MAX_INPUT_LENGTH + 1))
+    assert len(text) == InputSanitizer.MAX_INPUT_LENGTH
+    assert any("przycięty" in w for w in warnings)
 
 
 @pytest.mark.asyncio
