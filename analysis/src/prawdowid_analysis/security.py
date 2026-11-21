@@ -151,6 +151,8 @@ def screen_sources(
                     title=source.title,
                     publisher=source.publisher,
                     url=source.url,
+                    published_at=source.published_at,
+                    fetched_at=source.fetched_at,
                     reasons=findings,
                 )
             )

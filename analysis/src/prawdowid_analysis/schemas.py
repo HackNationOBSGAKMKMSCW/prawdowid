@@ -133,6 +133,11 @@ class SourceReviewOut(BaseModel):
     source_id: str
     relevant: bool
     why: str
+    title: str = ""
+    publisher: str = ""
+    published_at: str | None = None
+    fetched_at: str | None = None
+    url: str | None = None
 
 
 class SourceFreshness(BaseModel):
@@ -203,7 +208,17 @@ class QuarantinedSource(BaseModel):
     title: str = ""
     publisher: str = ""
     url: str | None = None
+    published_at: str | None = None
+    fetched_at: str | None = None
     reasons: list[str]
+
+
+class CitedQuote(BaseModel):
+    """Dosłowny, zweryfikowany fragment źródła użyty jako dowód w twierdzeniu."""
+
+    claim_id: str
+    quote: str
+    stance: Stance
 
 
 InputSourceStatus = Literal["cytowane", "pokazane_modelowi", "nieuzyte", "kwarantanna"]
@@ -237,6 +252,9 @@ class InputSourceOut(BaseModel):
     status: InputSourceStatus
     shown_for_claims: list[str] = Field(
         default=[], description="Twierdzenia, przy których pokazano je modelowi"
+    )
+    cited_quotes: list[CitedQuote] = Field(
+        default=[], description="Cytowane fragmenty tego źródła (zweryfikowane), per twierdzenie"
     )
     cited_in_claims: list[str] = Field(
         default=[], description="Twierdzenia, w których jest zweryfikowanym dowodem"

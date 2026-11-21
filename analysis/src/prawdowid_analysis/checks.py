@@ -81,17 +81,30 @@ def _reviews(
     reviews: dict[str, SourceReviewOut] = {}
     for review in parsed.sources_reviewed:
         if review.source_id in by_id and review.source_id not in reviews:
-            reviews[review.source_id] = SourceReviewOut(**review.model_dump())
+            reviews[review.source_id] = SourceReviewOut(
+                **review.model_dump(), **_source_metadata(by_id[review.source_id])
+            )
     missing = [source_id for source_id in by_id if source_id not in reviews]
     for source_id in missing:
         reviews[source_id] = SourceReviewOut(
             source_id=source_id,
             relevant=False,
             why="Model nie ocenił tego źródła (wpis uzupełniony automatycznie).",
+            **_source_metadata(by_id[source_id]),
         )
     if missing:
         adjustments.append(f"Model pominął ocenę źródeł: {', '.join(missing)}.")
     return [reviews[source_id] for source_id in by_id]
+
+
+def _source_metadata(source: ReferenceSource) -> dict:
+    return {
+        "title": source.title,
+        "publisher": source.publisher,
+        "published_at": source.published_at,
+        "fetched_at": source.fetched_at,
+        "url": source.url,
+    }
 
 
 def consistency_problems(parsed: ModelVerdict, sources: Sequence[ReferenceSource]) -> list[str]:

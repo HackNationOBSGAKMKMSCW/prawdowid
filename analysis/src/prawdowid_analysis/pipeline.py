@@ -40,6 +40,7 @@ from .freshness import (
 from .llm import ChatClient, OpenAIChatClient
 from .prompts import prompt_version
 from .schemas import (
+    CitedQuote,
     ClaimVerdict,
     InputSourceOut,
     QuarantinedSource,
@@ -338,6 +339,7 @@ def input_source_report(
     shown: dict[str, list[str]] = {}
     cited: dict[str, list[str]] = {}
     archival: dict[str, list[str]] = {}
+    quotes: dict[str, list[CitedQuote]] = {}
     for claim in claims:
         for entry in getattr(claim, "source_freshness", []):
             doc = document_id(entry.source_id)
@@ -353,8 +355,14 @@ def input_source_report(
                 shown[doc].append(claim.claim_id)
         for evidence in claim.evidence:
             doc = document_id(evidence.source_id)
-            if doc and evidence.quote_verified and claim.claim_id not in cited.setdefault(doc, []):
-                cited[doc].append(claim.claim_id)
+            if doc and evidence.quote_verified:
+                quotes.setdefault(doc, []).append(
+                    CitedQuote(
+                        claim_id=claim.claim_id, quote=evidence.quote, stance=evidence.stance
+                    )
+                )
+                if claim.claim_id not in cited.setdefault(doc, []):
+                    cited[doc].append(claim.claim_id)
 
     rejected = set(quarantined_ids)
     report = []
@@ -384,6 +392,7 @@ def input_source_report(
                 status=status,
                 shown_for_claims=shown.get(sid, []),
                 cited_in_claims=cited.get(sid, []),
+                cited_quotes=quotes.get(sid, []),
             )
         )
     return report
