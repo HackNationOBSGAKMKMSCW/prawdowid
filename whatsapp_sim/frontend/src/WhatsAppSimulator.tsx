@@ -7,7 +7,6 @@ import {
   useState,
   type KeyboardEvent,
 } from 'react';
-import { Link } from 'react-router-dom';
 import {
   AttachIcon,
   BackIcon,
@@ -288,9 +287,9 @@ export default function WhatsAppSimulator() {
         <section className="wa-phone" aria-label="Symulator WhatsApp: czat ze SprawdzTo">
           <StatusBar />
           <header className="wa-header">
-            <Link to="/" className="wa-icon-button" aria-label="Wróć do aplikacji">
+            <span className="wa-icon-button" title="Niedostępne w symulatorze">
               <BackIcon />
-            </Link>
+            </span>
             <SprawdzToAvatar size={40} />
             <div className="wa-contact">
               <span className="wa-contact-name">SprawdzTo</span>

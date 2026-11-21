@@ -142,10 +142,6 @@
   border-radius: 50%;
 }
 
-a.wa-icon-button:hover {
-  background: rgb(255 255 255 / 12%);
-}
-
 .wa-contact {
   display: flex;
   flex: 1;
