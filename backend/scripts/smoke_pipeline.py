@@ -10,6 +10,7 @@ import sys
 
 import apiReading
 import articleScraping
+import observability
 import textAnalysis
 
 DEFAULT_TEXT = "Ocieplenie klimatu to fałsz i nie jest realne. Nie ma dowodu, że to wina człowieka."
@@ -38,7 +39,14 @@ async def main(text: str, as_json: bool, scrape: bool = False) -> int:
             print(f"[articleScraping] {failure.kind}: {failure.url}")
     outcomes = [outcome for result in results for outcome in result.results]
     all_failed = bool(outcomes) and all(outcome.error is not None for outcome in outcomes)
+    if all_failed:
+        observability.log_abstain("search_failed", channel="smoke_pipeline")
     return 1 if all_failed else 0
+
+
+async def _main_with_logging(text: str, as_json: bool, scrape: bool) -> int:
+    with observability.request_scope("smoke_pipeline"):
+        return await main(text, as_json, scrape)
 
 
 if __name__ == "__main__":
@@ -49,4 +57,5 @@ if __name__ == "__main__":
         "--scrape", action="store_true", help="extract article text from discovered URLs"
     )
     args = parser.parse_args()
-    sys.exit(asyncio.run(main(args.text, args.as_json, args.scrape)))
+    observability.init()
+    sys.exit(asyncio.run(_main_with_logging(args.text, args.as_json, args.scrape)))

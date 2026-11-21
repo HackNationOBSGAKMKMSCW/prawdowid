@@ -4,6 +4,7 @@ import argparse
 import os
 
 import uvicorn
+from observability import init as init_logging
 
 from .server import MODE_ENV, create_app
 
@@ -21,6 +22,7 @@ def main() -> None:
 
     if args.demo:
         os.environ[MODE_ENV] = "demo"
+    init_logging()
     app = create_app()
     print(
         f"[whatsappAdapter] Tryb: {os.getenv(MODE_ENV, 'live')}; "
