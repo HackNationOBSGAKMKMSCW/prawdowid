@@ -61,6 +61,8 @@ function WebApp({ prefs }: { prefs: ReturnType<typeof usePreferences> }) {
             highContrast={prefs.highContrast}
             onToggleBigText={prefs.toggleBigText}
             onToggleHighContrast={prefs.toggleHighContrast}
+            dark={prefs.theme === 'dark'}
+            onToggleTheme={prefs.toggleTheme}
           />
           <main id="tresc" className="main" tabIndex={-1}>
             <Routes>

@@ -176,6 +176,10 @@ export function AccessibilityContent({ level }: { level: Level }) {
               <strong>Większy tekst</strong> – ikona „aA” w nagłówku powiększa całą stronę.
             </li>
             <li>
+              <strong>Ciemny motyw</strong> – ikona księżyca w nagłówku. Domyślnie strona dopasowuje
+              się do ustawień telefonu lub komputera.
+            </li>
+            <li>
               <strong>Wysoki kontrast</strong> – ikona półkola w nagłówku: czarny tekst na białym
               tle, podkreślone linki.
             </li>

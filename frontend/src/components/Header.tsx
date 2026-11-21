@@ -6,6 +6,8 @@ interface HeaderProps {
   highContrast: boolean;
   onToggleBigText: () => void;
   onToggleHighContrast: () => void;
+  dark: boolean;
+  onToggleTheme: () => void;
 }
 
 export default function Header({
@@ -13,6 +15,8 @@ export default function Header({
   highContrast,
   onToggleBigText,
   onToggleHighContrast,
+  dark,
+  onToggleTheme,
 }: HeaderProps) {
   const goHome = useGoHome();
   // Dymek z podpisem da się schować klawiszem Esc (WCAG 1.4.13).
@@ -58,6 +62,26 @@ export default function Header({
             </span>
             <span className="icon-tip" aria-hidden="true" onClick={keepTip}>
               Większy tekst
+            </span>
+          </button>
+          <button
+            type="button"
+            className="pill-toggle pill-toggle--icon"
+            aria-pressed={dark}
+            aria-label="Ciemny motyw"
+            onClick={onToggleTheme}
+          >
+            <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false">
+              <path
+                d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"
+                fill={dark ? 'currentColor' : 'none'}
+                stroke="currentColor"
+                strokeWidth="2.2"
+                strokeLinejoin="round"
+              />
+            </svg>
+            <span className="icon-tip" aria-hidden="true" onClick={keepTip}>
+              Ciemny motyw
             </span>
           </button>
           <button

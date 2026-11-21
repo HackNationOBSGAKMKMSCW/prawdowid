@@ -121,8 +121,10 @@ Okno „Zgłoś błąd”:
 
 Cel: WCAG 2.2 na poziomie AA.
 
-- przełączniki „Większy tekst” (ikona aA, powiększenie 120%) i „Wysoki kontrast”
-  (ikona ◐), zapamiętane w `localStorage`; podpisy w dymkach da się najechać
+- przełączniki „Większy tekst” (ikona aA, powiększenie 120%), „Ciemny motyw”
+  (ikona księżyca, domyślnie według systemu) i „Wysoki kontrast” (ikona ◐),
+  zapamiętane w `localStorage`; motyw jest w `<html data-theme>` i ustawia się
+  przed pierwszym renderem, więc strona nie mruga; podpisy w dymkach da się najechać
   myszą i schować klawiszem Esc;
 - „Przeczytaj na głos” przez Web Speech API (`pl-PL`);
 - link „Przejdź do treści”, fokus przenoszony na nagłówek `h1` po zmianie ekranu,

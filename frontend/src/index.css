@@ -23,6 +23,11 @@
   --c-hover-soft: #f5f7fb;
   --c-demo-bg: #141a24;
   --c-demo-fg: #c9ced8;
+  --c-on-navy: #fff;
+  --c-on-error: #fff;
+  --c-error-hover: #8a0f23;
+  --c-accent-soft: #eef3fa;
+  --c-focus-ring: rgb(10 47 99 / 18%);
 
   --font: 'Source Sans 3', system-ui, sans-serif;
   --radius-card: 22px;
@@ -95,7 +100,7 @@ a:focus-visible {
   top: 8px;
   z-index: 10;
   background: var(--c-navy);
-  color: #fff;
+  color: var(--c-on-navy);
   padding: 12px 18px;
   border-radius: 8px;
   font: 700 18px var(--font);
@@ -103,7 +108,7 @@ a:focus-visible {
 
 .skip-link:focus {
   left: 12px;
-  color: #fff;
+  color: var(--c-on-navy);
 }
 
 .shell {
@@ -241,7 +246,7 @@ a:focus-visible {
 
 .pill-toggle[aria-pressed='true'] {
   background: var(--c-navy);
-  color: #fff;
+  color: var(--c-on-navy);
 }
 
 /* ---------- Układ stron ---------- */
@@ -370,7 +375,7 @@ a:focus-visible {
 .textarea:focus {
   outline: none;
   border-color: var(--c-navy);
-  box-shadow: 0 0 0 4px rgb(10 47 99 / 18%);
+  box-shadow: 0 0 0 4px var(--c-focus-ring);
 }
 
 .textarea[aria-invalid='true'] {
@@ -391,7 +396,7 @@ a:focus-visible {
   border: 0;
   border-radius: var(--radius-control);
   background: var(--c-navy);
-  color: #fff;
+  color: var(--c-on-navy);
   font: 800 23px var(--font);
   cursor: pointer;
 }
@@ -476,7 +481,7 @@ a:focus-visible {
 
 .minor-action {
   --ma-fg: var(--c-navy);
-  --ma-soft: #eef3fa;
+  --ma-soft: var(--c-accent-soft);
   min-height: 72px;
   padding: 12px 16px;
   display: flex;
@@ -687,7 +692,7 @@ a:focus-visible {
   flex: none;
   border-radius: 50%;
   background: var(--dot-bg, var(--c-navy));
-  color: #fff;
+  color: var(--c-on-navy);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -992,12 +997,12 @@ a:focus-visible {
 .footer-link:hover {
   color: var(--c-navy);
   border-color: var(--c-navy);
-  background: #eef3fa;
+  background: var(--c-accent-soft);
 }
 
 .footer-link[aria-current='page'] {
   border-color: var(--c-navy);
-  background: #eef3fa;
+  background: var(--c-accent-soft);
 }
 
 .footer-link__icon {
@@ -1246,7 +1251,7 @@ a:focus-visible {
 
 .choice:has(input:checked) {
   border-color: var(--c-navy);
-  background: #eef3fa;
+  background: var(--c-accent-soft);
 }
 
 .choice:has(input:focus-visible) {
@@ -1276,13 +1281,13 @@ a:focus-visible {
   border: 0;
   border-radius: var(--radius-control);
   background: var(--c-error);
-  color: #fff;
+  color: var(--c-on-error);
   font: 800 21px var(--font);
   cursor: pointer;
 }
 
 .btn-danger:hover {
-  background: #8a0f23;
+  background: var(--c-error-hover);
 }
 
 button:disabled {
@@ -2110,4 +2115,185 @@ html {
 
 .minor-action:hover .minor-action__icon {
   background: var(--c-surface);
+}
+
+/* ==========================================================================
+   Ciemny motyw
+   html[data-theme='dark'] – ustawiane przełącznikiem w nagłówku albo
+   według systemu. Wszystkie pary tekst/tło mają kontrast ≥ 4,5:1.
+   ========================================================================== */
+
+:root[data-theme='dark'] {
+  --c-page: #0e131b;
+  --c-surface: #171e29;
+  --c-text: #eef1f6;
+  --c-text-body: #d9dee7;
+  --c-text-muted: #c3cad6;
+  --c-text-subtle: #a3acbb;
+  --c-placeholder: #8f98a8;
+  --c-navy: #8fb8ff;
+  --c-navy-hover: #b3cfff;
+  --c-on-navy: #0b1626;
+  --c-link: #8fb8ff;
+  --c-link-hover: #c2d8ff;
+  --c-error: #ff8f9f;
+  --c-on-error: #2a0a10;
+  --c-error-hover: #ffb3bf;
+  --c-line: #2c3646;
+  --c-line-strong: #7d879a;
+  --c-flag-line: #3a4556;
+  --c-hover-soft: #1e2734;
+  --c-demo-bg: #05080c;
+  --c-accent-soft: #1c2a40;
+  --c-focus-ring: rgb(143 184 255 / 30%);
+
+  color-scheme: dark;
+}
+
+/* Werdykty: jasne odcienie na ciemnym tle. */
+:root[data-theme='dark'] [data-verdict='confirmed'] {
+  --v-fg: #7ddca3;
+  --v-bg: #12291e;
+  --v-bd: #245c3d;
+}
+
+:root[data-theme='dark'] [data-verdict='false'] {
+  --v-fg: #ff8f9f;
+  --v-bg: #33141a;
+  --v-bd: #6e2633;
+}
+
+:root[data-theme='dark'] [data-verdict='misleading'] {
+  --v-fg: #f5bf62;
+  --v-bg: #33240e;
+  --v-bd: #6e4d1a;
+}
+
+:root[data-theme='dark'] [data-verdict='insufficient'] {
+  --v-fg: #a9c3ef;
+  --v-bg: #18233a;
+  --v-bd: #34496e;
+}
+
+:root[data-theme='dark'] [data-verdict='unverifiable'] {
+  --v-fg: #b9c0cc;
+  --v-bg: #1f252f;
+  --v-bd: #414a59;
+}
+
+/* Kółka z ikonami: jasne tło, ciemny znak. */
+:root[data-theme='dark'] .dot {
+  color: #0e131b;
+}
+
+:root[data-theme='dark'] .analysis-card[data-tone='danger'] {
+  --dot-bg: #ff8f9f;
+}
+
+:root[data-theme='dark'] .analysis-card[data-tone='warning'] {
+  --dot-bg: #f5bf62;
+}
+
+:root[data-theme='dark'] .analysis-card[data-tone='manipulation'] {
+  --dot-bg: #c4b0ff;
+}
+
+/* Ikony komunikatów i okien. */
+:root[data-theme='dark'] .state-icon[data-tone='info'],
+:root[data-theme='dark'] .modal__icon[data-tone='info'] {
+  background: #18233a;
+  color: #a9c3ef;
+}
+
+:root[data-theme='dark'] .state-icon[data-tone='neutral'] {
+  background: #1f252f;
+  color: #b9c0cc;
+}
+
+:root[data-theme='dark'] .state-icon[data-tone='warning'],
+:root[data-theme='dark'] .modal__icon[data-tone='warning'] {
+  background: #33240e;
+  color: #f5bf62;
+}
+
+:root[data-theme='dark'] .modal__icon[data-tone='danger'] {
+  background: #33141a;
+  color: #ff8f9f;
+}
+
+:root[data-theme='dark'] .modal__icon[data-tone='success'] {
+  background: #12291e;
+  color: #7ddca3;
+}
+
+:root[data-theme='dark'] .minor-action[data-done],
+:root[data-theme='dark'] .minor-action[data-done]:hover {
+  --ma-fg: #7ddca3;
+  --ma-soft: #12291e;
+  border-color: #245c3d;
+}
+
+/* Okna modalne i cienie. */
+:root[data-theme='dark'] .modal {
+  box-shadow:
+    0 24px 64px rgb(0 0 0 / 55%),
+    0 0 0 1px var(--c-line);
+}
+
+:root[data-theme='dark'] .modal::backdrop {
+  background: rgb(0 0 0 / 70%);
+}
+
+:root[data-theme='dark'] .btn-primary:hover {
+  box-shadow: 0 8px 22px -8px rgb(143 184 255 / 45%);
+}
+
+:root[data-theme='dark'] .icon-tip {
+  background: #eef1f6;
+  color: #0e131b;
+}
+
+/* WhatsApp i przycisk demo. */
+:root[data-theme='dark'] .whatsapp-link {
+  border-color: #3ccf7c;
+  color: #7ddca3;
+}
+
+:root[data-theme='dark'] .whatsapp-link:hover {
+  color: #a6ecc2;
+  background: #12291e;
+}
+
+:root[data-theme='dark'] .whatsapp-link__icon {
+  color: #3ccf7c;
+}
+
+:root[data-theme='dark'] .view-switch {
+  background: rgb(23 30 41 / 94%);
+  box-shadow: 0 6px 20px rgb(0 0 0 / 45%);
+}
+
+:root[data-theme='dark'] .view-switch[data-target='web'] .view-switch__icon {
+  background: #8fb8ff;
+  color: #0b1626;
+}
+
+:root[data-theme='dark'] .view-switch__tag {
+  background: #0e131b;
+}
+
+/* Płynna zmiana motywu (bez efektu przy „ogranicz ruch”). */
+@media (prefers-reduced-motion: no-preference) {
+  body,
+  .shell,
+  .site-header,
+  .site-footer,
+  .panel,
+  .claim,
+  .analysis-card {
+    transition:
+      background-color 0.35s ease,
+      border-color 0.35s ease,
+      color 0.35s ease;
+  }
 }
