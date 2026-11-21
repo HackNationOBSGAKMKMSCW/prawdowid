@@ -40,8 +40,13 @@ cp .env.example .env          # uzupełnij FREELLM_API_KEY, FREELLM_BASE_URL, FR
 .venv/Scripts/python -m prawdowid_analysis.cli "Polska jest w UE od 2004 roku."
 .venv/Scripts/python -m prawdowid_analysis.cli --sources moje.json "Tekst"
 .venv/Scripts/python -m prawdowid_analysis.cli --backend "Tekst"  # z textAnalysis + apiReading
+.venv/Scripts/python -m prawdowid_analysis.cli --backend --fact-checks pelny-tekst "Tekst"
 .venv/Scripts/python -m scripts.eval_verdict                      # ewaluacja na prawdziwym modelu
 ```
+
+Kody wyjścia CLI: `0` – sukces, `2` – brak konfiguracji modelu, `3` – błąd backendu.
+
+## Integracja z backendem
 
 Z kodu (np. z backendu):
 
@@ -49,10 +54,35 @@ Z kodu (np. z backendu):
 from prawdowid_analysis.pipeline import run
 
 analysis = await textAnalysis.run(text)
-reading = await apiReading.run(analysis)
-verdict = await run(analysis, reading)  # TextVerdict
+per_statement = await apiReading.run(analysis)  # lista wyników
+full_text = await apiReading.run_full_text(analysis)  # jeden wynik
+verdict = await run(analysis, [*per_statement, full_text])  # TextVerdict
 print(verdict.model_dump_json(indent=2))
 ```
+
+- **Wejście**: `run()` przyjmuje `AnalysisDataContainer` (lub słownik po `to_dict()`)
+  oraz wyniki `apiReading.run()`, `apiReading.run_full_text()`, ich połączenie albo
+  słowniki po `model_dump()`. Adapter czyta pola, nie importuje backendu.
+- **Fact-checki**: wyniki zapytań o konkretne stwierdzenie trafiają do tego
+  stwierdzenia; pozostałe (np. pełny tekst) tworzą wspólną pulę, z której każde
+  twierdzenie dostaje pasujące wpisy (BM25). Format `payload` rozpoznawany jest po
+  `item.source`: `google_fact_check` i (wstępnie, wg planu) `euvsdisinfo`; wpisy
+  innych dostawców są pomijane z ostrzeżeniem.
+- **Dane z `textAnalysis`**: `keywords` uzupełniają zapytanie BM25, `language_code`
+  wywołuje ostrzeżenie przy tekście w innym języku niż korpus, a fragment
+  `source_text` trafia do modelu jako `<context>` – tylko do interpretacji
+  twierdzenia, nigdy jako dowód (reguła R17). Kontekst z podejrzaną treścią jest
+  pomijany.
+- **Ostrzeżenia** (`warnings`): błędy dostawców raz, po polsku i z liczbą zapytań
+  (np. brak `GOOGLE_FACT_CHECK_API_KEY`), obcięte zapytanie pełnym tekstem,
+  nieobsługiwani dostawcy, różnica języka.
+- **Konfiguracja**: zmienne procesu → `analysis/.env` → `backend/.env`. Starsze nazwy
+  (`OPENAI_API_KEY`, `LLM_MODEL`…) są przepisywane na `FREELLM_*`, a `--backend`
+  ładuje konfigurację przed importem backendu, więc ekstrakcja stwierdzeń i werdykt
+  używają tego samego modelu. Wynik zawiera `models` per etap.
+- **Zgodność**: `tests/test_backend_contract.py` przepuszcza przez potok prawdziwe
+  obiekty backendu i zapisany fixture; zmiana formatu w backendzie wywraca test.
+  Odświeżenie fixture: `python -m tests.backend_objects`.
 
 ## Źródła wzorcowe
 
