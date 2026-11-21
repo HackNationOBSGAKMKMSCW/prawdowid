@@ -517,7 +517,7 @@ async def run(
         submitted_at = submitted_at.replace(tzinfo=UTC)
     else:
         submitted_at = submitted_at.astimezone(UTC)
-    started_at = time.perf_counter()
+    run_started_at = time.perf_counter()
     print("[textAnalysis] Wczytuję konfigurację...", flush=True)
     settings = Settings.from_environment()
     if not settings.freellm_api_key:
@@ -545,13 +545,13 @@ async def run(
         result.original_text = text
         result.started_at = submitted_at
         print(
-            f"[textAnalysis] Pakiet zakończył pracę po {time.perf_counter() - started_at:.1f}s.",
+            f"[textAnalysis] Pakiet zakończył pracę po {time.perf_counter() - run_started_at:.1f}s.",
             flush=True,
         )
         return result
     except Exception as exc:
         print(
-            f"[textAnalysis] Przerwano po {time.perf_counter() - started_at:.1f}s "
+            f"[textAnalysis] Przerwano po {time.perf_counter() - run_started_at:.1f}s "
             f"({type(exc).__name__}).",
             flush=True,
         )
@@ -627,4 +627,10 @@ async def _run_cli() -> None:
 
 
 if __name__ == "__main__":
-    asyncio.run(_run_cli())
+    from observability import init as init_logging
+
+    init_logging()
+    # Run via the imported module: logging instruments ``textAnalysis.analysis``, not __main__.
+    from textAnalysis.analysis import _run_cli as instrumented_cli
+
+    asyncio.run(instrumented_cli())
