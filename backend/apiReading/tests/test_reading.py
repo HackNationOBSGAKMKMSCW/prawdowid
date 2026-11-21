@@ -67,3 +67,69 @@ async def test_package_run_returns_final_claim_payload(monkeypatch) -> None:
 
     assert [item.payload for item in results[0].items] == [claim]
     assert results[0].items[0].source == "google_fact_check"
+
+
+def test_clean_statement_strips_meta_prefix_and_caps_length() -> None:
+    from apiReading.reading import clean_statement
+
+    assert clean_statement("Tekst zawiera twierdzenie, że Ziemia jest płaska.") == "Ziemia jest płaska"
+    assert clean_statement("Autor tekstu twierdzi, że klimat się ociepla.") == "klimat się ociepla"
+    assert len(clean_statement("słowo " * 100)) <= 100
+
+
+def test_build_queries_orders_original_statement_keywords() -> None:
+    from apiReading.reading import build_queries
+    from textAnalysis.container import KeywordItem
+
+    analysis = AnalysisDataContainer(
+        original_text="ziemia jest płaska",
+        keywords=[KeywordItem("Ziemia", "x"), KeywordItem("kształt", "y")],
+    )
+    first = build_queries(analysis, "Tekst zawiera twierdzenie, że Ziemia jest płaska.", True)
+    assert first == ["ziemia jest płaska", "Ziemia kształt"]  # cleaned statement deduped
+    later = build_queries(analysis, "Inne twierdzenie", False)
+    assert later == ["Inne twierdzenie", "Ziemia kształt"]
+
+
+@pytest.mark.asyncio
+async def test_run_falls_back_to_next_query_only_when_empty(monkeypatch) -> None:
+    from textAnalysis.container import KeywordItem
+
+    monkeypatch.setenv("GOOGLE_FACT_CHECK_API_KEY", "test-key")
+    analysis = AnalysisDataContainer(
+        statements=["Autor twierdzi, że długie zdanie bez wyników"],
+        keywords=[KeywordItem("klimat", "x")],
+        language_code="pl",
+    )
+    claim = {"text": "klimat", "claimReview": []}
+
+    def respond(request):
+        import httpx
+
+        query = request.url.params["query"]
+        claims = [claim] if query == "klimat" else []
+        return httpx.Response(200, json={"claims": claims})
+
+    with respx.mock(assert_all_called=True) as router:
+        route = router.get(GOOGLE_API_URL).mock(side_effect=respond)
+        results = await run(analysis)
+
+    assert route.call_count == 2
+    assert results[0].request.query == "klimat"
+    assert len(results[0].items) == 1
+
+
+@pytest.mark.asyncio
+async def test_run_does_not_fall_back_on_api_error(monkeypatch) -> None:
+    from textAnalysis.container import KeywordItem
+
+    monkeypatch.setenv("GOOGLE_FACT_CHECK_API_KEY", "test-key")
+    analysis = AnalysisDataContainer(
+        statements=["zdanie"], keywords=[KeywordItem("klimat", "x")], language_code="pl"
+    )
+    with respx.mock() as router:
+        route = router.get(GOOGLE_API_URL).respond(403, json={"error": {"message": "denied"}})
+        results = await run(analysis)
+
+    assert route.call_count == 1
+    assert results[0].items == []

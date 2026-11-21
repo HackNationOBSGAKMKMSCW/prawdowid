@@ -1,6 +1,7 @@
 """Read fact-check data for statements returned by the text analyzer."""
 
 import asyncio
+import re
 import time
 from collections.abc import Mapping
 
@@ -31,6 +32,53 @@ def format_result(result: ReadingResult) -> str:
     return "\n".join(lines)
 
 
+MAX_QUERY_CHARS = 100
+MAX_KEYWORDS_IN_QUERY = 3
+MAX_FALLBACK_ATTEMPTS = 2
+MAX_CONCURRENCY = 10
+_META_PREFIX = re.compile(
+    r"^\s*(?:"
+    r"(?:autor|tekst|artykuł|wypowiedź)(?:\s+tekstu)?\s+"
+    r"(?:twierdzi|zawiera\s+twierdzenie|stwierdza|sugeruje|utrzymuje|podaje)"
+    r"|w\s+tekście\s+(?:zanegowano|stwierdzono|twierdzono|wskazano|podano)"
+    r")\s*,?\s*(?:że\s+)?",
+    re.IGNORECASE,
+)
+
+
+def _shorten(text: str, limit: int = MAX_QUERY_CHARS) -> str:
+    text = " ".join(text.split())
+    if len(text) <= limit:
+        return text
+    first = re.split(r"(?<=[.!?])\s", text, maxsplit=1)[0]
+    candidate = first if len(first) <= limit else text[:limit].rsplit(" ", 1)[0]
+    return (candidate or text[:limit]).strip()
+
+
+def clean_statement(statement: str) -> str:
+    """Strip meta framing ("Autor twierdzi, że ...") and cap length for search."""
+    cleaned = _META_PREFIX.sub("", statement.strip()).strip().rstrip(".")
+    return _shorten(cleaned or statement)
+
+
+def build_queries(analysis: AnalysisDataContainer, statement: str, first: bool) -> list[str]:
+    """Ranked, de-duplicated query variants: original text, cleaned statement, keywords."""
+    candidates: list[str] = []
+    if first and analysis.original_text.strip():
+        candidates.append(_shorten(analysis.original_text))
+    candidates.append(clean_statement(statement))
+    terms = [t.strip() for t in analysis.keyword_terms if t.strip()]
+    if terms:
+        candidates.append(" ".join(terms[:MAX_KEYWORDS_IN_QUERY]))
+    queries: list[str] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        if candidate and candidate.casefold() not in seen:
+            seen.add(candidate.casefold())
+            queries.append(candidate)
+    return queries[: MAX_FALLBACK_ATTEMPTS + 1]
+
+
 async def run(analysis: AnalysisDataContainer) -> list[ReadingResult]:
     """Fetch one result per analyzed statement using the fact-check source.
 
@@ -55,18 +103,43 @@ async def run(analysis: AnalysisDataContainer) -> list[ReadingResult]:
         flush=True,
     )
 
+    query_variants = [
+        build_queries(analysis, statement, first=index == 0)
+        for index, statement in enumerate(statements)
+    ]
     requests = [
         ReadingRequest(
-            query=statement,
+            query=variants[0],
             categories=[Category.FACT_CHECK],
             language_code=analysis.language_code,
             page_size=10,
             metadata={"analysis_category": analysis.category},
         )
-        for statement in statements
+        for variants in query_variants
     ]
+    semaphore = asyncio.Semaphore(MAX_CONCURRENCY)
 
     async def fetch_one(index: int, request: ReadingRequest) -> ReadingResult:
+        async with semaphore:
+            return await _fetch_with_fallback(index, request)
+
+    async def _fetch_with_fallback(index: int, request: ReadingRequest) -> ReadingResult:
+        variants = query_variants[index - 1]
+        result = await _fetch_once(index, request)
+        for attempt, query in enumerate(variants[1:], 2):
+            if result.items or any(o.error is not None for o in result.results):
+                break
+            print(
+                f"[apiReading] Zapytanie {index}: brak wyników, wariant {attempt}: {query!r}.",
+                flush=True,
+            )
+            request = request.model_copy(update={"query": query})
+            result = await _fetch_once(index, request)
+        if result.items:
+            print(f"[apiReading] Zapytanie {index}: dane dla {result.request.query!r}.", flush=True)
+        return result
+
+    async def _fetch_once(index: int, request: ReadingRequest) -> ReadingResult:
         request_started_at = time.perf_counter()
         print(
             f"[apiReading] Zapytanie {index}/{len(requests)}: start ({len(request.query)} znaków).",
