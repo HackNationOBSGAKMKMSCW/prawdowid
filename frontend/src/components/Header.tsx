@@ -1,3 +1,4 @@
+import { useState, type KeyboardEvent, type MouseEvent } from 'react';
 import { useGoHome } from '../lib/navigation.ts';
 
 interface HeaderProps {
@@ -14,6 +15,13 @@ export default function Header({
   onToggleHighContrast,
 }: HeaderProps) {
   const goHome = useGoHome();
+  // Dymek z podpisem da się schować klawiszem Esc (WCAG 1.4.13).
+  const [tipsHidden, setTipsHidden] = useState(false);
+  const onKeyDown = (event: KeyboardEvent) => {
+    if (event.key === 'Escape') setTipsHidden(true);
+  };
+  const showTips = () => setTipsHidden(false);
+  const keepTip = (event: MouseEvent) => event.stopPropagation();
 
   return (
     <header className="site-header">
@@ -28,7 +36,15 @@ export default function Header({
           <span className="brand__flag" aria-hidden="true" />
           <span className="brand__name">Prawdowid</span>
         </button>
-        <div className="view-settings" role="group" aria-label="Ustawienia wyglądu">
+        <div
+          className="view-settings"
+          role="group"
+          aria-label="Ustawienia wyglądu"
+          data-tips-hidden={tipsHidden || undefined}
+          onKeyDown={onKeyDown}
+          onMouseLeave={showTips}
+          onBlur={showTips}
+        >
           <button
             type="button"
             className="pill-toggle pill-toggle--icon"
@@ -40,8 +56,8 @@ export default function Header({
               <span className="text-size-icon__small">A</span>
               <span className="text-size-icon__big">A</span>
             </span>
-            <span className="icon-tip" aria-hidden="true">
-              {bigText ? 'Zwykły tekst' : 'Większy tekst'}
+            <span className="icon-tip" aria-hidden="true" onClick={keepTip}>
+              Większy tekst
             </span>
           </button>
           <button
@@ -55,8 +71,8 @@ export default function Header({
               <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" strokeWidth="2.2" />
               <path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor" />
             </svg>
-            <span className="icon-tip" aria-hidden="true">
-              {highContrast ? 'Zwykły kontrast' : 'Wysoki kontrast'}
+            <span className="icon-tip" aria-hidden="true" onClick={keepTip}>
+              Wysoki kontrast
             </span>
           </button>
         </div>

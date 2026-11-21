@@ -58,6 +58,26 @@ export default function Modal({
       ref={ref}
       className={wide ? 'modal modal--wide' : 'modal'}
       aria-labelledby={titleId}
+      onKeyDown={(e) => {
+        // Tab i Shift+Tab krążą tylko po elementach okna.
+        if (e.key !== 'Tab') return;
+        const focusable = [
+          ...e.currentTarget.querySelectorAll<HTMLElement>(
+            'button:not([disabled]), [href], input:not([disabled]), textarea:not([disabled]), summary, [tabindex]:not([tabindex="-1"])',
+          ),
+        ].filter((el) => el.offsetParent !== null);
+        if (focusable.length === 0) return;
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        const active = document.activeElement;
+        if (e.shiftKey && (active === first || !e.currentTarget.contains(active))) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && active === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }}
       onCancel={(e) => {
         e.preventDefault();
         if (!busy) onClose();

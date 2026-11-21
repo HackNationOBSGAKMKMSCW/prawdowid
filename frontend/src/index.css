@@ -1391,10 +1391,7 @@ button:disabled {
   color: var(--c-text-subtle);
   font: 600 15px/1.2 var(--font);
   text-decoration: none;
-  opacity: 0.75;
-  transition:
-    opacity 0.15s,
-    box-shadow 0.15s;
+  transition: box-shadow 0.15s;
 }
 
 .view-switch:hover,
@@ -1794,7 +1791,7 @@ button:disabled {
   border-radius: 50%;
   background: inherit;
   z-index: -1;
-  animation: pw-ping 2.2s var(--ease-out) 1.6s 3 both;
+  animation: pw-ping 1.6s var(--ease-out) 1.4s 2 both;
 }
 
 .view-switch:hover .view-switch__icon,
@@ -1911,7 +1908,7 @@ button:disabled {
   color: #fff;
   font: 700 14px/1.2 var(--font);
   white-space: nowrap;
-  pointer-events: none;
+  cursor: default;
   opacity: 0;
   transition:
     opacity 0.15s,
@@ -1960,4 +1957,58 @@ button:disabled {
 [data-hc='true'] .pill-toggle .icon-tip {
   background: #000 !important;
   color: #fff !important;
+}
+
+/* ---------- Dostępność: poprawki po audycie WCAG ---------- */
+
+/* 2.4.11: element z fokusem nie chowa się pod pływającym przyciskiem demo. */
+html {
+  scroll-padding-bottom: 96px;
+}
+
+.view-switch__text {
+  color: var(--c-text-muted);
+}
+
+/* 1.4.13: dymek można najechać myszą (mostek nad odstępem) i schować Esc. */
+.pill-toggle--icon::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: -8px;
+  right: -8px;
+  height: 14px;
+}
+
+.view-settings[data-tips-hidden] .icon-tip {
+  opacity: 0 !important;
+  visibility: hidden !important;
+}
+
+.view-switch[data-collapsed] .view-switch__text {
+  max-width: 0 !important;
+  padding: 0 !important;
+  opacity: 0 !important;
+}
+
+@media (hover: none) {
+  .view-switch[data-collapsed] .view-switch__text {
+    max-width: 320px !important;
+    padding: 0 10px 0 8px !important;
+    opacity: 1 !important;
+  }
+}
+
+/* Ukryty dymek nie przechwytuje kliknięć w treść pod nim. */
+.icon-tip {
+  visibility: hidden;
+  transition:
+    opacity 0.15s,
+    transform 0.2s var(--ease-out, ease-out),
+    visibility 0.15s;
+}
+
+.pill-toggle--icon:hover .icon-tip,
+.pill-toggle--icon:focus-visible .icon-tip {
+  visibility: visible;
 }

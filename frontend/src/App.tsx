@@ -54,7 +54,6 @@ function WebApp({ prefs }: { prefs: ReturnType<typeof usePreferences> }) {
         <a href="#tresc" className="skip-link">
           Przejdź do treści
         </a>
-        <ViewSwitch />
         {SHOW_DEMO_BAR && <DemoBar />}
         <div className="shell" data-big={prefs.bigText} aria-busy={checking}>
           <Header
@@ -74,6 +73,8 @@ function WebApp({ prefs }: { prefs: ReturnType<typeof usePreferences> }) {
           </main>
           <Footer />
         </div>
+        {/* Na końcu kolejności Tab, zgodnie z położeniem w prawym dolnym rogu. */}
+        <ViewSwitch />
       </div>
     </AnnouncerProvider>
   );

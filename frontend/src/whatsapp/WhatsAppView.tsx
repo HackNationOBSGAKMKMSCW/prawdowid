@@ -8,7 +8,12 @@ export default function WhatsAppView() {
 
   return (
     <div className="wa-view">
-      <WhatsAppSimulator />
+      <main aria-labelledby="wa-view-title">
+        <h1 id="wa-view-title" className="sr-only">
+          Demo WhatsApp: czat z Prawdowidem
+        </h1>
+        <WhatsAppSimulator />
+      </main>
       <ViewSwitch />
     </div>
   );

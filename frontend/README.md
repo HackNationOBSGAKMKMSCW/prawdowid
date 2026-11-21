@@ -108,12 +108,33 @@ Przycisk „Usuń moje dane” – najpierw okno „Czy na pewno?”, potem potw
 
 ## Dostępność
 
-- przełączniki „Większy tekst” (powiększenie 120%) i „Wysoki kontrast”,
-  zapamiętane w `localStorage`;
+Cel: WCAG 2.2 na poziomie AA.
+
+- przełączniki „Większy tekst” (ikona aA, powiększenie 120%) i „Wysoki kontrast”
+  (ikona ◐), zapamiętane w `localStorage`; podpisy w dymkach da się najechać
+  myszą i schować klawiszem Esc;
 - „Przeczytaj na głos” przez Web Speech API (`pl-PL`);
-- link „Przejdź do treści”, fokus przenoszony na nagłówek po zmianie ekranu,
-  komunikaty przez `aria-live`;
-- obsługa `prefers-reduced-motion` i `forced-colors`.
+- link „Przejdź do treści”, fokus przenoszony na nagłówek `h1` po zmianie ekranu,
+  komunikaty przez `aria-live`, błędy formularza przez `role="alert"`;
+- okna modalne na `<dialog>`: fokus krąży tylko w oknie, Esc zamyka, fokus wraca
+  na przycisk, który okno otworzył;
+- źródła po angielsku mają `lang="en"`, cała strona `lang="pl"`;
+- obsługa `prefers-reduced-motion` (bez animacji) i `forced-colors`.
+
+### Co zostało sprawdzone
+
+| Test | Wynik |
+| --- | --- |
+| axe-core 4.10 (WCAG 2.0/2.1/2.2 A i AA + dobre praktyki), 13 stanów × komputer i telefon: start, błąd pola, wynik, analiza, awaria, okna, Pomoc, wysoki kontrast, WhatsApp | 0 błędów |
+| Kontrast całej palety (tekst ≥ 4,5:1, elementy interfejsu ≥ 3:1) | wszystkie pary spełniają |
+| Klawiatura: kolejność Tab, widoczny fokus na każdym elemencie, brak pułapek | OK |
+| Powiększenie 200% i 400% (szerokość 640 i 320 px), bez przewijania w poziomie (1.4.10) | OK |
+| Zwiększone odstępy tekstu (1.4.12) | OK |
+| Fokus nie chowa się pod przyciskiem demo w rogu (2.4.11) | OK |
+
+**Nie zostało sprawdzone:** testy z prawdziwymi czytnikami ekranu (NVDA, JAWS,
+VoiceOver, TalkBack) i z udziałem użytkowników. Automatyczne narzędzia wykrywają
+tylko część problemów, więc przed wdrożeniem potrzebny jest ręczny audyt.
 
 ## Struktura
 
