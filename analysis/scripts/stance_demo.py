@@ -3,7 +3,8 @@
 .venv/Scripts/python scripts/stance_demo.py            # wszystkie twierdzenia
 .venv/Scripts/python scripts/stance_demo.py --k 2      # mniej pasaży na twierdzenie
 
-Wymaga w analysis/.env: OPENAI_BASE_URL, LLM_MODEL (i ewentualnie OPENAI_API_KEY).
+Wymaga w analysis/.env: OPENAI_BASE_URL, LLM_MODEL i OPENAI_API_KEY (dla FreeLLMAPI:
+`http://<host>:3001/v1`, klucz `freellmapi-…`, model `auto`/`auto:<profil>` lub przypięty).
 Wypisuje stanowisko i cytat dla każdego pasażu, werdykt dla twierdzenia oraz czasy:
 na wywołanie, na twierdzenie i medianę (cel z zadania: mediana <= 30 s na zgłoszenie).
 """
@@ -15,7 +16,7 @@ import time
 
 from prawdowid_analysis.rag.mock import mock_retrieve
 from prawdowid_analysis.schemas import Claim
-from prawdowid_analysis.verdict.llm import LLMError, OpenAIChatClient
+from prawdowid_analysis.verdict.llm import LLMError, OpenAIChatClient, is_router_model
 from prawdowid_analysis.verdict.rules import aggregate
 from prawdowid_analysis.verdict.stance import build_evidence
 
@@ -59,14 +60,15 @@ def main() -> int:
     except LLMError as exc:
         print(f"[FAIL] {exc}")
         return 1
-    print(f"Model: {client.model}; dostępne na serwerze: {models}")
-    if client.model not in models:
-        print(f"[FAIL] Modelu {client.model} nie ma na serwerze.")
+    print(f"LLM_MODEL: {client.model}; dostępnych modeli z aktywnym kluczem: {len(models)}")
+    if not is_router_model(client.model) and client.model not in models:
+        print(f"[FAIL] Model {client.model} nie jest dostępny (brak klucza lub limitu).")
         return 1
 
     call_ms: list[int] = []
     claim_ms: list[int] = []
     tokens_out: list[int] = []
+    models_used: dict[str, int] = {}  # przy `auto` router może zmieniać model między wywołaniami
     for claim in CLAIMS:
         print(f"\n== {claim.claim_id}: {claim.text}")
         passages = mock_retrieve(claim.text, k=args.k)
@@ -75,7 +77,7 @@ def main() -> int:
             evidence, assessments = build_evidence(claim, passages, client)
             verdict = aggregate(claim, evidence)
         except LLMError as exc:
-            verdict = aggregate(claim, [], error=str(exc))
+            verdict = aggregate(claim, [], error=f"{exc.kind}: {exc}")
             assessments = []
         claim_ms.append(int((time.perf_counter() - started) * 1000))
         for a in assessments:
@@ -83,10 +85,13 @@ def main() -> int:
             tokens_out.append(a.llm.tokens_out)
             mark = "OK " if a.quote_verified else ("ZLY" if a.quote else "   ")
             json_flag = "" if a.parse_ok else " [fallback: zły JSON]"
+            failover = f", failover x{a.llm.fallback_attempts}" if a.llm.fallback_attempts else ""
             print(
-                f"  {a.chunk_id:<16} {a.stance:<12} cytat[{mark}] {a.quote[:70]!r}"
-                f"  ({a.llm.duration_ms} ms, {a.llm.tokens_in}->{a.llm.tokens_out} tok){json_flag}"
+                f"  {a.chunk_id:<16} {a.stance:<12} cytat[{mark}] {a.quote[:70]!r}\n"
+                f"  {'':<16} {a.llm.model} ({a.llm.duration_ms} ms, "
+                f"{a.llm.tokens_in}->{a.llm.tokens_out} tok{failover}){json_flag}"
             )
+            models_used[a.llm.model] = models_used.get(a.llm.model, 0) + 1
         print(f"  WERDYKT: {verdict.outcome_class}/{verdict.outcome}  {verdict.explanation_pl}")
 
     if call_ms:
@@ -96,6 +101,7 @@ def main() -> int:
             f"max {max(call_ms)} ms, ~{sum(tokens_out) / max(total_s, 1e-9):.1f} tok/s wyjścia"
         )
     print(f"Na twierdzenie (k={args.k}): mediana {statistics.median(claim_ms) / 1000:.1f} s")
+    print(f"Modele, które faktycznie odpowiedziały (X-Routed-Via): {models_used}")
     return 0
 
 
