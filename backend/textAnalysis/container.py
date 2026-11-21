@@ -1,4 +1,5 @@
 from dataclasses import asdict, dataclass, field
+from datetime import datetime
 from typing import Any
 
 
@@ -24,11 +25,15 @@ class AnalysisDataContainer:
     statements: list[str] = field(default_factory=list)
     total_sentences: int = 0
     security_warnings: list[str] = field(default_factory=list)
+    original_text: str = ""
+    started_at: datetime | None = None
 
     def populate(
         self,
         *,
         source_text: str,
+        original_text: str = "",
+        started_at: datetime | None = None,
         category: str,
         language_code: str | None = None,
         confidence: float,
@@ -41,6 +46,8 @@ class AnalysisDataContainer:
     ) -> None:
         """Wypełnia pusty kontener wynikami analizy."""
         self.source_text = source_text
+        self.original_text = original_text
+        self.started_at = started_at
         self.source_url = source_url
         self.category = category
         self.language_code = language_code

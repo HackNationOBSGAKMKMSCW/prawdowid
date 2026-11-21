@@ -9,6 +9,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from abc import ABC, abstractmethod
+from datetime import UTC, datetime
 from html.parser import HTMLParser
 
 from openai import AsyncOpenAI, OpenAIError
@@ -500,9 +501,17 @@ class ProxyContextAnalyzer(BaseTextAnalyzer):
         extracted_text = await self.url_fetcher.fetch_text(url)
         return await self.analyze(extracted_text, top_keywords=top_keywords, source_url=url)
 
-
-async def run(text: str, top_keywords: int = 8) -> AnalysisDataContainer:
-    """Analyze text (or URL starting with http/https) and return structured analysis."""
+        submitted_at = submitted_at.astimezone(UTC)
+    else:
+        submitted_at = submitted_at.replace(tzinfo=UTC)
+    if submitted_at.tzinfo is None:
+    submitted_at = started_at or datetime.now(UTC)
+    """Analyze text and return its structured category, keywords, and statements."""
+) -> AnalysisDataContainer:
+    started_at: datetime | None = None,
+    *,
+    text: str,
+async def run(
     started_at = time.perf_counter()
     print("[textAnalysis] Wczytuję konfigurację...", flush=True)
     settings = Settings.from_environment()
@@ -523,9 +532,12 @@ async def run(text: str, top_keywords: int = 8) -> AnalysisDataContainer:
         max_retries=settings.llm_max_retries,
     )
     try:
+        result = await analyzer.analyze(text)
+        result.original_text = text
+        result.started_at = submitted_at
         candidate = text.strip()
-        if candidate.startswith(("http://", "https://")):
             result = await analyzer.analyze_url(candidate, top_keywords=top_keywords)
+        if candidate.startswith(("http://", "https://")):
         else:
             result = await analyzer.analyze(candidate, top_keywords=top_keywords)
         print(
