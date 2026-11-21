@@ -124,6 +124,9 @@ class EvidenceOut(BaseModel):
     publisher: str = ""
     url: str | None = None
     published_at: str | None = None
+    fetched_at: str | None = None
+    age_days: int | None = None
+    freshness_flags: list[str] = []
 
 
 class SourceReviewOut(BaseModel):

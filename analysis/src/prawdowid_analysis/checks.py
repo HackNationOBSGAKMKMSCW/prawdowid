@@ -13,13 +13,16 @@ da się wykluczyć samą instrukcją:
 - "brak_wystarczajacych_danych" zawsze ma listę braków (R6);
 - rozstrzygnięcie oparte wyłącznie na wpisach fact-checkingowych ma najwyżej
   pewność "srednia" (R13);
-- każde źródło pokazane modelowi ma ocenę w `sources_reviewed` (R8).
+- każde źródło pokazane modelowi ma ocenę w `sources_reviewed` (R8);
+- rozstrzygnięcie oparte wyłącznie na materiale archiwalnym dostaje flagę
+  `werdykt_na_materiale_archiwalnym` i najwyżej pewność "srednia" (R11).
 
 Każda zmiana względem odpowiedzi modelu trafia do `adjustments`.
 """
 
 from collections.abc import Sequence
 
+from .freshness import is_archival
 from .quotes import verify_quote
 from .schemas import (
     VERDICT_LABELS_PL,
@@ -32,6 +35,7 @@ from .schemas import (
 )
 
 NO_DATA = "brak_wystarczajacych_danych"
+FLAG_VERDICT_ON_ARCHIVAL = "werdykt_na_materiale_archiwalnym"
 
 
 def _evidence(
@@ -62,6 +66,9 @@ def _evidence(
                 publisher=source.publisher if source else "",
                 url=source.url if source else None,
                 published_at=source.published_at if source else None,
+                fetched_at=source.fetched_at if source else None,
+                age_days=source.age_days if source else None,
+                freshness_flags=list(source.freshness_flags) if source else [],
             )
         )
     return result
@@ -195,7 +202,18 @@ def apply_checks(
             "fact-checkingowych, bez źródła dokumentowego."
         )
 
+    freshness_flags: list[str] = []
+    if decisive and all(is_archival(by_id[e.source_id]) for e in decisive):
+        freshness_flags.append(FLAG_VERDICT_ON_ARCHIVAL)
+        if confidence == "wysoka":
+            confidence = "srednia"
+            adjustments.append(
+                "Pewność obniżono do „srednia”: rozstrzygnięcie opiera się wyłącznie na "
+                "materiale archiwalnym (starszym niż limit aktualności)."
+            )
+
     return ClaimVerdict(
+        freshness_flags=freshness_flags,
         claim_id=claim_id,
         claim=claim,
         verdict=verdict,

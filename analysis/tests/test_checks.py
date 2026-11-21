@@ -137,3 +137,23 @@ def test_consistency_problems_detect_bad_quotes_and_unknown_sources():
     assert any("nie występuje w nim dosłownie" in p for p in problems)
     assert any("[X]" in p for p in problems)
     assert any("werdykt „prawda”" in p for p in problems)
+
+
+def test_verdict_resting_only_on_archival_material_is_flagged_and_capped():
+    archival = source(
+        published_at="2015-01-05", age_days=4338, freshness_flags=["material_archiwalny"]
+    )
+    result = check(model_answer(), [archival])
+    assert result.verdict == "prawda", "fakt historyczny może pochodzić z archiwum"
+    assert result.confidence == "srednia"
+    assert result.freshness_flags == ["werdykt_na_materiale_archiwalnym"]
+    assert any("materiale archiwalnym" in a for a in result.adjustments)
+    assert result.evidence[0].age_days == 4338
+    assert result.evidence[0].freshness_flags == ["material_archiwalny"]
+
+
+def test_fresh_evidence_keeps_confidence_and_has_no_flag():
+    fresh = source(published_at="2026-10-01", age_days=51, fetched_at="2026-11-21T12:00:00Z")
+    result = check(model_answer(), [fresh])
+    assert result.confidence == "wysoka" and result.freshness_flags == []
+    assert result.evidence[0].fetched_at == "2026-11-21T12:00:00Z"
