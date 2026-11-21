@@ -135,13 +135,53 @@ def partition_fact_checks(results: Iterable[Any], statements: Iterable[str]) -> 
     return pools
 
 
+_ERROR_MESSAGES: dict[str, str] = {
+    "ApiAuthError": (
+        "brak lub nieprawidłowy klucz API (np. GOOGLE_FACT_CHECK_API_KEY) – "
+        "wpisy fact-checkingowe nie zostały pobrane"
+    ),
+    "ApiRateLimitError": "przekroczono limit zapytań dostawcy",
+    "ApiTimeoutError": "przekroczono czas oczekiwania na odpowiedź",
+    "ApiConnectionError": "brak połączenia z dostawcą",
+    "ApiHttpError": "błąd HTTP po stronie dostawcy",
+    "ApiResponseError": "dostawca zwrócił odpowiedź w nieoczekiwanym formacie",
+    "InvalidFiltersError": "nieprawidłowe parametry zapytania",
+    "NoSourcesAvailableError": "brak skonfigurowanego dostawcy",
+}
+
+
+def _error_kind(error: Any) -> str:
+    if isinstance(error, Mapping):  # wynik po model_dump(): {"type", "message", ...}
+        return str(error.get("type") or "Błąd")
+    return type(error).__name__
+
+
 def reading_errors(results: Iterable[Any]) -> list[str]:
-    """Błędy dostawców z wyników `apiReading` (do ostrzeżeń w raporcie)."""
-    errors: list[str] = []
-    for result in results or []:
+    """Czytelne ostrzeżenia o błędach dostawców z wyników `apiReading`.
+
+    Ten sam błąd powtarza się zwykle dla każdego zapytania (np. brak klucza API),
+    więc jest zgłaszany raz, z liczbą zapytań, których dotyczy.
+    """
+    results = list(results or [])
+    counts: dict[tuple[str, str], int] = {}
+    missing_categories: set[str] = set()
+    for result in results:
         for outcome in _get(result, "results") or []:
             error = _get(outcome, "error")
             if error is not None:
-                kind = _get(error, "type") or type(error).__name__
-                errors.append(f"Źródło {_get(outcome, 'source')}: {kind}")
-    return errors
+                key = (str(_get(outcome, "source") or "nieznane"), _error_kind(error))
+                counts[key] = counts.get(key, 0) + 1
+        for category in _get(result, "categories_without_source") or []:
+            missing_categories.add(str(getattr(category, "value", category)))
+
+    warnings = []
+    for (source, kind), count in counts.items():
+        description = _ERROR_MESSAGES.get(kind, "błąd dostawcy")
+        warnings.append(
+            f"Fact-checki ({source}): {description} [{kind}; zapytań: {count} z {len(results)}]."
+        )
+    if missing_categories:
+        warnings.append(
+            "Brak dostawcy danych dla kategorii: " + ", ".join(sorted(missing_categories)) + "."
+        )
+    return warnings

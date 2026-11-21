@@ -70,10 +70,34 @@ def test_source_ids_are_stable_and_deduplicated():
     assert [s.source_id for s in first] == [s.source_id for s in second]
 
 
-def test_reading_errors_are_reported():
-    error = RuntimeError("boom")
-    errors = reading_errors([_reading_result("q", [], errors=[("google_fact_check", error)])])
-    assert errors == ["Źródło google_fact_check: RuntimeError"]
+class ApiAuthError(Exception):
+    """Ta sama nazwa klasy co w backend/apiReading/exceptions.py."""
+
+
+def test_reading_errors_are_deduplicated_and_explained():
+    results = [
+        _reading_result(f"q{i}", [], errors=[("google_fact_check", ApiAuthError("key"))])
+        for i in range(3)
+    ]
+    errors = reading_errors(results)
+    assert len(errors) == 1
+    assert "GOOGLE_FACT_CHECK_API_KEY" in errors[0]
+    assert "zapytań: 3 z 3" in errors[0]
+
+
+def test_reading_errors_accept_dumped_errors_and_unknown_kinds():
+    dumped = {
+        "request": {"query": "q"},
+        "results": [
+            {"source": "google_fact_check", "error": {"type": "ApiRateLimitError", "message": "x"}},
+            {"source": "inne", "error": {"type": "CosNowego"}},
+        ],
+        "categories_without_source": ["fact_check"],
+    }
+    errors = reading_errors([dumped])
+    assert any("limit zapytań" in e for e in errors)
+    assert any("(inne): błąd dostawcy [CosNowego" in e for e in errors)
+    assert errors[-1] == "Brak dostawcy danych dla kategorii: fact_check."
 
 
 def test_partition_separates_per_statement_and_full_text_results():
