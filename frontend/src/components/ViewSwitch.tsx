@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 
 /**
@@ -11,9 +11,22 @@ export default function ViewSwitch() {
 
   const to = onWhatsApp ? '/' : '/whatsapp';
   const label = onWhatsApp ? 'Wróć do strony Prawdowid' : 'Przełącz na demo WhatsApp';
-  const short = onWhatsApp ? 'Wróć do strony' : 'Demo WhatsApp';
   // Esc zwija rozwinięty podpis (WCAG 1.4.13).
   const [collapsed, setCollapsed] = useState(false);
+  // Na telefonie przycisk chowa się przy przewijaniu w dół i wraca przy przewijaniu w górę.
+  const [scrolledAway, setScrolledAway] = useState(false);
+
+  useEffect(() => {
+    let last = window.scrollY;
+    const onScroll = () => {
+      const y = window.scrollY;
+      if (Math.abs(y - last) < 8) return;
+      setScrolledAway(y > last && y > 120);
+      last = y;
+    };
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
 
   return (
     <nav className="view-switch-nav" aria-label="Przełącznik demo WhatsApp">
@@ -24,6 +37,8 @@ export default function ViewSwitch() {
         data-target={onWhatsApp ? 'web' : 'whatsapp'}
         aria-label={label}
         data-collapsed={collapsed || undefined}
+        data-away={scrolledAway || undefined}
+        onFocus={() => setScrolledAway(false)}
         onKeyDown={(e) => {
           if (e.key === 'Escape') setCollapsed(true);
         }}
@@ -54,9 +69,9 @@ export default function ViewSwitch() {
         <span className="view-switch__text">
           <span className="view-switch__tag">Demo</span>
           <span className="view-switch__long">{label}</span>
-          <span className="view-switch__short" aria-hidden="true">
-            {short}
-          </span>
+        </span>
+        <span className="view-switch__badge" aria-hidden="true">
+          {onWhatsApp ? 'Wróć' : 'Demo'}
         </span>
       </Link>
     </nav>

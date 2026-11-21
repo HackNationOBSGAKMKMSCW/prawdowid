@@ -1551,36 +1551,6 @@ button:disabled {
   text-transform: uppercase;
 }
 
-@media (hover: none) {
-  /* Na dotyku nie ma najechania – podpis jest widoczny od razu, ale mały. */
-  .view-switch__text {
-    max-width: 320px;
-    padding: 0 10px 0 8px;
-    font-size: 13px;
-  }
-
-  .view-switch__tag,
-  .view-switch__long {
-    display: none;
-  }
-
-  .view-switch {
-    min-height: 40px;
-    padding: 4px;
-  }
-
-  .view-switch__icon {
-    width: 32px;
-    height: 32px;
-  }
-}
-
-@media (hover: hover) {
-  .view-switch__short {
-    display: none;
-  }
-}
-
 /* Widok WhatsApp: symulator zajmuje cały ekran. */
 
 .wa-view {
@@ -1912,12 +1882,6 @@ button:disabled {
   opacity: 1;
 }
 
-@media (hover: none) {
-  .view-switch__text {
-    opacity: 1;
-  }
-}
-
 /* ---------- Przejście między stroną a czatem ---------- */
 
 ::view-transition-old(root) {
@@ -2089,14 +2053,6 @@ html {
   max-width: 0 !important;
   padding: 0 !important;
   opacity: 0 !important;
-}
-
-@media (hover: none) {
-  .view-switch[data-collapsed] .view-switch__text {
-    max-width: 320px !important;
-    padding: 0 10px 0 8px !important;
-    opacity: 1 !important;
-  }
 }
 
 /* Ukryty dymek nie przechwytuje kliknięć w treść pod nim. */
@@ -2295,5 +2251,134 @@ html {
       background-color 0.35s ease,
       border-color 0.35s ease,
       color 0.35s ease;
+  }
+}
+
+/* ---------- Przycisk demo na telefonie: okrągły FAB z plakietką ---------- */
+
+.view-switch__badge {
+  display: none;
+}
+
+@media (hover: none) {
+  .view-switch {
+    right: 16px;
+    bottom: max(18px, env(safe-area-inset-bottom));
+    width: 60px;
+    height: 60px;
+    min-height: 0;
+    padding: 0;
+    justify-content: center;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    box-shadow: none;
+    -webkit-tap-highlight-color: transparent;
+    transition:
+      transform 0.35s var(--ease-spring),
+      opacity 0.25s;
+  }
+
+  .view-switch:hover,
+  .view-switch:focus-visible {
+    transform: none;
+    box-shadow: none;
+  }
+
+  .view-switch__text {
+    display: none;
+  }
+
+  .view-switch__icon {
+    width: 60px;
+    height: 60px;
+    background: linear-gradient(145deg, #25a464, #157a45);
+    box-shadow:
+      0 10px 24px -6px rgb(21 122 69 / 55%),
+      0 2px 6px rgb(20 26 36 / 25%),
+      inset 0 1px 0 rgb(255 255 255 / 25%);
+  }
+
+  .view-switch[data-target='web'] .view-switch__icon {
+    background: linear-gradient(145deg, #1c4f96, #0a2f63);
+    box-shadow:
+      0 10px 24px -6px rgb(10 47 99 / 55%),
+      0 2px 6px rgb(20 26 36 / 25%),
+      inset 0 1px 0 rgb(255 255 255 / 20%);
+  }
+
+  .view-switch__icon svg {
+    width: 28px;
+    height: 28px;
+  }
+
+  .view-switch:hover .view-switch__icon,
+  .view-switch:focus-visible .view-switch__icon {
+    transform: none;
+  }
+
+  .view-switch:active .view-switch__icon {
+    transform: scale(0.92);
+  }
+
+  /* Plakietka pod ikoną, jak oznaczenie w aplikacjach. */
+  .view-switch__badge {
+    display: block;
+    position: absolute;
+    left: 50%;
+    bottom: -7px;
+    transform: translateX(-50%);
+    padding: 2px 8px;
+    border-radius: 999px;
+    border: 2px solid var(--c-page);
+    background: var(--c-text);
+    color: var(--c-page);
+    font: 800 11px/1.2 var(--font);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+
+  /* Chowa się przy przewijaniu w dół, wraca przy przewijaniu w górę. */
+  .view-switch[data-away] {
+    transform: translateY(calc(100% + 40px));
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  /* Koniec stopki nie chowa się pod przyciskiem. */
+  .site-footer__inner {
+    padding-bottom: 100px;
+  }
+
+  .wa-view .view-switch {
+    bottom: 88px;
+  }
+}
+
+[data-hc='true'] .view-switch__badge {
+  background: #000 !important;
+  color: #fff !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .view-switch[data-away] {
+    transform: none;
+  }
+}
+
+/* Wejście przycisku nie blokuje później jego przejść (chowanie przy przewijaniu). */
+.view-switch {
+  animation-fill-mode: backwards;
+}
+
+@media (hover: none) {
+  :root[data-theme='dark'] .view-switch[data-target='web'] .view-switch__icon {
+    background: linear-gradient(145deg, #b3cfff, #6f9ef0);
+    color: #0b1626;
+    box-shadow:
+      0 10px 24px -6px rgb(111 158 240 / 45%),
+      0 2px 6px rgb(0 0 0 / 40%),
+      inset 0 1px 0 rgb(255 255 255 / 35%);
   }
 }
