@@ -126,19 +126,23 @@ def test_llm_failure_propagates_and_becomes_error_status():
     p = mock_retrieve(CLAIM.text, k=1)[0]
     with pytest.raises(LLMError) as exc:
         assess_passage(CLAIM, p, FailingClient())
-    v = aggregate(CLAIM, [], error=str(exc.value))
+    v = aggregate(CLAIM, [], [p], error=str(exc.value))
     assert (v.outcome_class, v.outcome) == ("status", "error")
 
 
 def test_end_to_end_on_mock_retrieve_gives_evidence_and_verdict():
     passages = mock_retrieve(CLAIM.text)
     fc = next(p for p in passages if p.source_type == "fact_check")
+    gov = next(p for p in passages if p.chunk_id == "mock_doc_001_c2")  # opłata bez zmian
     client = FakeClient(
         {
             fc.chunk_id: _answer(
                 "refutes",
                 "Nie znaleźliśmy żadnego aktu prawnego ani komunikatu, który by to potwierdzał.",
-            )
+            ),
+            gov.chunk_id: _answer(
+                "refutes", "Opłata za wydanie paszportu dla osoby dorosłej nie ulega zmianie."
+            ),
         }
     )
     evidence, assessments = build_evidence(CLAIM, passages, client)
@@ -146,9 +150,16 @@ def test_end_to_end_on_mock_retrieve_gives_evidence_and_verdict():
     assert len({e.evidence_id for e in evidence}) == len(evidence)
     assert all(e.claim_id == CLAIM.claim_id for e in evidence)
     assert all(a.llm.tokens_in == 100 for a in assessments)
-    v = aggregate(CLAIM, evidence)
-    assert v.outcome == "false"
-    assert v.evidence_ids == [e.evidence_id for e in evidence if e.chunk_id == fc.chunk_id]
+    v = aggregate(CLAIM, evidence, passages)
+    assert v.outcome == "false"  # 2 niezależne źródła T1–T2 obalają
+    assert {e.chunk_id for e in evidence if e.evidence_id in v.evidence_ids} == {
+        fc.chunk_id,
+        gov.chunk_id,
+    }
+
+    # Sam fact-check (jedno źródło T1–T2) to za mało na werdykt.
+    only_fc = [e for e in evidence if e.chunk_id != gov.chunk_id]
+    assert aggregate(CLAIM, only_fc, passages).outcome == "insufficient_evidence"
 
 
 def test_injection_document_does_not_change_the_prompt_structure():

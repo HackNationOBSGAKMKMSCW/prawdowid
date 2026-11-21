@@ -75,9 +75,9 @@ def main() -> int:
         started = time.perf_counter()
         try:
             evidence, assessments = build_evidence(claim, passages, client)
-            verdict = aggregate(claim, evidence)
+            verdict = aggregate(claim, evidence, passages)
         except LLMError as exc:
-            verdict = aggregate(claim, [], error=f"{exc.kind}: {exc}")
+            verdict = aggregate(claim, [], passages, error=f"{exc.kind}: {exc}")
             assessments = []
         claim_ms.append(int((time.perf_counter() - started) * 1000))
         for a in assessments:
