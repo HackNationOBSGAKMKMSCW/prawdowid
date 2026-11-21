@@ -5,6 +5,7 @@ from typing import Any
 @dataclass(frozen=True)
 class KeywordItem:
     """Niemutowalny kontener na pojedyncze słowo kluczowe w kontekście."""
+
     term: str
     context_note: str
 
@@ -12,8 +13,10 @@ class KeywordItem:
 @dataclass
 class AnalysisDataContainer:
     """Pusta klasa-kontener na dane, wypełniana dopiero po zakończeniu analizy."""
+
     source_text: str = ""
     category: str = ""
+    language_code: str | None = None
     confidence: float = 0.0
     context_reasoning: str = ""
     keywords: list[KeywordItem] = field(default_factory=list)
@@ -26,6 +29,7 @@ class AnalysisDataContainer:
         *,
         source_text: str,
         category: str,
+        language_code: str | None = None,
         confidence: float,
         context_reasoning: str,
         keywords: list[KeywordItem],
@@ -36,6 +40,7 @@ class AnalysisDataContainer:
         """Wypełnia pusty kontener wynikami analizy."""
         self.source_text = source_text
         self.category = category
+        self.language_code = language_code
         self.confidence = confidence
         self.context_reasoning = context_reasoning
         self.keywords = keywords
