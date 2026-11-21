@@ -55,8 +55,13 @@ class StrengthFactors:
             f"{n} {plural(n, 'niezależne źródło', 'niezależne źródła', 'niezależnych źródeł')}"
             f" T1–T2{tier}, wymagane {MIN_INDEPENDENT_STRONG}",
             f"{self.verified_quotes} "
-            f"{plural(self.verified_quotes, 'cytat', 'cytaty', 'cytatów')} "
-            "zweryfikowane w tekście źródła",
+            + plural(
+                self.verified_quotes,
+                "cytat zweryfikowany",
+                "cytaty zweryfikowane",
+                "cytatów zweryfikowanych",
+            )
+            + " w tekście źródła",
         ]
         if self.weak_sources:
             out.append(
