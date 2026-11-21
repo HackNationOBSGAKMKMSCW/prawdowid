@@ -195,6 +195,7 @@ async def run(
     reading_results: Any = None,
     *,
     extra_sources: Iterable[ReferenceSource] = (),
+    warnings: Sequence[str] = (),
     **kwargs: Any,
 ) -> TextVerdict:
     """Werdykt dla wyników `textAnalysis.run()` i (opcjonalnie) `apiReading`.
@@ -207,13 +208,12 @@ async def run(
     claims = claims_from_analysis(analysis)
     results = _as_result_list(reading_results)
     pools = partition_fact_checks(results, claims.statements)
-    warnings = [*claims.warnings, *reading_errors(results)]
     return await verify_claims(
         claims.statements,
         fact_checks=pools.per_statement,
         shared_fact_checks=pools.shared,
         extra_sources=extra_sources,
-        warnings=warnings,
+        warnings=[*warnings, *claims.warnings, *reading_errors(results)],
         **kwargs,
     )
 

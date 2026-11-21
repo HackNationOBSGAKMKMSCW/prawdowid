@@ -4,12 +4,16 @@
     echo "Tekst" | python -m prawdowid_analysis.cli
     python -m prawdowid_analysis.cli --sources moje_zrodla.json "Tekst"
     python -m prawdowid_analysis.cli --backend "Tekst"   # textAnalysis + apiReading
+    python -m prawdowid_analysis.cli --backend --fact-checks pelny-tekst "Tekst"
 
 Plik `--sources` to lista obiektów {"id", "title", "publisher", "url",
 "published_at", "text"} – źródła wzorcowe podane przez użytkownika.
 
 `--backend` importuje pakiety z `../backend` (tylko odczyt, bez zmian w backendzie):
-stwierdzenia wyciąga `textAnalysis`, a wpisy fact-checkingowe pobiera `apiReading`.
+stwierdzenia wyciąga `textAnalysis`, a wpisy fact-checkingowe pobiera `apiReading`
+(patrz `backend_bridge`). Logi backendu idą na stderr; stdout zawiera tylko JSON.
+
+Kody wyjścia: 0 – sukces, 2 – brak konfiguracji modelu, 3 – błąd backendu.
 """
 
 import argparse
@@ -19,12 +23,10 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from .config import ANALYSIS_DIR
+from .backend_bridge import FACT_CHECK_MODES, BackendError, FactCheckMode, run_backend
 from .llm import LLMConfigurationError
 from .pipeline import run, run_text
 from .schemas import ReferenceSource, TextVerdict
-
-BACKEND_DIR = ANALYSIS_DIR.parent / "backend"
 
 
 def load_user_sources(path: Path) -> list[ReferenceSource]:
@@ -45,17 +47,9 @@ def load_user_sources(path: Path) -> list[ReferenceSource]:
     ]
 
 
-async def _run_with_backend(text: str, **kwargs: Any) -> TextVerdict:
-    sys.path.insert(0, str(BACKEND_DIR))
-    import apiReading  # noqa: PLC0415  (opcjonalna zależność uruchomieniowa)
-    import textAnalysis  # noqa: PLC0415
-
-    analysis = await textAnalysis.run(text)
-    try:
-        reading = await apiReading.run(analysis)
-    except ValueError:  # brak stwierdzeń do wyszukania
-        reading = []
-    return await run(analysis, reading, **kwargs)
+async def _run_with_backend(text: str, mode: FactCheckMode, **kwargs: Any) -> TextVerdict:
+    output = await run_backend(text, mode)
+    return await run(output.analysis, output.reading_results, warnings=output.warnings, **kwargs)
 
 
 def _write_json(payload: str) -> None:
@@ -71,6 +65,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--backend", action="store_true", help="Użyj backend/textAnalysis i apiReading"
     )
+    parser.add_argument(
+        "--fact-checks",
+        choices=FACT_CHECK_MODES,
+        default="oba",
+        help="Tryb wyszukiwania fact-checków przy --backend (domyślnie: oba)",
+    )
     parser.add_argument("--output", type=Path, help="Zapisz JSON do pliku")
     args = parser.parse_args(argv)
 
@@ -83,11 +83,18 @@ def main(argv: list[str] | None = None) -> int:
         kwargs["extra_sources"] = load_user_sources(args.sources)
 
     try:
-        coro = _run_with_backend(text, **kwargs) if args.backend else run_text(text, **kwargs)
+        coro = (
+            _run_with_backend(text, args.fact_checks, **kwargs)
+            if args.backend
+            else run_text(text, **kwargs)
+        )
         result = asyncio.run(coro)
     except LLMConfigurationError as exc:
         print(f"Błąd konfiguracji: {exc}", file=sys.stderr)
         return 2
+    except BackendError as exc:
+        print(f"Błąd backendu: {exc}", file=sys.stderr)
+        return 3
 
     payload = result.model_dump_json(indent=2)
     if args.output:
