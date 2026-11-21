@@ -10,9 +10,22 @@ from apiReading.clients import GoogleFactCheckClient
 from apiReading.exceptions import ApiHttpError, InvalidFiltersError, NoSourcesAvailableError
 from apiReading.models import Category, FetchResult, Item, ReadingRequest
 from apiReading.reader import read
+from apiReading.registry import CLIENTS_BY_CATEGORY, clients_for_categories
 
 OTHER_API_URL = "https://api.other.invalid/search"
 GOOGLE_API_URL = "https://factchecktools.googleapis.com/v1alpha1/claims:search"
+
+
+@pytest.mark.asyncio
+async def test_article_extract_category_is_internal_and_not_searchable() -> None:
+    assert clients_for_categories([Category.ARTICLE_EXTRACT]) == ([], [Category.ARTICLE_EXTRACT])
+    assert CLIENTS_BY_CATEGORY[Category.FACT_CHECK] == (GoogleFactCheckClient,)
+
+    with pytest.raises(NoSourcesAvailableError):
+        await read(
+            ReadingRequest(query="article", categories=[Category.ARTICLE_EXTRACT]),
+            api_keys={"diffbot_article": "not-a-search-key"},
+        )
 
 
 class _OtherClient(BaseApiClient):

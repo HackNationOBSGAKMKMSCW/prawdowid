@@ -2,6 +2,7 @@ import asyncio
 import re
 import time
 from abc import ABC, abstractmethod
+from datetime import UTC, datetime
 
 from openai import AsyncOpenAI, OpenAIError
 from pydantic import BaseModel, Field, ValidationError
@@ -297,8 +298,17 @@ class ProxyContextAnalyzer(BaseTextAnalyzer):
         return container
 
 
-async def run(text: str) -> AnalysisDataContainer:
+async def run(
+    text: str,
+    *,
+    started_at: datetime | None = None,
+) -> AnalysisDataContainer:
     """Analyze text and return its structured category, keywords, and statements."""
+    submitted_at = started_at or datetime.now(UTC)
+    if submitted_at.tzinfo is None:
+        submitted_at = submitted_at.replace(tzinfo=UTC)
+    else:
+        submitted_at = submitted_at.astimezone(UTC)
     started_at = time.perf_counter()
     print("[textAnalysis] Wczytuję konfigurację...", flush=True)
     settings = Settings.from_environment()
@@ -320,6 +330,8 @@ async def run(text: str) -> AnalysisDataContainer:
     )
     try:
         result = await analyzer.analyze(text)
+        result.original_text = text
+        result.started_at = submitted_at
         print(
             f"[textAnalysis] Pakiet zakończył pracę po {time.perf_counter() - started_at:.1f}s.",
             flush=True,

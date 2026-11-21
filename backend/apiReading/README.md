@@ -49,3 +49,21 @@ text or API key.
 cd backend && ../.venv/bin/python -m scripts.smoke_pipeline [--json] ["text"]
 RUN_LIVE_TESTS=1 .venv/bin/python -m pytest -m live -s   # opt-in live test
 ```
+
+## Article extraction
+
+The separate `articleScraping.run(analysis, reading_results)` stage extracts
+article text from fact-check publisher links first, then from links present in
+the original user text. It returns a `ScrapingReport` with the original text,
+successful article bodies, and safe per-link failure details. The Diffbot token
+is read from `DIFFBOT_API_TOKEN`; set `ARTICLE_SCRAPING_ENABLED=false` to disable
+requests. Defaults limit a batch to five URLs, including at most two user-text
+links, and one concurrent Diffbot request.
+
+```bash
+cd backend && ../.venv/bin/python -m scripts.smoke_pipeline --scrape --json "text"
+```
+
+Scraped article text is untrusted input. Sanitize it with
+`textAnalysis.analysis.InputSanitizer` before any downstream LLM use, and keep it
+in a delimited data block rather than a system prompt.

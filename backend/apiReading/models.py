@@ -10,9 +10,10 @@ from .exceptions import ApiReadingError
 
 
 class Category(StrEnum):
-    """Kinds of information the reader can search for."""
+    """Kinds of information the reader can search for or process internally."""
 
     FACT_CHECK = "fact_check"
+    ARTICLE_EXTRACT = "article_extract"  # Internal client contract; no reader registry source.
 
 
 class ReadingRequest(BaseModel):

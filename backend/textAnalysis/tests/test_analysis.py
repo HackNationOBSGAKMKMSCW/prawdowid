@@ -1,3 +1,4 @@
+from datetime import UTC, datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -45,7 +46,10 @@ async def test_package_run_reads_settings_and_closes_analyzer(monkeypatch, capsy
 
     monkeypatch.setattr(analysis_module, "ProxyContextAnalyzer", FakeAnalyzer)
 
-    assert await analysis_module.run("A claim.") == result
+    submitted_at = datetime(2026, 11, 21, 12, tzinfo=timezone(timedelta(hours=2)))
+    assert await analysis_module.run("A claim.", started_at=submitted_at) == result
+    assert result.started_at == datetime(2026, 11, 21, 10, tzinfo=UTC)
+    assert result.original_text == "A claim."
     assert analyzer_options == {
         "api_key": "test-key",
         "base_url": "https://llm.example/v1",
@@ -59,6 +63,41 @@ async def test_package_run_reads_settings_and_closes_analyzer(monkeypatch, capsy
     assert "[textAnalysis] Wczytuję konfigurację" in output
     assert "[textAnalysis] Pakiet zakończył pracę" in output
     assert "[textAnalysis] Zwalniam zasoby klienta LLM" in output
+
+
+@pytest.mark.asyncio
+async def test_package_run_stamps_utc_time_and_preserves_unmodified_input(monkeypatch) -> None:
+    import textAnalysis.analysis as analysis_module
+
+    monkeypatch.setenv("FREELLM_API_KEY", "test-key")
+    result = AnalysisDataContainer(source_text="sanitized")
+
+    class FakeAnalyzer:
+        def __init__(self, **kwargs) -> None:
+            pass
+
+        async def analyze(self, text: str) -> AnalysisDataContainer:
+            assert text == "  Original input  "
+            return result
+
+        async def aclose(self) -> None:
+            pass
+
+    monkeypatch.setattr(analysis_module, "ProxyContextAnalyzer", FakeAnalyzer)
+    returned = await analysis_module.run("  Original input  ")
+
+    assert returned.original_text == "  Original input  "
+    assert returned.started_at is not None
+    assert returned.started_at.tzinfo is UTC
+
+
+def test_diffbot_token_is_not_in_settings_repr(monkeypatch) -> None:
+    monkeypatch.setenv("DIFFBOT_API_TOKEN", "secret-diffbot-token")
+
+    settings = Settings.from_environment()
+
+    assert settings.diffbot_api_token == "secret-diffbot-token"
+    assert "secret-diffbot-token" not in repr(settings)
 
 
 def test_input_sanitizer_removes_control_characters_and_neutralizes_tags() -> None:
