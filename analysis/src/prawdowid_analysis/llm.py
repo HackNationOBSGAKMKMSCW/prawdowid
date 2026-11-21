@@ -5,16 +5,36 @@ Awaria techniczna (sieć, limit, błąd API) to `LLMError` i NIE jest zamieniana
 werdykt „brak danych”: potok zwraca wtedy jawny `blad_analizy`.
 """
 
+import asyncio
 import json
 import re
 from dataclasses import dataclass
 from typing import Any, Protocol
 
-from openai import AsyncOpenAI, OpenAIError
+from openai import AsyncOpenAI, OpenAIError, RateLimitError
 
 from .config import Settings
 
 Message = dict[str, str]
+
+# Limit zapytań (HTTP 429) to stan przejściowy: czekamy dłużej niż wbudowane
+# ponowienia SDK (Retry-After, jeśli jest, inaczej 5 s, 10 s, 20 s, 40 s).
+RATE_LIMIT_RETRIES = 4
+RATE_LIMIT_BASE_DELAY_S = 5.0
+RATE_LIMIT_MAX_DELAY_S = 60.0
+
+
+def _retry_delay(exc: RateLimitError, attempt: int) -> float:
+    header = None
+    response = getattr(exc, "response", None)
+    if response is not None:
+        header = response.headers.get("retry-after")
+    try:
+        delay = float(header) if header else RATE_LIMIT_BASE_DELAY_S * 2**attempt
+    except ValueError:
+        delay = RATE_LIMIT_BASE_DELAY_S * 2**attempt
+    return min(max(delay, 0.0), RATE_LIMIT_MAX_DELAY_S)
+
 
 _THINK_RE = re.compile(r"<think>.*?(</think>|$)", re.DOTALL | re.IGNORECASE)
 _FENCE_RE = re.compile(r"^```(?:json)?\s*|\s*```$", re.IGNORECASE)
@@ -53,15 +73,22 @@ class OpenAIChatClient:
         self._owns_client = client is None
         self.model = settings.model
         self.json_mode = settings.json_mode
+        self._sleep = asyncio.sleep
 
     async def complete(self, messages: list[Message]) -> LLMReply:
         kwargs: dict[str, Any] = {"model": self.model, "messages": messages, "temperature": 0}
         if self.json_mode:
             kwargs["response_format"] = {"type": "json_object"}
-        try:
-            response = await self._client.chat.completions.create(**kwargs)
-        except OpenAIError as exc:
-            raise LLMError(f"Błąd wywołania modelu: {type(exc).__name__}") from exc
+        for attempt in range(RATE_LIMIT_RETRIES + 1):
+            try:
+                response = await self._client.chat.completions.create(**kwargs)
+                break
+            except RateLimitError as exc:
+                if attempt == RATE_LIMIT_RETRIES:
+                    raise LLMError(f"Błąd wywołania modelu: {type(exc).__name__}") from exc
+                await self._sleep(_retry_delay(exc, attempt))
+            except OpenAIError as exc:
+                raise LLMError(f"Błąd wywołania modelu: {type(exc).__name__}") from exc
         if not response.choices:
             raise LLMError("Model nie zwrócił żadnej odpowiedzi.")
         return LLMReply(
