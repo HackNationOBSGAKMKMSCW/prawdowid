@@ -86,6 +86,42 @@ def _reviews(
     return [reviews[source_id] for source_id in by_id]
 
 
+def consistency_problems(parsed: ModelVerdict, sources: Sequence[ReferenceSource]) -> list[str]:
+    """Niespójności odpowiedzi modelu, które `apply_checks` rozstrzygnęłoby obniżeniem.
+
+    Służy do jednej rundy naprawczej (verdict.py): model dostaje opis problemu i
+    szansę na poprawkę, zanim kod obniży werdykt. Lista jest pusta, gdy odpowiedź
+    przejdzie kontrolę bez zmiany werdyktu.
+    """
+    by_id = {s.source_id: s for s in sources}
+    problems: list[str] = []
+    supports = refutes = 0
+    for item in parsed.evidence:
+        source = by_id.get(item.source_id)
+        if source is None:
+            problems.append(f"dowód wskazuje źródło [{item.source_id}], którego nie ma w danych")
+        elif verify_quote(item.quote, source.text) is None:
+            problems.append(
+                f"cytat przypisany [{item.source_id}] nie występuje w nim dosłownie: "
+                f"„{item.quote[:150]}”"
+            )
+        elif item.stance == "potwierdza":
+            supports += 1
+        else:
+            refutes += 1
+    if parsed.verdict == "prawda" and not supports:
+        problems.append("werdykt „prawda”, ale żaden dosłowny cytat nie ma stanowiska „potwierdza”")
+    if parsed.verdict == "falsz" and not refutes:
+        problems.append("werdykt „falsz”, ale żaden dosłowny cytat nie ma stanowiska „zaprzecza”")
+    if parsed.verdict == "prawda" and refutes:
+        problems.append(
+            "werdykt „prawda”, choć dowody zawierają fragment „zaprzecza” "
+            "(nierozstrzygnięta sprzeczność albo źródło wyjaśnione, które nie powinno być "
+            "dowodem „zaprzecza” – R10)"
+        )
+    return problems
+
+
 def apply_checks(
     *,
     claim_id: str,
@@ -93,9 +129,10 @@ def apply_checks(
     parsed: ModelVerdict,
     sources: Sequence[ReferenceSource],
     model: str | None,
+    prior_adjustments: Sequence[str] = (),
 ) -> ClaimVerdict:
     by_id = {s.source_id: s for s in sources}
-    adjustments: list[str] = []
+    adjustments: list[str] = list(prior_adjustments)
     evidence = _evidence(parsed, by_id, adjustments)
     reviews = _reviews(parsed, by_id, adjustments)
 

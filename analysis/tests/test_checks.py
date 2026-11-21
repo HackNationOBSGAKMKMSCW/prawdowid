@@ -107,3 +107,33 @@ def test_unreviewed_sources_are_filled_in_and_unknown_dropped():
     assert [r.source_id for r in result.sources_reviewed] == ["KOR-1", "KOR-2"]
     assert result.sources_reviewed[1].relevant is False
     assert any("KOR-2" in a for a in result.adjustments)
+
+
+def test_consistency_problems_empty_for_coherent_answer():
+    from prawdowid_analysis.checks import consistency_problems
+
+    assert consistency_problems(ModelVerdict.model_validate(model_answer()), [source()]) == []
+    no_data = model_answer(
+        verdict="brak_wystarczajacych_danych", evidence=[], missing_information=[]
+    )
+    assert consistency_problems(ModelVerdict.model_validate(no_data), [source()]) == []
+
+
+def test_consistency_problems_detect_verdict_evidence_mismatch():
+    from prawdowid_analysis.checks import consistency_problems
+
+    answer = model_answer(verdict="falsz", evidence=[evidence(stance="potwierdza")])
+    problems = consistency_problems(ModelVerdict.model_validate(answer), [source()])
+    assert problems == ["werdykt „falsz”, ale żaden dosłowny cytat nie ma stanowiska „zaprzecza”"]
+
+
+def test_consistency_problems_detect_bad_quotes_and_unknown_sources():
+    from prawdowid_analysis.checks import consistency_problems
+
+    answer = model_answer(
+        evidence=[evidence(quote="Polska weszła do UE w 2004"), evidence(source_id="X")]
+    )
+    problems = consistency_problems(ModelVerdict.model_validate(answer), [source()])
+    assert any("nie występuje w nim dosłownie" in p for p in problems)
+    assert any("[X]" in p for p in problems)
+    assert any("werdykt „prawda”" in p for p in problems)
