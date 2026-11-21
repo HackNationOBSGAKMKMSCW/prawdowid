@@ -173,10 +173,11 @@ export function AccessibilityContent({ level }: { level: Level }) {
         <div className="prose">
           <ul>
             <li>
-              <strong>Większy tekst</strong> – przycisk w nagłówku powiększa całą stronę.
+              <strong>Większy tekst</strong> – ikona „aA” w nagłówku powiększa całą stronę.
             </li>
             <li>
-              <strong>Wysoki kontrast</strong> – czarny tekst na białym tle, podkreślone linki.
+              <strong>Wysoki kontrast</strong> – ikona półkola w nagłówku: czarny tekst na białym
+              tle, podkreślone linki.
             </li>
             <li>
               <strong>Przeczytaj na głos</strong> – wynik może przeczytać syntezator mowy Twojej

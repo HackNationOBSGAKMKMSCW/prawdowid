@@ -1867,3 +1867,97 @@ button:disabled {
     display: none;
   }
 }
+
+/* ---------- Ikony ustawień wyglądu (większy tekst, kontrast) ---------- */
+
+.pill-toggle--icon {
+  position: relative;
+  width: 48px;
+  height: 48px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+}
+
+.text-size-icon {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 1px;
+  font-family: var(--font);
+  font-weight: 800;
+  line-height: 1;
+}
+
+.text-size-icon__small {
+  font-size: 14px;
+}
+
+.text-size-icon__big {
+  font-size: 22px;
+}
+
+/* Podpis pod ikoną po najechaniu albo przejściu klawiaturą. */
+.icon-tip {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 50%;
+  z-index: 30;
+  transform: translate(50%, -4px);
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--c-text);
+  color: #fff;
+  font: 700 14px/1.2 var(--font);
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition:
+    opacity 0.15s,
+    transform 0.2s var(--ease-out, ease-out);
+}
+
+.icon-tip::before {
+  content: '';
+  position: absolute;
+  top: -5px;
+  left: 50%;
+  width: 10px;
+  height: 10px;
+  background: inherit;
+  transform: translateX(-50%) rotate(45deg);
+}
+
+.pill-toggle--icon:last-child .icon-tip {
+  right: 0;
+  transform: translate(0, -4px);
+}
+
+.pill-toggle--icon:last-child .icon-tip::before {
+  left: auto;
+  right: 19px;
+  transform: rotate(45deg);
+}
+
+.pill-toggle--icon:hover .icon-tip,
+.pill-toggle--icon:focus-visible .icon-tip {
+  opacity: 1;
+  transform: translate(50%, 0);
+}
+
+.pill-toggle--icon:last-child:hover .icon-tip,
+.pill-toggle--icon:last-child:focus-visible .icon-tip {
+  transform: translate(0, 0);
+}
+
+/* Wysoki kontrast: wnętrze włączonej ikony i podpis – biały znak na czarnym. */
+[data-hc='true'] .pill-toggle[aria-pressed='true'] * {
+  background: transparent !important;
+  color: #fff !important;
+}
+
+[data-hc='true'] .pill-toggle .icon-tip {
+  background: #000 !important;
+  color: #fff !important;
+}
