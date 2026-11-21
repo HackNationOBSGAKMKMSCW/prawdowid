@@ -34,3 +34,25 @@ def test_load_user_sources_reads_fetched_at(tmp_path):
     )
     [source] = cli.load_user_sources(path)
     assert source.published_at == "2024-01-01" and source.fetched_at == "2026-11-20T10:00:00Z"
+
+
+def _fake_result():
+    from tests.test_output import sample
+
+    return sample()
+
+
+def test_cli_prints_compact_json_by_default_and_full_with_flag(monkeypatch, capsysbinary):
+    async def fake_run_text(text, **kwargs):
+        return _fake_result()
+
+    monkeypatch.setattr(cli, "run_text", fake_run_text)
+    assert cli.main(["Polska weszła do UE w 2004 roku."]) == 0
+    compact_out = json.loads(capsysbinary.readouterr().out.decode("utf-8"))
+    assert "text" not in compact_out["sources"][0]
+    assert "context" not in compact_out["claims"][0]
+
+    assert cli.main(["--pelny", "Polska weszła do UE w 2004 roku."]) == 0
+    full_out = json.loads(capsysbinary.readouterr().out.decode("utf-8"))
+    assert full_out["sources"][0]["text"]
+    assert full_out["claims"][0]["context"] == "Tekst użytkownika."

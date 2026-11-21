@@ -25,6 +25,7 @@ from typing import Any
 
 from .backend_bridge import FACT_CHECK_MODES, BackendError, FactCheckMode, run_backend
 from .llm import LLMConfigurationError
+from .output import compact
 from .pipeline import run, run_text
 from .schemas import ReferenceSource, TextVerdict
 
@@ -80,6 +81,11 @@ def main(argv: list[str] | None = None) -> int:
         help="Tryb wyszukiwania fact-checków przy --backend (domyślnie: oba)",
     )
     parser.add_argument("--output", type=Path, help="Zapisz JSON do pliku")
+    parser.add_argument(
+        "--pelny",
+        action="store_true",
+        help="Pełny wynik (z treścią źródeł, kontekstem i polami pustymi) zamiast skróconego",
+    )
     args = parser.parse_args(argv)
 
     text = args.text if args.text is not None else sys.stdin.read()
@@ -104,7 +110,10 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Błąd backendu: {exc}", file=sys.stderr)
         return 3
 
-    payload = result.model_dump_json(indent=2)
+    if args.pelny:
+        payload = result.model_dump_json(indent=2)
+    else:
+        payload = json.dumps(compact(result), ensure_ascii=False, indent=2)
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(payload, encoding="utf-8")
