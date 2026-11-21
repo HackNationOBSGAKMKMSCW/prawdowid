@@ -167,6 +167,82 @@ a:focus-visible {
   outline-color: #fff;
 }
 
+/* ---------- Okno testowe maskowania ---------- */
+
+.masking-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.masking-result {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 8px;
+  border-top: 1px solid var(--c-line);
+}
+
+.masking-result__title {
+  margin: 8px 0 0;
+  font: 700 19px var(--font);
+}
+
+.masking-output {
+  margin: 0;
+  padding: 14px 16px;
+  border: 1px solid var(--c-line);
+  border-radius: var(--radius-control);
+  background: var(--c-page);
+  color: var(--c-text-body);
+  font-size: 18px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.masking-tag {
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: var(--c-accent-soft);
+  color: var(--c-navy);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.masking-table-wrap {
+  overflow-x: auto;
+}
+
+.masking-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 17px;
+}
+
+.masking-table th,
+.masking-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--c-line);
+  text-align: left;
+  vertical-align: top;
+}
+
+.masking-table th {
+  color: var(--c-text-subtle);
+  font-weight: 700;
+}
+
+.masking-table__value {
+  overflow-wrap: anywhere;
+}
+
+.masking-note {
+  margin: 0;
+  font-size: 15px;
+  color: var(--c-text-subtle);
+}
+
 /* ---------- Nagłówek ---------- */
 
 .site-header {

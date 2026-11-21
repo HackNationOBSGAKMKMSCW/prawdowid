@@ -3,6 +3,7 @@
  *
  *   POST   /api/check              { text }  → CheckResponse
  *   POST   /api/check/{id}/report  { reason, comment? } → 204
+ *   POST   /api/masking            { text }  → MaskingResponse
  */
 
 export type Verdict = 'confirmed' | 'false' | 'misleading' | 'insufficient' | 'unverifiable';
@@ -108,3 +109,35 @@ export interface CheckOutOfScope {
 }
 
 export type CheckResponse = CheckResult | CheckClarify | CheckOutOfScope;
+
+/** Typy danych osobowych rozpoznawane przez `backend/dataMasking`. */
+export type MaskedLabel =
+  | 'PESEL'
+  | 'NIP'
+  | 'REGON'
+  | 'NR_KONTA'
+  | 'KARTA'
+  | 'DOWOD'
+  | 'PASZPORT'
+  | 'TELEFON'
+  | 'EMAIL'
+  | 'IP'
+  | 'ADRES'
+  | 'KOD_POCZTOWY'
+  | 'DATA_URODZENIA'
+  | 'NR_REJESTRACYJNY';
+
+export interface MaskedEntity {
+  label: MaskedLabel;
+  /** Znacznik w zamaskowanym tekście, np. `[TELEFON_1]`. */
+  placeholder: string;
+  /** Pozycja wartości w tekście wysłanym do maskowania (backend nie odsyła samych wartości). */
+  start: number;
+  end: number;
+}
+
+export interface MaskingResponse {
+  masked_text: string;
+  entities: MaskedEntity[];
+  counts: Partial<Record<MaskedLabel, number>>;
+}

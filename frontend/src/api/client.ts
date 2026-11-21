@@ -1,5 +1,5 @@
 import { mockCheck, type Scenario } from './mock.ts';
-import type { CheckResponse } from './types.ts';
+import type { CheckResponse, MaskingResponse } from './types.ts';
 
 /**
  * `mock` – odpowiedzi przykładowe, bez backendu (domyślnie).
@@ -75,5 +75,17 @@ export async function reportCheck(id: string | undefined, report: ReportPayload)
   await request<void>(`/check/${encodeURIComponent(id!)}/report`, {
     method: 'POST',
     body: JSON.stringify(report),
+  });
+}
+
+/**
+ * Maskuje dane osobowe (poza imieniem i nazwiskiem) w backendzie.
+ * Zawsze pyta prawdziwy backend, także w trybie `mock`: to narzędzie do testowania reguł.
+ */
+export function maskText(text: string, signal?: AbortSignal): Promise<MaskingResponse> {
+  return request<MaskingResponse>('/masking', {
+    method: 'POST',
+    body: JSON.stringify({ text }),
+    signal: withTimeout(signal, 15_000),
   });
 }

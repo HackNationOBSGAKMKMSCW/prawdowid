@@ -11,6 +11,7 @@ import os
 from collections.abc import AsyncIterator
 from typing import Any
 
+from dataMasking.api import router as masking_router
 from fastapi import Body, FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 from observability import ObservabilityMiddleware
@@ -37,6 +38,8 @@ def create_app(bot: SprawdzToBot | None = None) -> FastAPI:
     bot = bot or SprawdzToBot(pipeline_from_environment())
     app = FastAPI(title="SprawdzTo WhatsApp adapter", docs_url="/api/whatsapp/docs")
     app.add_middleware(ObservabilityMiddleware, skip_paths=("/api/whatsapp/health",))
+    # Maskowanie danych osobowych (okno testowe we frontendzie) na tym samym porcie 8000.
+    app.include_router(masking_router)
 
     @app.get("/api/whatsapp/health")
     async def health() -> dict[str, Any]:
