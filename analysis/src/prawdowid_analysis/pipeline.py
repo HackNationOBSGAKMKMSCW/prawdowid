@@ -19,7 +19,7 @@ import re
 import sys
 import time
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from .adapters import claims_from_analysis, partition_fact_checks, reading_warnings
@@ -146,11 +146,19 @@ async def verify_claims(
     source_text: str = "",
     models: Mapping[str, str] | None = None,
     now: datetime | None = None,
+    submitted_at: str | None = None,
 ) -> TextVerdict:
     started = time.perf_counter()
     settings = settings or Settings.from_environment()
+    live_clock = now is None
     now = now or utc_now()
     analyzed_at = iso_timestamp(now)
+
+    def clock() -> datetime:
+        """Bieżący czas UTC; przy wstrzykniętym `now` (testy) liczony od niego."""
+        if live_clock:
+            return utc_now()
+        return now + timedelta(seconds=time.perf_counter() - started)
     max_age = settings.max_source_age_days
 
     today = now.date()
@@ -278,7 +286,12 @@ async def verify_claims(
                 f"Twierdzenie {index}/{len(statements)}: {result.verdict} "
                 f"({time.perf_counter() - t0:.1f}s)"
             )
-            return result
+            return result.model_copy(
+                update={
+                    "assessed_at": iso_timestamp(clock()),
+                    "duration_ms": round((time.perf_counter() - t0) * 1000),
+                }
+            )
 
     try:
         claims = list(await asyncio.gather(*(one(i, s) for i, s in enumerate(statements, 1))))
@@ -311,7 +324,10 @@ async def verify_claims(
             *quarantine_warnings,
             *(archival_warnings[key] for key in sorted(archival_warnings)),
         ],
+        submitted_at=submitted_at or analyzed_at,
         analyzed_at=analyzed_at,
+        analysis_finished_at=iso_timestamp(clock()),
+        analysis_duration_ms=round((time.perf_counter() - started) * 1000),
         max_source_age_days=max_age,
         models={**(models or {}), "werdykt": settings.model},
         prompt_version=prompt_version(),
@@ -455,6 +471,7 @@ async def run(
         warnings=[*warnings, *claims.warnings, *reading_warnings(results), *language_warnings],
         keywords=claims.keywords,
         source_text=claims.source_text,
+        submitted_at=claims.submitted_at,
         **kwargs,
     )
 

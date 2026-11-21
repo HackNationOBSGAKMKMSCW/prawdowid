@@ -38,6 +38,7 @@ class AnalysisClaims:
     warnings: list[str] = field(default_factory=list)
     keywords: list[str] = field(default_factory=list)
     source_text: str = ""
+    submitted_at: str | None = None
 
 
 def claims_from_analysis(analysis: Any) -> AnalysisClaims:
@@ -55,6 +56,7 @@ def claims_from_analysis(analysis: Any) -> AnalysisClaims:
         warnings=warnings,
         keywords=[k for k in keywords if k],
         source_text=str(_get(analysis, "source_text") or ""),
+        submitted_at=timestamp(_get(analysis, "started_at")),
     )
 
 

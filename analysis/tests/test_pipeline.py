@@ -510,3 +510,42 @@ def test_every_source_entry_carries_title_publisher_date_link_and_quotes():
     assert cited["cited_quotes"] == [
         {"claim_id": "T1", "quote": statement[:-1], "stance": "potwierdza"}
     ]
+
+
+def test_result_carries_submission_analysis_and_claim_timestamps():
+    from datetime import UTC, datetime
+
+    analysis = SimpleNamespace(
+        statements=[EU_CLAIM],
+        security_warnings=[],
+        started_at=datetime(2026, 11, 21, 11, 59, 30, tzinfo=UTC),  # z backendu textAnalysis
+    )
+    result = asyncio.run(
+        run(analysis, client=FakeChatClient(corpus_answer()), settings=SETTINGS, now=NOW)
+    )
+    assert result.submitted_at == "2026-11-21T11:59:30Z", "znacznik z backendu przeniesiony"
+    assert result.analyzed_at == "2026-11-21T12:00:00Z"
+    assert result.analysis_finished_at >= result.analyzed_at
+    assert result.analysis_duration_ms >= 0
+    [claim] = result.claims
+    assert result.analyzed_at <= claim.assessed_at <= result.analysis_finished_at
+    assert claim.duration_ms >= 0
+
+
+def test_text_input_without_backend_uses_analysis_start_as_submission():
+    result = asyncio.run(
+        run_text(EU_CLAIM, client=FakeChatClient(corpus_answer()), settings=SETTINGS, now=NOW)
+    )
+    assert result.submitted_at == result.analyzed_at == "2026-11-21T12:00:00Z"
+
+
+def test_compact_output_keeps_timestamps():
+    from prawdowid_analysis.output import compact
+
+    result = asyncio.run(
+        run_text(EU_CLAIM, client=FakeChatClient(corpus_answer()), settings=SETTINGS, now=NOW)
+    )
+    data = compact(result)
+    for key in ("submitted_at", "analyzed_at", "analysis_finished_at", "analysis_duration_ms"):
+        assert key in data, key
+    assert {"assessed_at", "duration_ms"} <= set(data["claims"][0])

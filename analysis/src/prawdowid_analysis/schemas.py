@@ -177,6 +177,12 @@ class ClaimVerdict(BaseModel):
     security_warnings: list[str] = Field(
         default=[], description="Wykryte próby manipulacji w treści twierdzenia"
     )
+    assessed_at: str | None = Field(
+        default=None, description="Chwila wydania werdyktu dla twierdzenia, ISO 8601 UTC"
+    )
+    duration_ms: int | None = Field(
+        default=None, description="Czas oceny twierdzenia (z oczekiwaniem na model) w ms"
+    )
     reference_date: str | None = Field(
         default=None,
         description="Data odniesienia (czas zdarzenia z twierdzenia albo dzień analizy)",
@@ -276,8 +282,19 @@ class TextVerdict(BaseModel):
         description="Wszystkie źródła z wejścia (użytkownik, backend) z linkami i statusem użycia",
     )
     warnings: list[str] = []
+    submitted_at: str | None = Field(
+        default=None,
+        description="Zgłoszenie tekstu do systemu (backend textAnalysis: started_at), ISO 8601 UTC",
+    )
     analyzed_at: str | None = Field(
-        default=None, description="Znacznik czasu analizy, ISO 8601 UTC (punkt odniesienia wieku)"
+        default=None,
+        description="Start analizy werdyktu, ISO 8601 UTC (punkt odniesienia wieku źródeł)",
+    )
+    analysis_finished_at: str | None = Field(
+        default=None, description="Koniec analizy werdyktu, ISO 8601 UTC"
+    )
+    analysis_duration_ms: int | None = Field(
+        default=None, description="Czas trwania analizy werdyktu w milisekundach"
     )
     max_source_age_days: int | None = Field(
         default=None, description="Limit aktualności: starsze źródła to materiał archiwalny"
