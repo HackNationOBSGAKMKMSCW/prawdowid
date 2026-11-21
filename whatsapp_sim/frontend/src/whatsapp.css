@@ -417,6 +417,52 @@
   }
 }
 
+.wa-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 9px 12px;
+  font-size: 14px;
+}
+
+.wa-progress-step {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.wa-progress-step.is-done {
+  color: var(--wa-meta);
+}
+
+.wa-progress-mark {
+  flex: 0 0 auto;
+  color: var(--wa-accent);
+}
+
+.wa-spinner {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgb(127 127 127 / 30%);
+  border-top-color: var(--wa-accent);
+  border-radius: 50%;
+  animation: wa-spin 0.8s linear infinite;
+}
+
+@keyframes wa-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wa-spinner {
+    animation-duration: 2.4s;
+  }
+}
+
 /* Composer */
 
 .wa-composer {

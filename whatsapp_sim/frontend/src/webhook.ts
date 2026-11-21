@@ -87,18 +87,40 @@ export function buildWebhook(part: IncomingPart, id: string, sentAt: number) {
   };
 }
 
-export async function postWebhook(
+type StreamEvent =
+  | { type: 'status'; to: string; text: string }
+  | { type: 'messages'; messages: CloudApiMessage[] }
+  | { type: 'error'; detail: string };
+
+// Streaming variant: status lines arrive while the bot checks the message,
+// followed by the final Cloud API messages (NDJSON, one event per line).
+export async function postWebhookStream(
   payload: unknown,
-  signal?: AbortSignal,
+  onStatus: (text: string) => void,
 ): Promise<WebhookResponse> {
-  const res = await fetch('/api/whatsapp/webhook', {
+  const res = await fetch('/api/whatsapp/webhook?stream=true', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
-    signal,
   });
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-  return (await res.json()) as WebhookResponse;
+  if (!res.ok || !res.body) throw new Error(`${res.status} ${res.statusText}`);
+
+  const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
+  let buffer = '';
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (value) buffer += value;
+    const lines = buffer.split('\n');
+    buffer = done ? '' : (lines.pop() ?? '');
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      const event = JSON.parse(line) as StreamEvent;
+      if (event.type === 'status') onStatus(event.text);
+      else if (event.type === 'messages') return { messages: event.messages };
+      else throw new Error(event.detail);
+    }
+    if (done) throw new Error('stream ended without messages');
+  }
 }
 
 export async function fetchHealth(): Promise<Health> {

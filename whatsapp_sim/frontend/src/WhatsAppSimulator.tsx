@@ -32,7 +32,7 @@ import {
   buildWebhook,
   fetchHealth,
   newMessageId,
-  postWebhook,
+  postWebhookStream,
   toBotMessages,
   type Health,
   type IncomingPart,
@@ -54,6 +54,14 @@ type ChatItem =
     }
   | { kind: 'bot'; id: string; text: string; time: number; buttons?: ReplyButton[] }
   | { kind: 'notice'; id: string; text: string; time: number };
+
+// A pending check: hidden until the bot "reads" the message, then shown as
+// typing dots or as the list of progress steps streamed by the adapter.
+interface Activity {
+  id: string;
+  visible: boolean;
+  steps: string[];
+}
 
 const STORAGE_KEY = 'sprawdzto-whatsapp-chat-v1';
 const START_COMMAND = 'cd whatsapp_sim/backend && ../../.venv/bin/python -m whatsappAdapter --demo';
@@ -144,7 +152,7 @@ export default function WhatsAppSimulator() {
   const [draft, setDraft] = useState('');
   const [forwardDraft, setForwardDraft] = useState(false);
   const [attachOpen, setAttachOpen] = useState(false);
-  const [typing, setTyping] = useState(0);
+  const [activity, setActivity] = useState<Activity[]>([]);
   const [health, setHealth] = useState<Health | 'offline' | null>(null);
   const initialItemCount = useRef(items.length);
   const welcomed = useRef(false);
@@ -156,7 +164,7 @@ export default function WhatsAppSimulator() {
   useLayoutEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [items, typing]);
+  }, [items, activity]);
 
   useLayoutEffect(() => {
     const el = inputRef.current;
@@ -197,11 +205,16 @@ export default function WhatsAppSimulator() {
         });
       }
 
-      const outcome = postWebhook(payload).then(
+      const updateActivity = (change: (current: Activity) => Activity) =>
+        setActivity((prev) => prev.map((entry) => (entry.id === id ? change(entry) : entry)));
+      setActivity((prev) => [...prev, { id, visible: false, steps: [] }]);
+
+      const outcome = postWebhookStream(payload, (text) =>
+        updateActivity((current) => ({ ...current, steps: [...current.steps, text] })),
+      ).then(
         (response) => ({ response }) as const,
         (error: unknown) => ({ error }) as const,
       );
-      let typingStarted = false;
       try {
         if (fromUser) {
           await sleep(150);
@@ -212,8 +225,7 @@ export default function WhatsAppSimulator() {
         if (fromUser) setStatus(id, 'delivered');
         await sleep(fromUser ? 500 : 200);
         if (fromUser) setStatus(id, 'read');
-        setTyping((count) => count + 1);
-        typingStarted = true;
+        updateActivity((current) => ({ ...current, visible: true }));
 
         const [result] = await Promise.all([outcome, sleep(700)]);
         if ('error' in result) throw result.error;
@@ -222,6 +234,7 @@ export default function WhatsAppSimulator() {
         const messages = toBotMessages(result.response.messages);
         for (const [index, message] of messages.entries()) {
           if (index > 0) await sleep(650);
+          if (index === 0) setActivity((prev) => prev.filter((entry) => entry.id !== id));
           append({
             kind: 'bot',
             id: newMessageId(),
@@ -241,7 +254,7 @@ export default function WhatsAppSimulator() {
           text: `Brak odpowiedzi od adaptera SprawdzTo (${detail}). Uruchom backend: ${START_COMMAND}`,
         });
       } finally {
-        if (typingStarted) setTyping((count) => count - 1);
+        setActivity((prev) => prev.filter((entry) => entry.id !== id));
       }
     },
     [append, setStatus],
@@ -271,7 +284,16 @@ export default function WhatsAppSimulator() {
   };
 
   const online = health !== null && health !== 'offline';
-  const headerStatus = typing > 0 ? 'pisze…' : online ? 'online' : 'konto firmowe';
+  const visibleActivity = activity.filter((entry) => entry.visible);
+  const typing = visibleActivity.length;
+  const checking = visibleActivity.some((entry) => entry.steps.length > 0);
+  const headerStatus = checking
+    ? 'sprawdza…'
+    : typing > 0
+      ? 'pisze…'
+      : online
+        ? 'online'
+        : 'konto firmowe';
 
   return (
     <div className="wa-app">
@@ -368,15 +390,33 @@ export default function WhatsAppSimulator() {
               );
             })}
 
-            {typing > 0 && (
-              <div className="wa-row wa-row--in wa-row--first">
-                <div className="wa-bubble wa-typing" aria-label="SprawdzTo pisze">
-                  <span />
-                  <span />
-                  <span />
-                </div>
+            {visibleActivity.map((entry) => (
+              <div key={entry.id} className="wa-row wa-row--in wa-row--first">
+                {entry.steps.length === 0 ? (
+                  <div className="wa-bubble wa-typing" aria-label="SprawdzTo pisze">
+                    <span />
+                    <span />
+                    <span />
+                  </div>
+                ) : (
+                  <div className="wa-bubble wa-progress" role="status">
+                    {entry.steps.map((step, index) => {
+                      const done = index < entry.steps.length - 1;
+                      return (
+                        <div key={index} className={`wa-progress-step${done ? ' is-done' : ''}`}>
+                          <span>{step}</span>
+                          {done ? (
+                            <TickIcon className="wa-progress-mark" aria-label="gotowe" />
+                          ) : (
+                            <span className="wa-spinner" aria-label="w toku" />
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
-            )}
+            ))}
           </div>
 
           <div className="wa-composer">
