@@ -222,7 +222,9 @@ class UrlContentFetcher:
 
                 return extracted
         except urllib.error.HTTPError as exc:
-            raise ValueError(f"Błąd HTTP podczas pobierania URL ({exc.code}): {exc.reason}") from exc
+            raise ValueError(
+                f"Błąd HTTP podczas pobierania URL ({exc.code}): {exc.reason}"
+            ) from exc
         except urllib.error.URLError as exc:
             raise ValueError(f"Błąd sieci podczas pobierania URL: {exc.reason}") from exc
 

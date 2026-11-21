@@ -110,13 +110,14 @@ def test_input_sanitizer_removes_control_characters_and_neutralizes_tags() -> No
     assert warnings
 
 
-def test_input_sanitizer_rejects_empty_and_oversized_text() -> None:
+def test_input_sanitizer_rejects_empty_and_truncates_oversized_text() -> None:
     with pytest.raises(ValueError):
         InputSanitizer.sanitize("  ")
-    # Od 7ccfd14 (analiza treści z URL) za długi tekst jest przycinany z ostrzeżeniem.
-    text, warnings = InputSanitizer.sanitize("x" * (InputSanitizer.MAX_INPUT_LENGTH + 1))
-    assert len(text) == InputSanitizer.MAX_INPUT_LENGTH
-    assert any("przycięty" in w for w in warnings)
+
+    cleaned, warnings = InputSanitizer.sanitize("x" * (InputSanitizer.MAX_INPUT_LENGTH + 1))
+
+    assert len(cleaned) == InputSanitizer.MAX_INPUT_LENGTH
+    assert warnings and "przycięty" in warnings[0]
 
 
 @pytest.mark.asyncio

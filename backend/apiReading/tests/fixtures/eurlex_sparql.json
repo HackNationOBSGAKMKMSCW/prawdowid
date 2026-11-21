@@ -1,0 +1,30 @@
+{
+  "head": {
+    "vars": ["celex", "title", "docType", "date"]
+  },
+  "results": {
+    "bindings": [
+      {
+        "celex": {
+          "type": "literal",
+          "datatype": "http://www.w3.org/2001/XMLSchema#string",
+          "value": "32020R0270R(05)"
+        },
+        "title": {
+          "type": "literal",
+          "xml:lang": "en",
+          "value": "Corrigendum to Commission Implementing Regulation (EU) 2020/270 of 25 February 2020 amending Regulation (EU) No 1321/2014 as regards transitional measures for organisations involved in the continuing airworthiness for general aviation and continuing airworthiness management and correcting that Regulation (OJ L 56, 27.2.2020)"
+        },
+        "docType": {
+          "type": "uri",
+          "value": "http://publications.europa.eu/resource/authority/resource-type/REG_IMPL"
+        },
+        "date": {
+          "type": "typed-literal",
+          "datatype": "http://www.w3.org/2001/XMLSchema#date",
+          "value": "2026-03-23"
+        }
+      }
+    ]
+  }
+}

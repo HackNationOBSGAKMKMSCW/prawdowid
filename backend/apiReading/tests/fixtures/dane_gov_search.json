@@ -1,0 +1,48 @@
+{
+  "jsonapi": {
+    "version": "1.4"
+  },
+  "links": {
+    "last": "https://api.dane.gov.pl/datasets?page=365&per_page=1&q=energia&sort=id",
+    "self": "https://api.dane.gov.pl/datasets?page=1&per_page=1&q=energia&sort=id",
+    "next": "https://api.dane.gov.pl/datasets?page=2&per_page=1&q=energia&sort=id"
+  },
+  "data": [
+    {
+      "relationships": {
+        "resources": {
+          "meta": {
+            "count": 3
+          }
+        },
+        "institution": {
+          "data": {
+            "type": "institution",
+            "id": "34"
+          }
+        }
+      },
+      "attributes": {
+        "title": "STRATEG",
+        "modified": "2025-01-22T09:51:54",
+        "notes": ", transport, <mark>energy</mark> security and environment, regional development, human capital, social capital, sustainable",
+        "url": "http://strateg.stat.gov.pl/"
+      },
+      "type": "dataset",
+      "id": "307"
+    }
+  ],
+  "meta": {
+    "count": 365,
+    "server_time": "2026-11-21T20:43:27Z",
+    "path": "/datasets",
+    "language": "en",
+    "relative_uri": "/datasets?page=1&per_page=1&q=energia&sort=id",
+    "params": {
+      "page": "1",
+      "per_page": "1",
+      "q": "energia",
+      "sort": "id"
+    }
+  }
+}
