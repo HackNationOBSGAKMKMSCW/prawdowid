@@ -44,7 +44,7 @@ async def test_package_run_rejects_analysis_without_statements() -> None:
 def test_api_reading_package_exports_only_its_entry_point() -> None:
     import apiReading
 
-    assert apiReading.__all__ == ["run"]
+    assert apiReading.__all__ == ["run", "run_full_text"]
 
 
 @pytest.mark.asyncio
