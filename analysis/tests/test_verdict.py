@@ -87,3 +87,56 @@ def test_technical_error_gives_analysis_error():
     result = run(assess_claim("C1", CLAIM, [source()], client))
     assert result.verdict == "blad_analizy"
     assert "APITimeoutError" in result.explanation
+
+
+SUPPORT = {
+    "source_id": "KOR-1",
+    "quote": "Polska przystąpiła do Unii Europejskiej 1 maja 2004 roku",
+    "stance": "potwierdza",
+    "explanation": "data",
+}
+
+
+def test_coherent_answer_needs_no_repair():
+    client = FakeChatClient(model_answer())
+    result = run(assess_claim("C1", CLAIM, [source()], client))
+    assert len(client.calls) == 1
+    assert result.adjustments == []
+
+
+def test_inconsistent_answer_is_repaired_by_model():
+    inconsistent = model_answer(verdict="falsz", evidence=[SUPPORT])  # jak w E36
+    client = FakeChatClient(inconsistent, model_answer())
+    result = run(assess_claim("C1", CLAIM, [source()], client))
+    assert len(client.calls) == 2
+    repair_prompt = client.calls[1][-1]["content"]
+    assert "niespójna" in repair_prompt and "„zaprzecza”" in repair_prompt
+    assert client.calls[1][-2]["role"] == "assistant"
+    assert result.verdict == "prawda"
+    assert result.model_verdict == "prawda"
+    assert "model ją poprawił" in result.adjustments[0]
+    assert "„Fałsz”" in result.adjustments[0]
+
+
+def test_failed_repair_falls_back_to_checked_first_answer():
+    inconsistent = model_answer(verdict="falsz", evidence=[SUPPORT])
+    client = FakeChatClient(inconsistent, "to nie jest json")
+    result = run(assess_claim("C1", CLAIM, [source()], client))
+    assert result.verdict == "brak_wystarczajacych_danych", "kontrola obniża werdykt"
+    assert "próba poprawki nie powiodła się" in result.adjustments[0]
+
+
+def test_still_inconsistent_after_repair_is_downgraded_without_more_calls():
+    inconsistent = model_answer(verdict="falsz", evidence=[SUPPORT])
+    client = FakeChatClient(inconsistent, inconsistent)
+    result = run(assess_claim("C1", CLAIM, [source()], client))
+    assert len(client.calls) == 2, "tylko jedna runda naprawcza"
+    assert result.verdict == "brak_wystarczajacych_danych"
+
+
+def test_technical_error_during_repair_does_not_lose_verdict():
+    inconsistent = model_answer(verdict="falsz", evidence=[SUPPORT])
+    client = FakeChatClient(inconsistent, LLMError("Błąd wywołania modelu: RateLimitError"))
+    result = run(assess_claim("C1", CLAIM, [source()], client))
+    assert result.verdict == "brak_wystarczajacych_danych"
+    assert "LLMError" in result.adjustments[0]

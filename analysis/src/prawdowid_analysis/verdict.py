@@ -6,8 +6,10 @@ Przebieg:
 3. Odpowiedź musi być obiektem JSON zgodnym z `ModelVerdict`. Przy błędzie model
    dostaje jedną szansę na poprawkę z opisem błędu.
 4. Wyciek identyfikatora z promptu systemowego (canary) unieważnia odpowiedź.
-5. Poprawna odpowiedź przechodzi przez kontrolę deterministyczną (`checks`).
-6. Awaria techniczna albo dwie niepoprawne odpowiedzi -> `blad_analizy`
+5. Odpowiedź niespójna (werdykt bez pasującego dosłownego cytatu, cytat spoza
+   źródła) dostaje jedną rundę naprawczą z opisem problemu.
+6. Ostateczna odpowiedź przechodzi przez kontrolę deterministyczną (`checks`).
+7. Awaria techniczna albo dwie niepoprawne odpowiedzi -> `blad_analizy`
    (nigdy udawany werdykt ani udawany brak danych).
 """
 
@@ -15,7 +17,7 @@ from collections.abc import Sequence
 
 from pydantic import ValidationError
 
-from .checks import apply_checks
+from .checks import apply_checks, consistency_problems
 from .llm import ChatClient, LLMError, Message, parse_json_object
 from .prompts import SYSTEM_CANARY, build_user_message, system_prompt
 from .schemas import VERDICT_LABELS_PL, ClaimVerdict, ModelVerdict, ReferenceSource
@@ -139,11 +141,80 @@ async def _assess(
                     },
                 ]
             continue
+        return await _repair_if_inconsistent(
+            claim_id, claim, sources, client, messages, reply.content, parsed, reply.model
+        )
+    return error_verdict(claim_id, claim, f"model nie zwrócił poprawnego JSON ({problem})", sources)
+
+
+def repair_message(problems: Sequence[str]) -> str:
+    listed = "\n".join(f"- {p}" for p in problems)
+    return (
+        "Twoja odpowiedź jest niespójna z regułami:\n"
+        f"{listed}\n\n"
+        "Sprawdź ponownie źródła i popraw odpowiedź tak, aby werdykt wynikał z dowodów "
+        "(R4–R7, R10): cytaty muszą być przepisane dosłownie z treści wskazanego źródła, "
+        "a stanowisko każdego dowodu musi odpowiadać temu, co źródło mówi o twierdzeniu. "
+        "Jeśli po sprawdzeniu źródła nie rozstrzygają twierdzenia, wybierz "
+        '"brak_wystarczajacych_danych". Zwróć wyłącznie kompletny obiekt JSON (R16).'
+    )
+
+
+async def _repair_if_inconsistent(
+    claim_id: str,
+    claim: str,
+    sources: Sequence[ReferenceSource],
+    client: ChatClient,
+    messages: list[Message],
+    raw_reply: str,
+    parsed: ModelVerdict,
+    model: str | None,
+) -> ClaimVerdict:
+    """Jedna runda naprawcza przy niespójnej odpowiedzi, potem zwykła kontrola.
+
+    Model sam poprawia sprzeczność między werdyktem a dowodami (np. uzasadnienie
+    potwierdza twierdzenie, a werdykt brzmi „falsz”). Poprawiona odpowiedź przechodzi
+    tę samą kontrolę deterministyczną; gdy poprawka się nie uda (błąd techniczny,
+    zły JSON), kontrolę przechodzi pierwsza odpowiedź – nic nie omija `apply_checks`.
+    """
+    problems = consistency_problems(parsed, sources)
+    if not problems:
+        return apply_checks(
+            claim_id=claim_id, claim=claim, parsed=parsed, sources=sources, model=model
+        )
+
+    summary = "; ".join(problems)
+    repair_messages = [
+        *messages,
+        {"role": "assistant", "content": raw_reply[:6000]},
+        {"role": "user", "content": repair_message(problems)},
+    ]
+    try:
+        repaired_reply = await client.complete(repair_messages)
+        repaired = parse_model_verdict(repaired_reply.content)
+    except (LLMError, InvalidModelOutput) as exc:
+        note = (
+            f"Pierwsza odpowiedź modelu była niespójna ({summary}); próba poprawki "
+            f"nie powiodła się ({type(exc).__name__}), oceniono pierwszą odpowiedź."
+        )
         return apply_checks(
             claim_id=claim_id,
             claim=claim,
             parsed=parsed,
             sources=sources,
-            model=reply.model,
+            model=model,
+            prior_adjustments=[note],
         )
-    return error_verdict(claim_id, claim, f"model nie zwrócił poprawnego JSON ({problem})", sources)
+
+    note = (
+        f"Pierwsza odpowiedź modelu była niespójna ({summary}); model ją poprawił "
+        f"(werdykt przed poprawką: „{VERDICT_LABELS_PL[parsed.verdict]}”)."
+    )
+    return apply_checks(
+        claim_id=claim_id,
+        claim=claim,
+        parsed=repaired,
+        sources=sources,
+        model=repaired_reply.model or model,
+        prior_adjustments=[note],
+    )
