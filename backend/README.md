@@ -32,10 +32,3 @@ async def main() -> None:
 
 asyncio.run(main())
 ```
-
-## WhatsApp demo adapter
-
-`backend/whatsappAdapter` exposes the same pipeline as a chat bot speaking the
-WhatsApp Cloud API format, with a browser simulator at `/whatsapp` in the
-frontend. Start it with `cd backend && ../.venv/bin/python -m whatsappAdapter
---demo` (no API keys needed) and see its [README](whatsappAdapter/README.md).
