@@ -139,16 +139,26 @@ print(verdict.model_dump_json(indent=2))
 
 | Miejsce | tytuł | wydawca | data publikacji / pobrania | link | cytowany fragment |
 |---|---|---|---|---|---|
-| `claims[].evidence[]` | `source_title` | `publisher` | `published_at` / `fetched_at` | `url` | `quote` (zweryfikowany dosłownie) |
+| `claims[].evidence[]` | `source_title` | `publisher` | `published_at` | `url` | `quote` (zweryfikowany dosłownie) |
 | `input_sources[]` | `title` | `publisher` | `published_at` / `fetched_at` | `url` | `cited_quotes[]` (per twierdzenie) |
 | `sources[]` | `title` | `publisher` | `published_at` / `fetched_at` | `url` | – (cytaty są w dowodach) |
-| `claims[].sources_reviewed[]` | `title` | `publisher` | `published_at` / `fetched_at` | `url` | – |
 | `quarantined_sources[]` | `title` | `publisher` | `published_at` / `fetched_at` | `url` | – (nie trafia do modelu) |
 
-Pole jest puste tylko wtedy, gdy źródło go nie ma: przykładowe dokumenty korpusu
-(`data/sources/`) nie mają `url` – przy zastępowaniu ich prawdziwymi źródłami trzeba
-podać adres. Cytat istnieje tylko dla źródeł użytych jako dowód (przy „brak danych”
-dowodów zwykle nie ma).
+`claims[].sources_reviewed[]` ma tylko `source_id`, `relevant`, `why` – metadane źródła są
+w `sources[]` pod tym samym `source_id`. Pola `title`/`source_title`, `publisher`,
+`published_at`, `url` i `quote` są zawsze obecne (jako `null`, gdy źródło ich nie ma):
+przykładowe dokumenty korpusu (`data/sources/`) nie mają `url` – przy zastępowaniu ich
+prawdziwymi źródłami trzeba podać adres. Cytat istnieje tylko dla źródeł użytych jako
+dowód (przy „brak danych” dowodów zwykle nie ma).
+
+### Skrócona odpowiedź (domyślnie)
+
+CLI wypisuje wynik skrócony przez `output.compact()` (ok. 43% krótszy na teście
+end-to-end): bez pełnej treści źródeł, kontekstu tekstu użytkownika, powtórzonych
+metadanych (`sources_reviewed`, `source_freshness` tylko dla źródeł z flagą
+aktualności), drobnych duplikatów (`verdict_label`, `source_ids`, `model` przy
+twierdzeniu, `model_verdict` równy `verdict`) i pól pustych. Pełny wynik:
+`--pelny`; z kodu – `TextVerdict.model_dump()`, skrócony – `compact(verdict)`.
 
 ## Ochrona przed prompt injection
 
