@@ -50,7 +50,7 @@ from prawdowid_analysis.pipeline import run
 
 analysis = await textAnalysis.run(text)
 reading = await apiReading.run(analysis)
-verdict = await run(analysis, reading)      # TextVerdict
+verdict = await run(analysis, reading)  # TextVerdict
 print(verdict.model_dump_json(indent=2))
 ```
 
