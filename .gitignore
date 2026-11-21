@@ -208,6 +208,10 @@ cython_debug/
 # Temporary file for partial code execution
 tempCodeRunnerFile.py
 
+# Local IDE settings and generated code graph
+.idea/
+/graphify-out/
+
 # Ruff stuff:
 .ruff_cache/
 
