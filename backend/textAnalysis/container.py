@@ -15,6 +15,7 @@ class AnalysisDataContainer:
     """Pusta klasa-kontener na dane, wypełniana dopiero po zakończeniu analizy."""
 
     source_text: str = ""
+    source_url: str | None = None
     category: str = ""
     language_code: str | None = None
     confidence: float = 0.0
@@ -35,10 +36,12 @@ class AnalysisDataContainer:
         keywords: list[KeywordItem],
         statements: list[str],
         total_sentences: int,
+        source_url: str | None = None,
         security_warnings: list[str] | None = None,
     ) -> None:
         """Wypełnia pusty kontener wynikami analizy."""
         self.source_text = source_text
+        self.source_url = source_url
         self.category = category
         self.language_code = language_code
         self.confidence = confidence
