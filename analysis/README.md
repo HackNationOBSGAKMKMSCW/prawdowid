@@ -80,7 +80,8 @@ print(verdict.model_dump_json(indent=2))
   wpis fact-checkingowy z backendu – także te, które nie pasowały do żadnego
   twierdzenia – z `url`, wydawcą, oceną i statusem: `cytowane` (dowód w werdykcie,
   `cited_in_claims`), `pokazane_modelowi` (`shown_for_claims`), `nieuzyte` albo
-  `kwarantanna`. Dla cytowanych źródeł link jest też w `claims[].evidence[].url`.
+  `kwarantanna`. Cytowane fragmenty: `cited_quotes`; link także w
+  `claims[].evidence[].url`.
 - **Ostrzeżenia** (`warnings`): błędy dostawców raz, po polsku i z liczbą zapytań
   (np. brak `GOOGLE_FACT_CHECK_API_KEY`), obcięte zapytanie pełnym tekstem,
   nieobsługiwani dostawcy, różnica języka.
@@ -103,26 +104,51 @@ print(verdict.model_dump_json(indent=2))
 
 ## Aktualność źródeł i materiał archiwalny
 
-- **Znaczniki czasu**: każde źródło ma `published_at` (data publikacji) i `fetched_at`
-  (pobranie: `ReadingResult.fetched_at` z backendu, pole `fetched_at` w korpusie i w
-  pliku `--sources`; źródło z zapytania bez znacznika dostaje czas analizy). Wynik
-  zawiera `analyzed_at` – punkt odniesienia wieku – i `max_source_age_days`.
-- **Limit** `VERDICT_MAX_SOURCE_AGE_DAYS` (domyślnie 730 dni). Źródło starsze od limitu
-  (liczone od publikacji) dostaje flagę `material_archiwalny`; bez daty –
-  `brak_daty_publikacji`; z datą w przyszłości – `data_publikacji_w_przyszlosci`.
-  Flagi i wiek (`age_days`) są w `sources`, `input_sources` i w dowodach.
-- **Preferowanie aktualnych danych**: przy wyborze fragmentów wynik BM25 jest mnożony
-  przez premię za świeżość (maleje z wiekiem: 1 dziś, 0,5 na granicy limitu), więc
-  z równie trafnych źródeł wygrywa nowsze. Model dostaje datę analizy, wiek każdego
-  źródła i atrybut `archival="tak"`; reguła R11 każe mu przy zmianach stanu rzeczy
-  preferować najnowsze źródło, a „stan obecny” poparty wyłącznie archiwum oceniać
-  jako brak danych. Fakty historyczne mogą pochodzić z archiwum.
-- **Ostrzeżenia i flagi**: każdy materiał archiwalny (użyty lub z wejścia) daje
-  ostrzeżenie z datą, wiekiem i limitem. Twierdzenie dostaje `freshness_flags`:
-  `zrodla_archiwalne` (model widział archiwum) i `werdykt_na_materiale_archiwalnym`
-  (dowody rozstrzygające są wyłącznie archiwalne – pewność najwyżej `srednia`).
+- **Data odniesienia** (`claims[].reference_date`, `reference_basis`): wiek źródła liczymy
+  względem CZASU ZDARZENIA, którego dotyczy twierdzenie, a nie chwili wpłynięcia zapytania.
+  Data pochodzi z treści twierdzenia („w 2014 roku” → 2014-12-31, „1 maja 2004”,
+  „w kwietniu 2026” → koniec miesiąca, najpóźniejsza z wymienionych). Twierdzenie o stanie
+  obecnym („obecnie”, „dziś”…) albo bez daty → dzień analizy.
+- **Wiek** (`age_days`) = dni od publikacji do daty odniesienia; wartość ujemna oznacza
+  źródło opublikowane po zdarzeniu (relację) – nie jest stare.
+- **Limit** `VERDICT_MAX_SOURCE_AGE_DAYS` (domyślnie 730 dni): źródło opublikowane wcześniej
+  niż limit PRZED datą odniesienia jest `material_archiwalny` względem tego twierdzenia.
+  To samo źródło może być archiwalne dla „obecnie…”, a aktualne dla „w 2014 roku…”.
+  Wiek i flagi per twierdzenie: `claims[].source_freshness[]` i `claims[].evidence[]`;
+  `input_sources[].archival_for_claims` mówi, dla których twierdzeń źródło jest archiwalne.
+  Na listach globalnych (`sources`, `input_sources`) są tylko cechy niezależne od
+  twierdzenia: `brak_daty_publikacji`, `data_publikacji_w_przyszlosci`.
+- **Znaczniki czasu**: `published_at` (publikacja) i `fetched_at` (pobranie:
+  `ReadingResult.fetched_at` z backendu, pole `fetched_at` w korpusie i w pliku `--sources`;
+  źródło z zapytania bez znacznika dostaje czas analizy). Wynik zawiera `analyzed_at`
+  i `max_source_age_days`.
+- **Preferowanie aktualnych danych**: wynik BM25 jest mnożony przez premię za bliskość
+  zdarzeniu (1 dla źródła z dnia zdarzenia lub późniejszego, 0,5 na granicy limitu), więc
+  z równie trafnych źródeł wygrywa bliższe zdarzeniu. Model dostaje datę analizy, datę
+  odniesienia twierdzenia, wiek źródeł i atrybut `archival="tak"`; reguła R11 każe przy
+  zmianach stanu rzeczy preferować najnowsze źródło, a twierdzenie oparte wyłącznie na
+  materiale archiwalnym oceniać jako brak danych.
+- **Ostrzeżenia i flagi**: ostrzeżenie `Tn: źródło [...] to materiał archiwalny…` podaje
+  datę publikacji, wiek, datę odniesienia i jej podstawę. Twierdzenie dostaje
+  `freshness_flags`: `zrodla_archiwalne` i `werdykt_na_materiale_archiwalnym` (dowody
+  rozstrzygające wyłącznie archiwalne – pewność najwyżej `srednia`).
 - **Kontrola**: gdy model odrzuca aktualne źródło jako „nieaktualne” (o aktualności
   rozstrzyga wyłącznie limit), runda naprawcza prosi go o ponowną ocenę.
+
+## Metadane źródeł w JSON
+
+| Miejsce | tytuł | wydawca | data publikacji / pobrania | link | cytowany fragment |
+|---|---|---|---|---|---|
+| `claims[].evidence[]` | `source_title` | `publisher` | `published_at` / `fetched_at` | `url` | `quote` (zweryfikowany dosłownie) |
+| `input_sources[]` | `title` | `publisher` | `published_at` / `fetched_at` | `url` | `cited_quotes[]` (per twierdzenie) |
+| `sources[]` | `title` | `publisher` | `published_at` / `fetched_at` | `url` | – (cytaty są w dowodach) |
+| `claims[].sources_reviewed[]` | `title` | `publisher` | `published_at` / `fetched_at` | `url` | – |
+| `quarantined_sources[]` | `title` | `publisher` | `published_at` / `fetched_at` | `url` | – (nie trafia do modelu) |
+
+Pole jest puste tylko wtedy, gdy źródło go nie ma: przykładowe dokumenty korpusu
+(`data/sources/`) nie mają `url` – przy zastępowaniu ich prawdziwymi źródłami trzeba
+podać adres. Cytat istnieje tylko dla źródeł użytych jako dowód (przy „brak danych”
+dowodów zwykle nie ma).
 
 ## Ochrona przed prompt injection
 
