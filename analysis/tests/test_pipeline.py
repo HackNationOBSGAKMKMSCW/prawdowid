@@ -161,3 +161,49 @@ def test_clean_claim_has_no_security_warning():
     assert "UWAGA: system wykrył" not in client.calls[0][1]["content"]
     assert result.claims[0].security_warnings == []
     assert result.quarantined_sources == []
+
+
+def test_full_text_reading_result_feeds_matching_claims_only():
+    statements = ["Szczepionki zawierają mikroczipy.", "Rysy leżą w Tatrach."]
+    full_text = " ".join(statements)
+    analysis = SimpleNamespace(statements=statements, security_warnings=[])
+    single_result = _reading_result(full_text, [FC_CLAIM])  # jak apiReading.run_full_text()
+    client = FakeChatClient(no_data_answer(), no_data_answer())
+    asyncio.run(
+        run(analysis, single_result, client=client, settings=SETTINGS, corpus=Retriever([]))
+    )
+    messages = {
+        call[1]["content"].split("<claim>\n")[1].split("\n")[0]: call[1]["content"]
+        for call in client.calls
+    }
+    assert 'kind="fact_check"' in messages["Szczepionki zawierają mikroczipy."]
+    assert "Rysy leżą w Tatrach." not in messages, "bez pasujących źródeł model nie jest pytany"
+
+
+def test_run_accepts_mixed_and_dumped_reading_results():
+    statement = "Szczepionki zawierają mikroczipy."
+    analysis = {"statements": [statement], "security_warnings": []}
+    per_statement = _reading_result(statement, [FC_CLAIM])
+    dumped_full_text = {
+        "request": {"query": f"{statement} Coś jeszcze."},
+        "items": [
+            {
+                "id": "2",
+                "source": "google_fact_check",
+                "payload": dict(FC_CLAIM, text="Inne mikroczipy w szczepionkach"),
+            }
+        ],
+        "results": [],
+    }
+    client = FakeChatClient(no_data_answer())
+    result = asyncio.run(
+        run(
+            analysis,
+            [per_statement, dumped_full_text],
+            client=client,
+            settings=SETTINGS,
+            corpus=Retriever([]),
+        )
+    )
+    assert client.calls[0][1]["content"].count('kind="fact_check"') == 2
+    assert len([s for s in result.sources if s.kind == "fact_check"]) == 2

@@ -74,3 +74,19 @@ def test_reading_errors_are_reported():
     error = RuntimeError("boom")
     errors = reading_errors([_reading_result("q", [], errors=[("google_fact_check", error)])])
     assert errors == ["Źródło google_fact_check: RuntimeError"]
+
+
+def test_partition_separates_per_statement_and_full_text_results():
+    from prawdowid_analysis.adapters import partition_fact_checks
+
+    statement = "Szczepionki zawierają mikroczipy."
+    full_text = f"{statement} Firma X śledzi ludzi."
+    other = dict(FC_CLAIM, text="Firma X śledzi ludzi przez telefony")
+    results = [
+        _reading_result(statement, [FC_CLAIM]),
+        _reading_result(full_text, [FC_CLAIM, other]),
+    ]
+    pools = partition_fact_checks(results, [statement])
+    assert list(pools.per_statement) == [statement]
+    assert len(pools.shared) == 2, "wspólna pula bez duplikatów"
+    assert all(s.kind == "fact_check" for s in pools.shared)

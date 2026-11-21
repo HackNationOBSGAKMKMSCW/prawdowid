@@ -21,7 +21,7 @@ import time
 from collections.abc import Iterable, Mapping, Sequence
 from typing import Any
 
-from .adapters import claims_from_analysis, reading_errors, sources_from_reading_results
+from .adapters import claims_from_analysis, partition_fact_checks, reading_errors
 from .aggregate import aggregate
 from .config import Settings
 from .llm import ChatClient, OpenAIChatClient
@@ -67,10 +67,17 @@ def sources_for_claim(
     user_passages: list[ReferenceSource],
     user_retriever: Retriever | None,
     fact_checks: Sequence[ReferenceSource] = (),
+    shared_fact_checks: Retriever | None = None,
 ) -> list[ReferenceSource]:
     selected: dict[str, ReferenceSource] = {}
     for source in list(fact_checks)[:MAX_FACT_CHECKS]:
         selected.setdefault(source.source_id, source)
+    if shared_fact_checks is not None:
+        budget = MAX_FACT_CHECKS - len(selected)
+        # Wymagamy co najmniej jednego wspólnego słowa (wynik > 0), nie progu BM25:
+        # pula bywa mała, a wtedy IDF jest niski nawet dla trafnych wpisów.
+        for source, _ in shared_fact_checks.search(claim, k=max(budget, 0), min_score=1e-9):
+            selected.setdefault(source.source_id, source)
     if corpus is not None:
         for passage, _ in corpus.search(claim, k=TOP_K_CORPUS):
             selected.setdefault(passage.source_id, passage)
@@ -83,6 +90,7 @@ async def verify_claims(
     statements: Sequence[str],
     *,
     fact_checks: Mapping[str, Sequence[ReferenceSource]] | None = None,
+    shared_fact_checks: Iterable[ReferenceSource] = (),
     extra_sources: Iterable[ReferenceSource] = (),
     corpus: Retriever | None = None,
     use_corpus: bool = True,
@@ -106,6 +114,8 @@ async def verify_claims(
     user_passages = [p for s in keep(extra_sources) for p in split_source(s)]
     user_retriever = Retriever(user_passages) if len(user_passages) > TOP_K_USER else None
     fact_checks = fact_checks or {}
+    shared_pool = keep(shared_fact_checks)
+    shared_retriever = Retriever(shared_pool) if shared_pool else None
 
     own_client = client is None
     chat = client or OpenAIChatClient(settings)
@@ -123,6 +133,7 @@ async def verify_claims(
                 user_passages=user_passages,
                 user_retriever=user_retriever,
                 fact_checks=fact_checks.get(statement, ()),
+                shared_fact_checks=shared_retriever,
             )
         )
         for source in claim_sources:
@@ -169,20 +180,38 @@ async def verify_claims(
     )
 
 
+def _as_result_list(reading_results: Any) -> list[Any]:
+    """Przyjmuje listę wyników (`apiReading.run()`) albo pojedynczy wynik
+    (`apiReading.run_full_text()`), także w postaci słownika po `model_dump()`."""
+    if reading_results is None:
+        return []
+    if isinstance(reading_results, Mapping) or hasattr(reading_results, "request"):
+        return [reading_results]
+    return list(reading_results)
+
+
 async def run(
     analysis: Any,
-    reading_results: Iterable[Any] | None = None,
+    reading_results: Any = None,
     *,
     extra_sources: Iterable[ReferenceSource] = (),
     **kwargs: Any,
 ) -> TextVerdict:
-    """Werdykt dla wyników `textAnalysis.run()` (+ opcjonalnie `apiReading.run()`)."""
+    """Werdykt dla wyników `textAnalysis.run()` i (opcjonalnie) `apiReading`.
+
+    `reading_results` może pochodzić z `apiReading.run()` (lista, zapytanie na
+    stwierdzenie), z `apiReading.run_full_text()` (jeden wynik dla całego tekstu)
+    albo być ich połączeniem. Wpisy z zapytań niepasujących do żadnego stwierdzenia
+    trafiają do wspólnej puli, z której każde twierdzenie dostaje pasujące wpisy.
+    """
     claims = claims_from_analysis(analysis)
-    results = list(reading_results or [])
+    results = _as_result_list(reading_results)
+    pools = partition_fact_checks(results, claims.statements)
     warnings = [*claims.warnings, *reading_errors(results)]
     return await verify_claims(
         claims.statements,
-        fact_checks=sources_from_reading_results(results),
+        fact_checks=pools.per_statement,
+        shared_fact_checks=pools.shared,
         extra_sources=extra_sources,
         warnings=warnings,
         **kwargs,

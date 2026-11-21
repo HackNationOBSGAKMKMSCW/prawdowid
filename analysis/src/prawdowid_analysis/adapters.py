@@ -106,6 +106,35 @@ def sources_from_reading_results(results: Iterable[Any]) -> dict[str, list[Refer
     return grouped
 
 
+@dataclass
+class FactCheckPools:
+    """Wpisy fact-checkingowe rozdzielone wg tego, czego dotyczyło zapytanie.
+
+    - `per_statement`: wyniki `apiReading.run()` – zapytanie = jedno stwierdzenie;
+    - `shared`: wyniki, których zapytanie nie jest żadnym ze stwierdzeń, np.
+      `apiReading.run_full_text()` (zapytanie = cały tekst). Potok dobiera z tej
+      puli wpisy pasujące do każdego twierdzenia osobno.
+    """
+
+    per_statement: dict[str, list[ReferenceSource]] = field(default_factory=dict)
+    shared: list[ReferenceSource] = field(default_factory=list)
+
+
+def partition_fact_checks(results: Iterable[Any], statements: Iterable[str]) -> FactCheckPools:
+    known_statements = {_clean(s) for s in statements}
+    pools = FactCheckPools()
+    shared_ids: set[str] = set()
+    for query, sources in sources_from_reading_results(results).items():
+        if query in known_statements:
+            pools.per_statement[query] = sources
+            continue
+        for source in sources:
+            if source.source_id not in shared_ids:
+                shared_ids.add(source.source_id)
+                pools.shared.append(source)
+    return pools
+
+
 def reading_errors(results: Iterable[Any]) -> list[str]:
     """Błędy dostawców z wyników `apiReading` (do ostrzeżeń w raporcie)."""
     errors: list[str] = []
