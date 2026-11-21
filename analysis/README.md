@@ -101,6 +101,29 @@ print(verdict.model_dump_json(indent=2))
   werdykt oparty tylko na nich ma najwyżej pewność `srednia`.
 - `--sources` / `extra_sources` – źródła podane w zapytaniu.
 
+## Aktualność źródeł i materiał archiwalny
+
+- **Znaczniki czasu**: każde źródło ma `published_at` (data publikacji) i `fetched_at`
+  (pobranie: `ReadingResult.fetched_at` z backendu, pole `fetched_at` w korpusie i w
+  pliku `--sources`; źródło z zapytania bez znacznika dostaje czas analizy). Wynik
+  zawiera `analyzed_at` – punkt odniesienia wieku – i `max_source_age_days`.
+- **Limit** `VERDICT_MAX_SOURCE_AGE_DAYS` (domyślnie 730 dni). Źródło starsze od limitu
+  (liczone od publikacji) dostaje flagę `material_archiwalny`; bez daty –
+  `brak_daty_publikacji`; z datą w przyszłości – `data_publikacji_w_przyszlosci`.
+  Flagi i wiek (`age_days`) są w `sources`, `input_sources` i w dowodach.
+- **Preferowanie aktualnych danych**: przy wyborze fragmentów wynik BM25 jest mnożony
+  przez premię za świeżość (maleje z wiekiem: 1 dziś, 0,5 na granicy limitu), więc
+  z równie trafnych źródeł wygrywa nowsze. Model dostaje datę analizy, wiek każdego
+  źródła i atrybut `archival="tak"`; reguła R11 każe mu przy zmianach stanu rzeczy
+  preferować najnowsze źródło, a „stan obecny” poparty wyłącznie archiwum oceniać
+  jako brak danych. Fakty historyczne mogą pochodzić z archiwum.
+- **Ostrzeżenia i flagi**: każdy materiał archiwalny (użyty lub z wejścia) daje
+  ostrzeżenie z datą, wiekiem i limitem. Twierdzenie dostaje `freshness_flags`:
+  `zrodla_archiwalne` (model widział archiwum) i `werdykt_na_materiale_archiwalnym`
+  (dowody rozstrzygające są wyłącznie archiwalne – pewność najwyżej `srednia`).
+- **Kontrola**: gdy model odrzuca aktualne źródło jako „nieaktualne” (o aktualności
+  rozstrzyga wyłącznie limit), runda naprawcza prosi go o ponowną ocenę.
+
 ## Ochrona przed prompt injection
 
 Ochrona nie polega wyłącznie na posłuszeństwie modelu; warstwy po stronie kodu:
