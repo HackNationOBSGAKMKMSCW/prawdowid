@@ -46,6 +46,11 @@ if result.message:  # stan luki informacyjnej: dołącz do odpowiedzi
 
 `monitor.record(...)` robi oba kroki naraz, gdy potok już się wykonał.
 
+Bot WhatsApp (`whatsapp_sim/backend/whatsappAdapter/admin_bridge.py`) jest już wpięty.
+Rejestruje każdą wiadomość do sprawdzenia, odrzuca zablokowanych i treści wysokiego ryzyka,
+a do odpowiedzi dołącza komunikat o luce informacyjnej. Bot i panel muszą mieć to samo
+`ADMIN_DB_PATH`. `ADMIN_MONITOR=off` wyłącza rejestr. Awaria monitora nie przerywa rozmowy.
+
 ## Reguły
 
 Progi ustawia się w sekcji `monitoring` konfiguracji (`PATCH /api/admin/config`).
