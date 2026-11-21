@@ -86,17 +86,91 @@ export default function ResultScreen({ result }: { result: CheckResult }) {
       </div>
 
       <div className="minor-actions">
-        <button type="button" className="btn-link" onClick={() => setDialog('report')}>
-          {reported ? 'Dziękujemy za zgłoszenie' : 'Zgłoś błąd'}
+        <button
+          type="button"
+          className="minor-action"
+          data-tone="report"
+          data-done={reported || undefined}
+          onClick={() => !reported && setDialog('report')}
+          aria-disabled={reported}
+          aria-haspopup="dialog"
+        >
+          <span className="minor-action__icon" aria-hidden="true">
+            {reported ? (
+              <svg viewBox="0 0 24 24" width="22" height="22" focusable="false">
+                <path
+                  d="m5 12.5 4.5 4.5L19 7.5"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.4"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            ) : (
+              <svg viewBox="0 0 24 24" width="22" height="22" focusable="false">
+                <path
+                  d="M5 21V4m0 0h11l-2 4 2 4H5"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            )}
+          </span>
+          <span className="minor-action__text">
+            <span className="minor-action__label">
+              {reported ? 'Zgłoszenie wysłane' : 'Zgłoś błąd'}
+            </span>
+            <span className="minor-action__hint">
+              {reported ? 'Dziękujemy, przejrzymy wynik' : 'Coś się nie zgadza?'}
+            </span>
+          </span>
         </button>
         <button
           type="button"
-          className="btn-link"
-          onClick={() => setDialog('delete')}
+          className="minor-action"
+          data-tone="delete"
+          data-done={deleted || undefined}
+          onClick={() => !deleted && setDialog('delete')}
           aria-disabled={deleted}
-          disabled={deleted}
+          aria-haspopup="dialog"
         >
-          {deleted ? 'Dane usunięte' : 'Usuń moje dane'}
+          <span className="minor-action__icon" aria-hidden="true">
+            {deleted ? (
+              <svg viewBox="0 0 24 24" width="22" height="22" focusable="false">
+                <path
+                  d="m5 12.5 4.5 4.5L19 7.5"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.4"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            ) : (
+              <svg viewBox="0 0 24 24" width="22" height="22" focusable="false">
+                <path
+                  d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            )}
+          </span>
+          <span className="minor-action__text">
+            <span className="minor-action__label">
+              {deleted ? 'Dane usunięte' : 'Usuń moje dane'}
+            </span>
+            <span className="minor-action__hint">
+              {deleted ? 'Nie przechowujemy już wiadomości' : 'Wiadomość i ten wynik'}
+            </span>
+          </span>
         </button>
       </div>
 

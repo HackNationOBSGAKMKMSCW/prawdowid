@@ -467,10 +467,117 @@ a:focus-visible {
 }
 
 .minor-actions {
+  margin-top: 4px;
+  padding-top: 20px;
+  border-top: 1px solid var(--c-line);
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+@media (max-width: 480px) {
+  .minor-actions {
+    grid-template-columns: 1fr;
+  }
+}
+
+.minor-action {
+  --ma-fg: var(--c-navy);
+  --ma-soft: #eef3fa;
+  min-height: 72px;
+  padding: 12px 16px;
   display: flex;
-  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+  border: 2px solid var(--c-line);
+  border-radius: 16px;
+  background: var(--c-surface);
+  color: var(--c-text);
+  text-align: left;
+  font-family: var(--font);
+  cursor: pointer;
+  transition:
+    border-color 0.2s,
+    background-color 0.2s,
+    box-shadow 0.2s,
+    transform 0.2s var(--ease-out, ease-out);
+}
+
+.minor-action[data-tone='delete'] {
+  --ma-fg: var(--c-error);
+  --ma-soft: #fcebee;
+}
+
+.minor-action:hover {
+  border-color: var(--ma-fg);
+  background: var(--ma-soft);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px -8px rgb(20 26 36 / 35%);
+}
+
+.minor-action:active {
+  transform: scale(0.98);
+  box-shadow: none;
+}
+
+.minor-action__icon {
+  width: 44px;
+  height: 44px;
+  flex: none;
+  display: flex;
+  align-items: center;
   justify-content: center;
-  gap: 4px 24px;
+  border-radius: 50%;
+  background: var(--ma-soft);
+  color: var(--ma-fg);
+  transition: transform 0.3s var(--ease-spring, ease-out);
+}
+
+.minor-action:hover .minor-action__icon {
+  transform: rotate(-8deg) scale(1.08);
+}
+
+.minor-action__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.minor-action__label {
+  font: 700 18px/1.25 var(--font);
+  color: var(--ma-fg);
+}
+
+.minor-action__hint {
+  font: 400 15px/1.3 var(--font);
+  color: var(--c-text-subtle);
+}
+
+/* Po wykonaniu: zielony znak, przycisk nieaktywny, ale czytelny. */
+.minor-action[data-done],
+.minor-action[data-done]:hover {
+  --ma-fg: #17603a;
+  --ma-soft: #e6f4ea;
+  border-color: #b5dcc3;
+  background: var(--c-surface);
+  opacity: 1;
+  cursor: default;
+  transform: none;
+  box-shadow: none;
+}
+
+.minor-action[data-done] .minor-action__icon {
+  animation: pw-pop 0.5s var(--ease-spring, ease-out) both;
+  transform: none;
+}
+
+[data-hc='true'] .minor-action {
+  border-color: #000 !important;
+}
+
+[data-hc='true'] .minor-action__icon {
+  border: 2px solid #000;
 }
 
 /* ---------- WhatsApp ---------- */
@@ -2011,4 +2118,8 @@ html {
 .pill-toggle--icon:hover .icon-tip,
 .pill-toggle--icon:focus-visible .icon-tip {
   visibility: visible;
+}
+
+.minor-action:hover .minor-action__icon {
+  background: var(--c-surface);
 }
