@@ -78,6 +78,7 @@ export default function LlmInputDialog({ text, onSend, onClose }: LlmInputDialog
                 ⚠ {w}
               </p>
             ))}
+            <p className="masking-note">Wersja reguł: {state.result.rules_version}</p>
           </div>
         )}
       </div>

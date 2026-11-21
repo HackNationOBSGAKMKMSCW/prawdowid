@@ -6,6 +6,7 @@ import re
 from collections import Counter
 from dataclasses import dataclass, field
 
+from .normalize import View, build_view
 from .rules import CONTEXT_BEFORE, RULES, UNIT_AFTER, URL, Keyword, Rule
 
 # Ile znaków przed wartością przeszukujemy w poszukiwaniu słowa-klucza („PESEL: …”).
@@ -43,7 +44,10 @@ class MaskingResult:
 class _Candidate:
     rule: Rule
     start: int
+    """Pozycje w tekście oryginalnym."""
     end: int
+    value: str
+    """Wartość w tekście znormalizowanym (do numerowania znaczników)."""
 
     @property
     def length(self) -> int:
@@ -91,17 +95,8 @@ def _accepts(rule: Rule, text: str, start: int, end: int) -> bool:
     return rule.validate is None or rule.validate(value)
 
 
-# Słowo z cyframi i literami O („6OO”, „1OO”): O to pewnie zero.
-_DIGITISH = re.compile(r"(?<!\w)(?=[\dOo]*\d)[\dOo]+(?!\w)")
-
-
-def _shadow(text: str) -> str:
-    """Kopia tekstu tej samej długości, w której „6OO 1OO 2OO” to „600 100 200”."""
-    return _DIGITISH.sub(lambda m: m.group().replace("O", "0").replace("o", "0"), text)
-
-
-def _candidates(text: str) -> list[_Candidate]:
-    text = _shadow(text)
+def _candidates(view: View) -> list[_Candidate]:
+    text = view.text
     urls = [m.span() for m in URL.finditer(text)]
     found: list[_Candidate] = []
     for rule in RULES:
@@ -113,7 +108,8 @@ def _candidates(text: str) -> list[_Candidate]:
             if not rule.inside_urls and any(u0 <= start and end <= u1 for u0, u1 in urls):
                 continue
             if _accepts(rule, text, start, end):
-                found.append(_Candidate(rule, start, end))
+                o_start, o_end = view.original_span(start, end)
+                found.append(_Candidate(rule, o_start, o_end, text[start:end]))
     return found
 
 
@@ -135,9 +131,10 @@ def mask_personal_data(text: str) -> MaskingResult:
     if not text:
         return MaskingResult(text=text)
 
+    # Reguły działają na znormalizowanej kopii, znaczniki trafiają w oryginalne miejsca.
     # Najpierw pewniejsze reguły, przy remisie dłuższe dopasowanie.
-    shadow = _shadow(text)
-    ordered = sorted(_candidates(text), key=lambda c: (c.rule.priority, -c.length, c.start))
+    view = build_view(text)
+    ordered = sorted(_candidates(view), key=lambda c: (c.rule.priority, -c.length, c.start))
     chosen: list[_Candidate] = []
     for cand in ordered:
         if all(cand.end <= c.start or cand.start >= c.end for c in chosen):
@@ -151,7 +148,7 @@ def mask_personal_data(text: str) -> MaskingResult:
     cursor = 0
     for cand in chosen:
         label = cand.rule.label
-        key = (label, _normalize(label, shadow[cand.start : cand.end]))
+        key = (label, _normalize(label, cand.value))
         if key not in numbers:
             per_label[label] += 1
             numbers[key] = per_label[label]

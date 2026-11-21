@@ -149,6 +149,7 @@ function MaskingResult({ input, result }: { input: string; result: MaskingRespon
           </p>
         </>
       )}
+      <p className="masking-note">Wersja reguł: {result.rules_version}</p>
     </section>
   );
 }

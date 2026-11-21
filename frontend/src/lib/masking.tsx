@@ -17,6 +17,13 @@ export const MASKED_LABELS: Record<MaskedLabel, string> = {
   KOD_POCZTOWY: 'Kod pocztowy',
   DATA_URODZENIA: 'Data urodzenia',
   NR_REJESTRACYJNY: 'Numer rejestracyjny',
+  PROFIL: 'Profil / nick',
+  MAC: 'Adres MAC',
+  KSIEGA_WIECZYSTA: 'Księga wieczysta',
+  HASLO: 'Hasło / PIN',
+  LOGIN: 'Login',
+  IDENTYFIKATOR: 'Numer klienta / umowy / paczki',
+  LOKALIZACJA: 'Lokalizacja',
 };
 
 const PLACEHOLDER = /(\[[A-Z_]+_\d+\])/;

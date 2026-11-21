@@ -7,8 +7,10 @@
 
 from __future__ import annotations
 
+import hashlib
 import re
 from collections import Counter
+from pathlib import Path
 
 from fastapi import APIRouter, FastAPI, HTTPException
 from pydantic import BaseModel, Field
@@ -17,6 +19,17 @@ from .masker import mask_personal_data
 
 _PLACEHOLDER = re.compile(r"\[([A-Z_]+)_\d+\]")
 MAX_TEXT_LENGTH = 20_000  # InputSanitizer sam przycina do 15 000 i to zgłasza
+
+
+def _rules_version() -> str:
+    """Skrót plików z regułami – widać w oknie testowym, czy backend działa na nowym kodzie."""
+    digest = hashlib.sha256()
+    for name in ("rules.py", "masker.py", "normalize.py", "validators.py"):
+        digest.update((Path(__file__).parent / name).read_bytes())
+    return digest.hexdigest()[:8]
+
+
+RULES_VERSION = _rules_version()
 
 
 class MaskingRequest(BaseModel):
@@ -34,6 +47,7 @@ class MaskingResponse(BaseModel):
     masked_text: str
     entities: list[MaskedEntity]
     counts: dict[str, int]
+    rules_version: str = RULES_VERSION
 
 
 router = APIRouter(prefix="/api/masking", tags=["maskowanie"])
@@ -60,6 +74,7 @@ class LlmInputResponse(BaseModel):
     warnings: list[str] = Field(
         description="Ostrzeżenia sanitizera (przycięcie, prompt injection)."
     )
+    rules_version: str = RULES_VERSION
 
 
 @router.post("/llm-input", response_model=LlmInputResponse)
@@ -81,7 +96,7 @@ def llm_input(request: MaskingRequest) -> LlmInputResponse:
 
 @router.get("/health")
 def health() -> dict[str, str]:
-    return {"status": "ok"}
+    return {"status": "ok", "rules_version": RULES_VERSION}
 
 
 def create_app() -> FastAPI:

@@ -66,3 +66,13 @@ def is_ipv4(value: str) -> bool:
     return len(parts) == 4 and all(
         p.isdigit() and int(p) <= 255 and (p == "0" or not p.startswith("0")) for p in parts
     )
+
+
+def looks_like_handle(value: str) -> bool:
+    """Nick albo login: cyfra, podkreślnik albo kropka w środku („kasia_nowak”, „jan.k85”)."""
+    return any(ch.isdigit() or ch == "_" for ch in value) or "." in value.strip(".")
+
+
+def looks_like_password(value: str) -> bool:
+    """Hasło ma cyfrę albo znak specjalny – „hasło wyborcze” nie."""
+    return any(ch.isdigit() or ch in "!@#$%^&*?_+=" for ch in value)

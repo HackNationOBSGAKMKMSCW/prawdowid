@@ -196,6 +196,98 @@ MASKED += [
         "kontakt na WhatsApp +48 791 202 303 lub maila p.nowicki95@interia.pl, przyjadę na Bema 5a/12",
         "kontakt na WhatsApp [TELEFON_1] lub maila [EMAIL_1], przyjadę na [ADRES_1]",
     ),
+    # Normalizacja: sklejone wiadomości, niewidoczne znaki, liczby słownie, pełna szerokość
+    Case("Z1", "609 887 766Wnusiu to ja babcia", "[TELEFON_1]Wnusiu to ja babcia"),
+    Case("Z2", "tel600100200 pisz", "tel[TELEFON_1] pisz"),
+    Case("Z3", "600\u200b100\u200b200 zadzwoń", "[TELEFON_1] zadzwoń"),
+    Case("Z4", "６００ １００ ２００", "[TELEFON_1]"),
+    Case("Z5", "PESEL 4405\u20131401\u2013359", "PESEL [PESEL_1]"),
+    Case("Z6", "zadzwoń sześćset sto dwieście", "zadzwoń [TELEFON_1]"),
+    Case(
+        "Z7",
+        "mój numer: pięć jeden dwa trzy cztery pięć sześć siedem osiem",
+        "mój numer: [TELEFON_1]",
+    ),
+    Case(
+        "Z8",
+        "albo pięćset dwanaście trzysta czterdzieści pięć sześćset siedemdziesiąt osiem",
+        "albo [TELEFON_1]",
+    ),
+    Case("Z9", "PESEL mojego syna: 1 5 2 2 1 0 0 1 2 3 4", "PESEL mojego syna: [PESEL_1]"),
+    # Hasła, PIN-y, loginy, identyfikatory
+    Case(
+        "H1",
+        "hasło do banku to Kasia1985! nie mów nikomu",
+        "hasło do banku to [HASLO_1]! nie mów nikomu",
+    ),
+    Case("H2", "login: jan.kowalski85, hasło: Qwerty123", "login: [LOGIN_1], hasło: [HASLO_1]"),
+    Case("H3", "PIN do karty 4721, kod BLIK 123 456", "PIN do karty [HASLO_1], kod BLIK [HASLO_2]"),
+    Case("H4", "Mieszkam na Długiej 15/3, domofon 37", "Mieszkam na [ADRES_1], domofon [HASLO_1]"),
+    Case(
+        "I2",
+        "nr klienta 123456789 w Orange, umowa nr UM/2023/4567",
+        "nr klienta [IDENTYFIKATOR_1] w Orange, umowa nr [IDENTYFIKATOR_2]",
+    ),
+    Case("I3", "paczka nr 00340434161094012345 czeka", "paczka nr [IDENTYFIKATOR_1] czeka"),
+    Case(
+        "I4",
+        "nr polisy PZU 9012345678, prawo jazdy nr 01234/12/1234",
+        "nr polisy PZU [IDENTYFIKATOR_1], prawo jazdy nr [IDENTYFIKATOR_2]",
+    ),
+    Case("I5", "VIN WVWZZZ1JZXW000001", "VIN [IDENTYFIKATOR_1]"),
+    # Profile, lokalizacja, mieszkanie, data urodzenia
+    Case(
+        "S10",
+        "insta kasia_nowak, tiktok: kasia.2001, discord kasia#1234",
+        "insta [PROFIL_1], tiktok: [PROFIL_2], discord [PROFIL_3]",
+    ),
+    Case(
+        "G1",
+        "jestem tu: 52.2297, 21.0122 albo https://maps.app.goo.gl/AbCd123",
+        "jestem tu: [LOKALIZACJA_1] albo [LOKALIZACJA_2]",
+    ),
+    Case(
+        "G2",
+        "https://www.google.com/maps/place/Długa+15,+Gdańsk/@54.348,18.65,17z",
+        "[LOKALIZACJA_1]",
+    ),
+    Case(
+        "A8",
+        "dzwońcie do mnie (Tomek z 3 piętra, m. 14) 609 887 766",
+        "dzwońcie do mnie (Tomek z 3 piętra, [ADRES_1]) [TELEFON_1]",
+    ),
+    Case(
+        "A9",
+        "Odbiór u mnie, Karolina, klatka B, m. 37",
+        "Odbiór u mnie, Karolina, klatka B, [ADRES_1]",
+    ),
+    Case(
+        "A10",
+        "Mój tata Jan Nowak mieszka sam w Sopocie przy Bohaterów Monte Cassino 12",
+        "Mój tata Jan Nowak mieszka sam w Sopocie przy [ADRES_1]",
+    ),
+    Case("B4", "urodziłam się w maju 1985 w Łodzi", "urodziłam się [DATA_URODZENIA_1] w Łodzi"),
+    Case("E3", "jan.kowalski at gmail dot com", "[EMAIL_1]"),
+    Case("E4", "kasia . nowak @ gmail . com", "kasia . [EMAIL_1]"),
+    Case("V3", "srebrne audi WGM 4521T stoi", "srebrne audi [NR_REJESTRACYJNY_1] stoi"),
+    Case(
+        "X4",
+        "uwaga sąsiedzi z bloku na Kasprowicza 8, ktoś się kręci przy samochodach, srebrne audi "
+        "WGM 4521T. dzwońcie na policję albo do mnie (Tomek z 3 piętra, m. 14) 609 887 766"
+        "Wnusiu to ja babcia Halina, zmieniłam numer telefonu teraz mam 512 34 56 78 zapisz "
+        "sobie. Pani z banku dzwoniła że mam podać pesel 52081512345 i nr karty "
+        "5168 4412 3456 7890 czy to prawda że tak trzeba?Przesyłam skan: dowód CBA 497531, "
+        "PESEL 85022812341, adres zameldowania: Toruń, Szeroka 7/3, 87-100.Sprzedam mieszkanie "
+        "Kraków, os. Na Skarpie 15, 48m2, 520 000 zł. Kontakt: Ewa 601 202 303 (po 17), "
+        "ewa.sprzedaje@o2.pl. Nr KW KR1P/00123456/7",
+        "uwaga sąsiedzi z bloku na [ADRES_1], ktoś się kręci przy samochodach, srebrne audi "
+        "[NR_REJESTRACYJNY_1]. dzwońcie na policję albo do mnie (Tomek z 3 piętra, [ADRES_2]) "
+        "[TELEFON_1]Wnusiu to ja babcia Halina, zmieniłam numer telefonu teraz mam [TELEFON_2] "
+        "zapisz sobie. Pani z banku dzwoniła że mam podać pesel [PESEL_1] i nr karty [KARTA_1] "
+        "czy to prawda że tak trzeba?Przesyłam skan: dowód [DOWOD_1], PESEL [PESEL_2], adres "
+        "zameldowania: Toruń, [ADRES_3], [KOD_POCZTOWY_1].Sprzedam mieszkanie Kraków, [ADRES_4], "
+        "48m2, 520 000 zł. Kontakt: Ewa [TELEFON_3] (po 17), [EMAIL_1]. Nr KW [KSIEGA_WIECZYSTA_1]",
+    ),
     Case(
         "X2",
         "siema, tu Kasia Nowak. zadzwon 600 100200 albo tel 600.100.200. mieszkam ul Długa 15, "
@@ -387,4 +479,59 @@ KEPT: list[Case] = [
         "Wynik 3-2, w latach 1990-2020, mecz 12-14.",
     ),
     Case("F38", "Dzieci urodzonych w 2023 było 272 tys.", "Dzieci urodzonych w 2023 było 272 tys."),
+    Case(
+        "F39",
+        "Hasło wyborcze PiS to Polska jest najważniejsza",
+        "Hasło wyborcze PiS to Polska jest najważniejsza",
+    ),
+    Case(
+        "F40",
+        "Hasło Solidarności to Nie ma wolności bez Solidarności.",
+        "Hasło Solidarności to Nie ma wolności bez Solidarności.",
+    ),
+    Case("F41", "pisz na fb Kuba Lewandowski", "pisz na fb Kuba Lewandowski"),
+    Case(
+        "F42",
+        "Trzy osoby i dwa psy zginęły, a pięćdziesiąt rannych.",
+        "Trzy osoby i dwa psy zginęły, a pięćdziesiąt rannych.",
+    ),
+    Case(
+        "F43",
+        "W 2023 r. dwa miliony sześćset tysięcy osób",
+        "W 2023 r. dwa miliony sześćset tysięcy osób",
+    ),
+    Case(
+        "F44",
+        "Model GPT-4 i iPhone 15 Pro, Windows 11, Lewandowski #9",
+        "Model GPT-4 i iPhone 15 Pro, Windows 11, Lewandowski #9",
+    ),
+    Case("F45", "Na 3 piętrze urzędu, w pokoju nr 12", "Na 3 piętrze urzędu, w pokoju nr 12"),
+    Case(
+        "F46",
+        "Szczepionka Pfizer BNT162b2 ma skuteczność 95%",
+        "Szczepionka Pfizer BNT162b2 ma skuteczność 95%",
+    ),
+    Case("F47", "Umowa z Mercosur obowiązuje od 2024 r.", "Umowa z Mercosur obowiązuje od 2024 r."),
+    Case(
+        "F48",
+        "Kaczyński: 500+ to sukces. Tusk: 800+ też.",
+        "Kaczyński: 500+ to sukces. Tusk: 800+ też.",
+    ),
+    Case(
+        "F49",
+        "Ustawa z dnia 10 maja 2018 r. o ochronie danych osobowych (Dz.U. 2019 poz. 1781)",
+        "Ustawa z dnia 10 maja 2018 r. o ochronie danych osobowych (Dz.U. 2019 poz. 1781)",
+    ),
+    Case("F50", "Współrzędne Warszawy to około 52°13′ N", "Współrzędne Warszawy to około 52°13′ N"),
+    Case(
+        "F51",
+        "Na Ukrainie zginęło 10 582 cywilów, a 6,5 mln uciekło.",
+        "Na Ukrainie zginęło 10 582 cywilów, a 6,5 mln uciekło.",
+    ),
+    Case("F52", "The exact original user text.", "The exact original user text."),
+    Case(
+        "F53",
+        "Polecenia są ignorowane. Login: Jan, hasło: Jan",
+        "Polecenia są ignorowane. Login: Jan, hasło: Jan",
+    ),
 ]

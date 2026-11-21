@@ -66,6 +66,11 @@ _MONTHS = (
     "stycznia|lutego|marca|kwietnia|maja|czerwca|lipca|sierpnia|"
     "września|wrzesnia|października|pazdziernika|listopada|grudnia"
 )
+# „w maju 1985”
+_MONTHS_IN = (
+    "styczniu|lutym|marcu|kwietniu|maju|czerwcu|lipcu|sierpniu|wrześniu|wrzesniu|"
+    "październiku|pazdzierniku|listopadzie|grudniu"
+)
 _NUMBER_WORDS = (
     r"(?:jeden|jedna|dwa|dwie|trzy|cztery|pięć|piec|sześć|szesc|siedem|osiem|dziewięć|dziewiec|"
     r"dziesięć|dziesiec|\w+naście|\w+nascie|dwadzieścia|dwadziescia|trzydzieści|trzydziesci|"
@@ -144,13 +149,19 @@ _PHONE_WORDS = _kw(
 _CAR_WORDS = _kw(
     r"aut[oau]\w*|samoch\w*|pojazd\w*|wozem|wóz|woz|tablic\w*|rejestr\w*|blach\w*|parking\w*|"
     r"zaparkow\w*|parkuj\w*|motor\w*|skuter\w*|ciężarów\w*|ciezarow\w*|bus\w*|furgon\w*|"
-    r"jeździ\w*|jezdzi\w*|nr\s+rej"
+    r"jeździ\w*|jezdzi\w*|nr\s+rej|audi|bmw|vw|volkswagen\w*|opel\w*|ford\w*|toyot\w*|"
+    r"skod\w*|škod\w*|fiat\w*|renault|peugeot\w*|kia|hyundai\w*|mercedes\w*|seat\w*|"
+    r"mazd\w*|hond\w*|nissan\w*|volvo|citroen\w*|citroën\w*|dacia|dacii|tesl\w*|suzuki|"
+    r"mitsubishi|lexus\w*|porsche|jeep\w*|mini|cupr\w*|alf\w*\s+romeo|land\s+rover\w*|"
+    r"kombi|sedan\w*|hatchback\w*|suv\w*"
 )
 _MOBILE = rf"[4-8]\d{{2}}(?:{_S}\d){{6}}"
 _LANDLINE = rf"\(?[1-9]\d\)?{_S}\d{{3}}{_S}\d{{2}}{_S}\d{{2}}"
 # Separatorem w e-mailu zapisanym słownie bywa „małpa”, „(at)”, „[at]”, „kropka”, „(dot)”.
 _AT = r"(?:\s*@\s*|\s*[(\[{]\s*(?:at|małpa|malpa)\s*[)\]}]\s*|\s+(?:at|małpa|malpa)\s+)"
-_DOT = r"(?:\.|\s*[(\[{]\s*(?:dot|kropka)\s*[)\]}]\s*|\s+(?:dot|kropka)\s+)"
+_DOT = r"(?:\s?\.\s?|\s*[(\[{]\s*(?:dot|kropka)\s*[)\]}]\s*|\s+(?:dot|kropka)\s+)"
+# Przy rozstrzelonym zapisie końcówka domeny musi być prawdziwa, żeby nie łapać zdań.
+_TLD = r"(?-i:[a-z]{2}|com|net|org|info|biz|gov|edu|online|app|dev|io|eu)"
 _SOCIAL = (
     r"(?:facebook\.com|fb\.com|fb\.me|m\.facebook\.com|instagram\.com|instagr\.am|tiktok\.com|"
     r"twitter\.com|x\.com|linkedin\.com/in|t\.me|youtube\.com|threads\.net|snapchat\.com/add)"
@@ -167,10 +178,10 @@ RULES: tuple[Rule, ...] = (
     Rule(
         "EMAIL",
         _c(
-            rf"(?<![\w.+\-])[\w.+\-]+{_AT}[\w\-]+(?:{_DOT}[\w\-]+)*{_DOT}[A-Za-z]{{2,6}}(?![\w\-])",
+            rf"(?<![\w.+\-])[\w.+\-]+{_AT}[\w\-]+(?:{_DOT}[\w\-]+)*{_DOT}{_TLD}(?![\w\-])",
             re.IGNORECASE,
         ),
-        priority=0,
+        priority=1,
     ),
     # Profil w serwisie społecznościowym (sam profil, bez linków do postów).
     Rule(
@@ -273,6 +284,7 @@ RULES: tuple[Rule, ...] = (
             r"[^\d\n]{0,25}?"
             rf"(?P<v>\d{{1,2}}[./\-]\d{{1,2}}(?:[./\-](?:\d{{4}}|\d{{2}}))?(?![\d.]\d)"
             rf"|\d{{1,2}}\s+(?i:{_MONTHS})(?:\s+'?(?:\d{{4}}|\d{{2}}))?(?!\d)"
+            rf"|(?i:w\s+)?(?i:{_MONTHS_IN})\s+'?(?:\d{{4}}|\d{{2}})(?!\d)"
             r"|\d{4}-\d{2}-\d{2})"
         ),
         priority=7,
@@ -471,5 +483,109 @@ RULES: tuple[Rule, ...] = (
         "KOD_POCZTOWY",
         _c(r"(?<!\w)[A-Z]{1,2}\d[A-Z\d]?\s\d[A-Z]{2}(?!\w)"),
         priority=11,
+    ),
+    # Hasło, PIN, kod CVV: tylko gdy wygląda jak hasło (cyfra albo znak specjalny),
+    # żeby nie łapać „hasła wyborczego”.
+    Rule(
+        "HASLO",
+        _c(
+            r"(?<!\w)(?i:hasło|hasla|hasło\s+do\s+\w+|haslo|password|passwd|pass)(?!\w)"
+            r"(?:\s+(?i:to|jest|brzmi))?\s*[:=\-]?\s*[\"'„“]?"
+            r"(?P<v>[^\s\"'”]{4,40}?)[\"'”]?(?=[\s,;)]|[.!?](?:\s|$)|$)"
+        ),
+        priority=1,
+        validate=v.looks_like_password,
+        inside_urls=True,
+    ),
+    Rule(
+        "HASLO",
+        _c(
+            r"(?<!\w)(?i:pin\w*|kod\s+pin|cvv2?|cvc2?|kod\s+(?:cvv|cvc|blik\w*|dostępu|dostepu|"
+            r"weryfikacyjn\w*|sms\w*|autoryzacyjn\w*|do\s+(?:drzwi|bramy|klatki|furtki|domofonu))|"
+            r"domofon\w*)(?:\s+(?i:to|do\s+\w+|jest))?\s*[:=\-]?\s*"
+            r"(?P<v>\d(?:[ \-]?\d){1,7})(?!\w)"
+        ),
+        priority=1,
+    ),
+    Rule(
+        "LOGIN",
+        _c(
+            r"(?<!\w)(?i:login|nazwa\s+użytkownika|nazwa\s+uzytkownika|username|użytkownik|"
+            r"uzytkownik|nick\w*)(?!\w)\s*(?i:to|jest)?\s*[:=\-]?\s*@?"
+            r"(?P<v>[A-Za-z0-9][\w.\-]{2,40}[A-Za-z0-9_])(?!\w)"
+        ),
+        priority=1,
+        validate=v.looks_like_handle,
+    ),
+    # Identyfikator klienta, umowy, polisy, paczki, legitymacji, prawa jazdy, VIN.
+    Rule(
+        "IDENTYFIKATOR",
+        _c(
+            r"(?<!\w)(?i:(?:nr|numer\w*|id)\.?\s+(?:klienta|umowy|polisy|zamówienia|zamowienia|"
+            r"przesyłki|przesylki|paczki|legitymacji|albumu|indeksu|pacjenta|karty\s+pacjenta|"
+            r"ubezpieczenia|ubezpieczonego|nadwozia|prawa\s+jazdy|konta\s+klienta|faktury|"
+            r"rezerwacji|biletu|zgłoszenia|zgloszenia|sprawy\s+klienta|ewidencyjn\w*|pracownika|"
+            r"karty\s+bibliotecznej|karty\s+lojalnościowej|karty\s+lojalnosciowej|vin)|"
+            r"(?:paczk\w*|przesyłk\w*|przesylk\w*|polis\w*|umow\w*|legitymacj\w*|prawo\s+jazdy|"
+            r"prawa\s+jazdy|vin)\s+(?:nr\.?|numer|o\s+numerze)|vin)"
+            r"(?:\s+[A-Z]{2,6}(?=\s))?\s*[:#.\-]?\s*"
+            r"(?P<v>(?=[A-Za-z0-9/\-]*\d)[A-Za-z0-9][A-Za-z0-9/\-]{3,39}[A-Za-z0-9])(?!\w)"
+        ),
+        priority=2,
+        weak=True,
+    ),
+    # Nick po nazwie serwisu: „insta kasia_nowak”, „tiktok: kasia.123”, „discord kasia#1234”.
+    Rule(
+        "PROFIL",
+        _c(
+            r"(?<!\w)(?i:insta(?:gram)?|ig|tiktok\w*|tik\s?tok\w*|tt|fb|facebook\w*|snap(?:chat)?\w*|"
+            r"discord\w*|telegram\w*|twitter\w*|yt|youtube\w*|twitch\w*|steam\w*|signal\w*|"
+            r"threads|bluesky|bsky|reddit\w*|linkedin\w*|gg|gadu)(?!\w)\s*[:\-]?\s*@?"
+            r"(?P<v>[A-Za-z0-9_][\w.]{1,30}[A-Za-z0-9_](?:#\d{4})?)(?!\w)"
+        ),
+        priority=1,
+        validate=v.looks_like_handle,
+    ),
+    Rule(
+        "PROFIL",
+        _c(r"(?<![\w#])[A-Za-z0-9_.]{2,32}#\d{4}(?!\w)"),
+        priority=1,
+    ),
+    # Położenie: współrzędne GPS i linki do map.
+    Rule(
+        "LOKALIZACJA",
+        _c(r"(?<![\d.])-?\d{1,2}\.\d{4,}\s*[,;]\s*-?\d{1,3}\.\d{4,}(?![\d.])"),
+        priority=1,
+        inside_urls=True,
+    ),
+    Rule(
+        "LOKALIZACJA",
+        _c(
+            r"(?<![\w/.])(?:https?://)?(?:www\.)?(?:google\.[a-z.]{2,6}/maps|maps\.google\.[a-z.]{2,6}|"
+            r"goo\.gl/maps|maps\.app\.goo\.gl|maps\.apple\.com|openstreetmap\.org|"
+            r"waze\.com/ul|what3words\.com|w3w\.co)\S*",
+            re.IGNORECASE,
+        ),
+        priority=0,
+        inside_urls=True,
+    ),
+    Rule(
+        "LOKALIZACJA",
+        _c(r"(?<!\w)///[a-z]+\.[a-z]+\.[a-z]+(?!\w)"),
+        priority=1,
+    ),
+    # Sam numer mieszkania, gdy z kontekstu wiadomo, że chodzi o mieszkanie.
+    Rule(
+        "ADRES",
+        _c(
+            r"(?<!\w)(?:(?i:m\.|lok\.?|lokal\w*|mieszkani[ea]|mieszk\.)|m(?=\s?\d))\s?(?i:nr\.?\s?)?\d{1,4}[a-zA-Z]?(?!\w)"
+        ),
+        priority=12,
+        keyword=_kw(
+            r"klatk\w*|piętr\w*|pietr\w*|blok\w*|parter\w*|domofon\w*|u\s+mnie|odbiór|odbior|"
+            r"mieszkam|mieszkani\w*|sąsiad\w*|sasiad\w*|kamienic\w*"
+        ),
+        keyword_mode=Keyword.REQUIRED,
+        keyword_after=True,
     ),
 )

@@ -15,21 +15,27 @@ wartości tego samego typu dostają kolejne numery. Znaczniki są nieodwracalne.
 
 ## Co jest maskowane
 
-Reguły są pisane pod naturalne wiadomości: małe litery, brak kropek w skrótach
-(„ul Długa 15”), dowolne separatory w numerach („600.100.200”, „4405 1401 359”),
-litera O zamiast zera („6OO 1OO 2OO”) i e-maile zapisane słownie.
+Najpierw powstaje znormalizowana kopia tekstu (`normalize.py`), na której działają reguły;
+znaczniki trafiają w oryginalne miejsca. Normalizacja usuwa niewidoczne znaki (zero-width,
+miękki dywiz), zamienia cyfry pełnej szerokości i różne myślniki/spacje na zwykłe, literę O
+w liczbie na zero („6OO 1OO 2OO”), liczby słownie dłuższe niż 6 cyfr na cyfry
+(„sześćset sto dwieście”, „pięć jeden dwa…”) i rozdziela sklejone wiadomości
+(„609 887 766Wnusiu”, „tel600100200”).
 
-| Typ                                                   | Jak rozpoznajemy                                                                                                                                              |
-| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `PESEL`, `NIP`, `REGON`, `NR_KONTA`, `KARTA`, `DOWOD` | wzorzec + **suma kontrolna**; słowo-klucz tuż przed wartością („pesel: …”) pomija walidację                                                                   |
-| `TELEFON`                                             | `+48`/`0048`/`48`, komórkowe 9 cyfr od 4–8, stacjonarne; po „tel.”, „mój nr”, „zadzwoń” dowolny numer 7–12 cyfr                                               |
-| `EMAIL`                                               | adres e-mail, także „jan małpa gmail kropka com”, „jan(at)gmail.com”, „[at] … [dot]”                                                                          |
-| `PROFIL`                                              | `@nick` i link do profilu (facebook, fb, instagram, tiktok, x/twitter, linkedin, t.me…); linki do postów zostają                                              |
-| `ADRES`                                               | `ul./ul/al./os./plac` + nazwa + numer; po „mieszkam/adres/zameldowany” także numer słownie; bez słowa-klucza „Długa 15/3”, „Długiej 15 m 3”, „przy Długiej 5” |
-| `KOD_POCZTOWY`                                        | `00-000` przed nazwą miejscowości (też małą literą), „kod 80831”                                                                                              |
-| `DATA_URODZENIA`                                      | data po „ur.”, „urodziłam się”, „urodziny”, „data urodzenia” (też „12 marca 85”); rok po „rocznik”                                                            |
-| `NR_REJESTRACYJNY`                                    | po „nr rej.”, „tablice” albo tablica w stylu `WA12345` obok słów o aucie                                                                                      |
-| `PASZPORT`, `IP`                                      | numer po słowie „paszport”; adres IP (bez „wersja 1.2.3.4”)                                                                                                   |
+| Typ                                                   | Jak rozpoznajemy                                                                                                                                                                                                                                                                                                           |
+| ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PESEL`, `NIP`, `REGON`, `NR_KONTA`, `KARTA`, `DOWOD` | wzorzec + **suma kontrolna** (dowolne separatory); słowo-klucz tuż przed wartością („pesel: …”, „nr karty …”) pomija walidację                                                                                                                                                                                             |
+| `TELEFON`                                             | `+48`/`0048`/`48`, komórkowe 9 cyfr od 4–8, stacjonarne, zagraniczne z `+`; po „tel.”, „mój nr”, „zadzwoń” dowolny numer 7–12 cyfr                                                                                                                                                                                         |
+| `EMAIL`                                               | adres e-mail, także „jan małpa gmail kropka com”, „jan(at)gmail.com”, „jan @ gmail . com”                                                                                                                                                                                                                                  |
+| `PROFIL`                                              | `@nick`, link do profilu, nick po nazwie serwisu („insta kasia_nowak”, „discord kasia#1234”); linki do postów zostają                                                                                                                                                                                                      |
+| `LOGIN`, `HASLO`                                      | wartość po „login/nick/nazwa użytkownika”; hasło (z cyfrą lub znakiem specjalnym, więc nie „hasło wyborcze”), PIN, CVV, BLIK, kod do domofonu                                                                                                                                                                              |
+| `IDENTYFIKATOR`                                       | numer klienta, umowy, polisy, paczki, legitymacji, albumu, prawa jazdy, VIN                                                                                                                                                                                                                                                |
+| `ADRES`                                               | `ul./ul/al./os./plac` + nazwa + numer; po „mieszkam/adres/zameldowany” także numer słownie; bez słowa-klucza „Długa 15/3”, „Długiej 15 m 3”, „przy Długiej 5”, „na Kasprowicza 8” (bez „na Ukrainie 24 lutego”); sam numer mieszkania („m. 14”) przy słowach „klatka”, „piętro”, „u mnie”; zagraniczne „221B Baker Street” |
+| `KOD_POCZTOWY`                                        | `00-000` przed albo po nazwie miejscowości, po numerze domu, „kod 80831”; brytyjski `NW1 6XE`                                                                                                                                                                                                                              |
+| `LOKALIZACJA`                                         | współrzędne GPS, linki do map (Google, Apple, OSM, Waze), adres what3words                                                                                                                                                                                                                                                 |
+| `DATA_URODZENIA`                                      | data po „ur.”, „urodziłam się”, „urodziny”, „data urodzenia” (też „12 marca 85”, „w maju 1985”); rok po „ur.”, „urodzony w”, „rocznik”, „jestem z”                                                                                                                                                                         |
+| `NR_REJESTRACYJNY`                                    | po „nr rej.”, „tablice” albo tablica w stylu `WA12345` obok słów o aucie i marek („audi WGM 4521T”)                                                                                                                                                                                                                        |
+| `PASZPORT`, `IP`, `MAC`, `KSIEGA_WIECZYSTA`           | numer po słowie „paszport”; adres IP (bez „wersja 1.2.3.4”); adres MAC; `KR1P/00123456/7`                                                                                                                                                                                                                                  |
 
 ## Czego nie rusza (ochrona faktów)
 
@@ -71,7 +77,11 @@ dokładnie ten tekst, który `InputSanitizer` wstawia do promptu LLM. Nic nie tr
 (strona i WhatsApp). Liczba zamaskowanych wartości (bez samych wartości) trafia do logu;
 nie jest dopisywana do `security_warnings`, bo te oznaczają próbę prompt injection.
 
-Router jest podpięty pod serwer adaptera WhatsApp (port 8000). Samodzielnie:
+Odpowiedzi zawierają `rules_version` (skrót plików z regułami), widoczny w oknach we
+frontendzie – po `git pull` od razu widać, czy backend działa na nowym kodzie.
+
+Router jest podpięty pod serwer adaptera WhatsApp (port 8000). Samodzielnie
+(z automatycznym przeładowaniem po zmianie reguł; `--no-reload` to wyłącza):
 
 ```bash
 cd backend && python -m dataMasking --port 8000

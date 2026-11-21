@@ -126,7 +126,14 @@ export type MaskedLabel =
   | 'ADRES'
   | 'KOD_POCZTOWY'
   | 'DATA_URODZENIA'
-  | 'NR_REJESTRACYJNY';
+  | 'NR_REJESTRACYJNY'
+  | 'PROFIL'
+  | 'MAC'
+  | 'KSIEGA_WIECZYSTA'
+  | 'HASLO'
+  | 'LOGIN'
+  | 'IDENTYFIKATOR'
+  | 'LOKALIZACJA';
 
 export interface MaskedEntity {
   label: MaskedLabel;
@@ -141,6 +148,8 @@ export interface MaskingResponse {
   masked_text: string;
   entities: MaskedEntity[];
   counts: Partial<Record<MaskedLabel, number>>;
+  /** Skrót plików z regułami – pozwala sprawdzić, czy backend działa na aktualnym kodzie. */
+  rules_version: string;
 }
 
 /** Podgląd tekstu, który backend wstawia do promptu LLM (po sanityzacji i maskowaniu). */
@@ -149,4 +158,5 @@ export interface LlmInputResponse {
   counts: Partial<Record<MaskedLabel, number>>;
   /** Ostrzeżenia sanitizera: przycięcie tekstu, wzorce prompt injection. */
   warnings: string[];
+  rules_version: string;
 }
