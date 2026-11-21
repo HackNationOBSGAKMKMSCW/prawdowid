@@ -4,7 +4,7 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator
 
 from .exceptions import ApiReadingError
 
@@ -82,6 +82,17 @@ class FetchOutcome(BaseModel):
     source: str
     result: FetchResult | None = None
     error: ApiReadingError | None = None
+
+    @field_serializer("error")
+    def serialize_error(self, error: ApiReadingError | None) -> dict[str, Any] | None:
+        if error is None:
+            return None
+        return {
+            "type": type(error).__name__,
+            "source": error.source,
+            "message": str(error),
+            "status_code": error.status_code,
+        }
 
 
 class ReadingResult(BaseModel):
