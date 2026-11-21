@@ -84,13 +84,23 @@ async def assess_claim(
     *,
     security_warnings: Sequence[str] = (),
     context: str | None = None,
+    analysis_date: str | None = None,
+    max_age_days: int | None = None,
 ) -> ClaimVerdict:
     """Werdykt dla twierdzenia.
 
     `security_warnings` pochodzą z `security.screen_claim`; `context` to fragment
     oryginalnego tekstu do interpretacji twierdzenia (reguła R17, nie dowód).
     """
-    result = await _assess(claim_id, claim, sources, client, bool(security_warnings), context)
+    result = await _assess(
+        claim_id,
+        claim,
+        sources,
+        client,
+        bool(security_warnings),
+        context,
+        (analysis_date, max_age_days),
+    )
     update: dict = {}
     if security_warnings:
         update["security_warnings"] = list(security_warnings)
@@ -106,6 +116,7 @@ async def _assess(
     client: ChatClient,
     suspicious_claim: bool,
     context: str | None,
+    timing: tuple[str | None, int | None] = (None, None),
 ) -> ClaimVerdict:
     if not sources:
         return no_sources_verdict(claim_id, claim)
@@ -115,7 +126,12 @@ async def _assess(
         {
             "role": "user",
             "content": build_user_message(
-                claim, sources, suspicious_claim=suspicious_claim, context=context
+                claim,
+                sources,
+                suspicious_claim=suspicious_claim,
+                context=context,
+                analysis_date=timing[0],
+                max_age_days=timing[1],
             ),
         },
     ]

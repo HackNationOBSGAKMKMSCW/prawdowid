@@ -231,6 +231,8 @@ async def verify_claims(
                 chat,
                 security_warnings=screened.warnings,
                 context=context,
+                analysis_date=now.date().isoformat(),
+                max_age_days=max_age,
             )
             if any(is_archival(s) for s in claim_sources):
                 result = result.model_copy(

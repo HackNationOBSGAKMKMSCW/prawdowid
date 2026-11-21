@@ -104,3 +104,25 @@ def test_context_block_is_rendered_neutralized_and_optional():
     assert "<context>\nPrezydent [usunięty znacznik] X.\n</context>" in message
     assert message.index("<context>") < message.index("<claim>")
     assert "R17" in message
+
+
+def test_message_carries_analysis_date_and_source_timestamps():
+    from prawdowid_analysis.freshness import FLAG_ARCHIVAL
+
+    sources = [
+        ReferenceSource(
+            source_id="UZ-1",
+            kind="uzytkownik",
+            text="x",
+            published_at="2015-01-05",
+            fetched_at="2026-11-21T12:00:00Z",
+            age_days=4338,
+            freshness_flags=[FLAG_ARCHIVAL],
+        ),
+        ReferenceSource(source_id="UZ-2", kind="uzytkownik", text="y", age_days=10),
+    ]
+    message = build_user_message("T", sources, analysis_date="2026-11-21", max_age_days=730)
+    assert "Data analizy: 2026-11-21. Limit aktualności źródeł: 730 dni" in message
+    assert 'fetched_at="2026-11-21T12:00:00Z" age_days="4338"' in message
+    assert message.count('archival="tak"') == 2  # nagłówek + jedno źródło archiwalne
+    assert "Data analizy" not in build_user_message("T", sources)

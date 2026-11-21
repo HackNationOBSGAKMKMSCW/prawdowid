@@ -11,6 +11,7 @@ from collections.abc import Sequence
 from functools import cache
 from pathlib import Path
 
+from ..freshness import FLAG_ARCHIVAL as ARCHIVAL_FLAG
 from ..schemas import ReferenceSource
 from ..security import clean_text
 
@@ -28,7 +29,7 @@ RULES: dict[str, str] = {
     "R8": "Pełna transparentność: ocena każdego źródła i wszystkie dowody",
     "R9": "Szczegółowe uzasadnienie krok po kroku",
     "R10": "Sprzeczności między źródłami",
-    "R11": "Czas i aktualność źródeł",
+    "R11": "Czas, aktualność, preferowanie nowszych źródeł i materiał archiwalny",
     "R12": "Zasady użycia wpisów fact-checkingowych",
     "R13": "Definicja pewności werdyktu",
     "R14": "Opinie i twierdzenia niesprawdzalne",
@@ -46,6 +47,7 @@ REQUIREMENTS: dict[str, tuple[str, ...]] = {
     "potwierdzony brak danych przy niewystarczających źródłach": ("R1", "R5", "R6", "R14"),
     "odpowiedź modelu w formacie JSON": ("R16",),
     "odporność na instrukcje ukryte w danych": ("R3",),
+    "preferowanie aktualnych danych i ostrożność wobec materiału archiwalnego": ("R10", "R11"),
 }
 
 _TAG_LIKE_RE = re.compile(
@@ -94,6 +96,8 @@ def build_user_message(
     *,
     suspicious_claim: bool = False,
     context: str | None = None,
+    analysis_date: str | None = None,
+    max_age_days: int | None = None,
 ) -> str:
     blocks = []
     for source in sources:
@@ -104,8 +108,14 @@ def build_user_message(
             "published_at": source.published_at or "nieznana",
             "title": source.title,
         }
+        if source.fetched_at:
+            attrs["fetched_at"] = source.fetched_at
+        if source.age_days is not None:
+            attrs["age_days"] = str(source.age_days)
         if source.language:
             attrs["language"] = source.language
+        if ARCHIVAL_FLAG in source.freshness_flags:
+            attrs["archival"] = "tak"
         rendered = " ".join(f'{k}="{_attr(v)}"' for k, v in attrs.items())
         blocks.append(f"<source {rendered}>\n{neutralize(source.text)}\n</source>")
     joined = "\n\n".join(blocks)
@@ -115,8 +125,15 @@ def build_user_message(
         if context
         else ""
     )
+    timing = (
+        f"Data analizy: {analysis_date}. Limit aktualności źródeł: {max_age_days} dni "
+        '(starsze źródła mają atrybut archival="tak", patrz R11).\n\n'
+        if analysis_date and max_age_days
+        else ""
+    )
     return (
         "Oceń poniższe twierdzenie zgodnie ze wszystkimi regułami.\n\n"
+        + timing
         + (SUSPICIOUS_CLAIM_NOTE if suspicious_claim else "")
         + context_block
         + f"<claim>\n{neutralize(claim)}\n</claim>\n\n"
