@@ -1,6 +1,7 @@
 {
   "analysis": {
     "source_text": "Szczepionki przeciw COVID-19 zawierają mikroczipy. Rysy leżą w Tatrach.",
+    "source_url": null,
     "category": "Zdrowie i Medycyna",
     "language_code": "pl",
     "confidence": 0.9,
@@ -16,7 +17,9 @@
       "Rysy leżą w Tatrach."
     ],
     "total_sentences": 2,
-    "security_warnings": []
+    "security_warnings": [],
+    "original_text": "",
+    "started_at": null
   },
   "reading_results": [
     {
