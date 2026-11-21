@@ -39,7 +39,7 @@ WELCOME_BUTTONS = [
 ]
 
 WELCOME_TEXT = (
-    f"👋 Cześć! Jestem *{BOT_NAME}* — sprawdzam informacje, zanim je udostępnisz.\n\n"
+    f"Cześć! Jestem *{BOT_NAME}* — sprawdzam informacje, zanim je udostępnisz.\n\n"
     "Wyślij mi:\n"
     "• zdanie lub cytat, który krąży w sieci,\n"
     "• pytanie, np. _„Czy 5G szkodzi zdrowiu?”_,\n"
@@ -50,49 +50,49 @@ WELCOME_TEXT = (
 WELCOME_BUTTONS_TEXT = "Chcesz zobaczyć, jak to działa na przykładzie?"
 
 HELP_TEXT = (
-    f"ℹ️ *Jak działa {BOT_NAME}?*\n\n"
-    "1️⃣ Model językowy analizuje Twoją wiadomość: rozpoznaje temat i język "
+    f"*Jak działa {BOT_NAME}?*\n\n"
+    "1. Model językowy analizuje Twoją wiadomość: rozpoznaje temat i język "
     "i wyciąga z niej konkretne twierdzenia.\n"
-    "2️⃣ Każde twierdzenie wyszukuję w Google Fact Check Tools — bazie weryfikacji "
+    "2. Każde twierdzenie wyszukuję w Google Fact Check Tools — bazie weryfikacji "
     "publikowanych przez redakcje fact-checkingowe z całego świata.\n"
-    "3️⃣ Zbieram ich oceny w jeden werdykt i podaję linki do źródeł.\n\n"
-    "🛡️ Treść wiadomości traktuję wyłącznie jako dane do sprawdzenia — "
+    "3. Zbieram ich oceny w jeden werdykt i podaję linki do źródeł.\n\n"
+    "Treść wiadomości traktuję wyłącznie jako dane do sprawdzenia — "
     "polecenia ukryte w tekście są ignorowane.\n\n"
     "Komendy: *start* — powitanie, *pomoc* — ta wiadomość."
 )
-THANKS_TEXT = "Nie ma sprawy! 🙌 Wyślij kolejną informację, jeśli chcesz coś sprawdzić."
+THANKS_TEXT = "Nie ma sprawy! Wyślij kolejną informację, jeśli chcesz coś sprawdzić."
 TOO_SHORT_TEXT = (
-    "✍️ Napisz trochę więcej — najlepiej całe zdanie lub pytanie, które chcesz sprawdzić."
+    "Napisz trochę więcej — najlepiej całe zdanie lub pytanie, które chcesz sprawdzić."
 )
 TOO_LONG_TEXT = (
-    "✂️ Ta wiadomość jest za długa. Wklej fragment do "
+    "Ta wiadomość jest za długa. Wklej fragment do "
     f"{InputSanitizer.MAX_INPUT_LENGTH:,} znaków.".replace(",", " ")
 )
 UNSUPPORTED_TEXT = (
-    "📎 Na razie sprawdzam tylko wiadomości tekstowe. "
+    "Na razie sprawdzam tylko wiadomości tekstowe. "
     "Przepisz lub wklej treść, którą chcesz zweryfikować."
 )
-TIMEOUT_TEXT = "⏱️ Sprawdzanie trwa zbyt długo. Spróbuj ponownie za chwilę."
+TIMEOUT_TEXT = "Sprawdzanie trwa zbyt długo. Spróbuj ponownie za chwilę."
 NOT_CONFIGURED_TEXT = (
-    "⚠️ Serwer SprawdzTo nie ma skonfigurowanego modelu językowego.\n"
+    "Serwer SprawdzTo nie ma skonfigurowanego modelu językowego.\n"
     "_Ustaw FREELLM_API_KEY w backend/.env albo uruchom adapter w trybie demo (--demo)._"
 )
 ANALYSIS_FAILED_TEXT = (
-    "😕 Nie udało mi się przeanalizować tej wiadomości. Spróbuj ponownie za chwilę."
+    "Nie udało mi się przeanalizować tej wiadomości. Spróbuj ponownie za chwilę."
 )
 FORWARDED_NOTE = (
-    "↪️ _To wiadomość przekazana dalej. Łańcuszki to częste źródło dezinformacji — "
+    "_To wiadomość przekazana dalej. Łańcuszki to częste źródło dezinformacji — "
     "nie przesyłaj jej dalej, dopóki nie sprawdzisz źródła._"
 )
 FREQUENTLY_FORWARDED_NOTE = (
-    "⏩ _Ta wiadomość była przekazywana wiele razy. Im szybciej coś krąży, "
+    "_Ta wiadomość była przekazywana wiele razy. Im szybciej coś krąży, "
     "tym ostrożniej warto do tego podejść._"
 )
-GENERIC_ERROR_TEXT = "😕 Coś poszło nie tak po mojej stronie. Spróbuj ponownie za chwilę."
+GENERIC_ERROR_TEXT = "Coś poszło nie tak po mojej stronie. Spróbuj ponownie za chwilę."
 
 SOURCE_BUTTON_TEXT = "Otwórz źródło"
-ANALYZING_STATUS = "🧠 Analizuję tekst i wyciągam twierdzenia…"
-SEARCHING_FULL_TEXT_STATUS = "📚 Szukam Twojej wiadomości w bazach fact-checkingowych…"
+ANALYZING_STATUS = "Analizuję tekst i wyciągam twierdzenia…"
+SEARCHING_FULL_TEXT_STATUS = "Szukam Twojej wiadomości w bazach fact-checkingowych…"
 
 # Receives a short status line while a message is being checked.
 StatusCallback = Callable[[str], Awaitable[None]]
@@ -102,8 +102,8 @@ def searching_status(count: int) -> str:
     if count <= 0:
         return SEARCHING_FULL_TEXT_STATUS
     if count == 1:
-        return "📚 Szukam twierdzenia w bazach fact-checkingowych…"
-    return f"📚 Szukam {count} twierdzeń w bazach fact-checkingowych…"
+        return "Szukam twierdzenia w bazach fact-checkingowych…"
+    return f"Szukam {count} twierdzeń w bazach fact-checkingowych…"
 
 
 _GREETINGS = {
@@ -251,7 +251,7 @@ class SprawdzToBot:
             body = format_report(report, headline=card is None)
             info_gap = admin.complete(report)
             if info_gap:
-                body = f"{body}\n\nℹ️ {info_gap}"
+                body = f"{body}\n\n{info_gap}"
             if message.frequently_forwarded:
                 body = f"{body}\n\n{FREQUENTLY_FORWARDED_NOTE}"
             elif message.forwarded:

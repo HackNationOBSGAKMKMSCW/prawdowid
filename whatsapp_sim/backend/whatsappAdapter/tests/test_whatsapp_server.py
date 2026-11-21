@@ -52,7 +52,7 @@ def test_webhook_answers_welcome_and_text(client: TestClient) -> None:
     card, details = check.json()["messages"]
     assert card["to"] == details["to"] == "48500"
     assert card["interactive"]["type"] == "cta_url"
-    assert card["interactive"]["header"]["text"] == "❌ Prawdopodobnie FAŁSZ"
+    assert card["interactive"]["header"]["text"] == "Prawdopodobnie FAŁSZ"
     assert card["interactive"]["action"]["parameters"]["url"].startswith("https://example.org/")
     assert details["type"] == "text"
 
