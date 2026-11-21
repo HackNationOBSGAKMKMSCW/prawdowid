@@ -79,13 +79,32 @@ async def assess_claim(
     claim: str,
     sources: Sequence[ReferenceSource],
     client: ChatClient,
+    *,
+    security_warnings: Sequence[str] = (),
+) -> ClaimVerdict:
+    """Werdykt dla twierdzenia; `security_warnings` pochodzą z `security.screen_claim`."""
+    result = await _assess(claim_id, claim, sources, client, bool(security_warnings))
+    if security_warnings:
+        result = result.model_copy(update={"security_warnings": list(security_warnings)})
+    return result
+
+
+async def _assess(
+    claim_id: str,
+    claim: str,
+    sources: Sequence[ReferenceSource],
+    client: ChatClient,
+    suspicious_claim: bool,
 ) -> ClaimVerdict:
     if not sources:
         return no_sources_verdict(claim_id, claim)
 
     messages: list[Message] = [
         {"role": "system", "content": system_prompt()},
-        {"role": "user", "content": build_user_message(claim, sources)},
+        {
+            "role": "user",
+            "content": build_user_message(claim, sources, suspicious_claim=suspicious_claim),
+        },
     ]
     problem = ""
     for attempt in range(1, MAX_ATTEMPTS + 1):
