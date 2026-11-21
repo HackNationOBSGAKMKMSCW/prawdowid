@@ -1,52 +1,45 @@
-import json
 import os
 import re
 from abc import ABC, abstractmethod
-from dataclasses import asdict, dataclass
-from pathlib import Path
 
 from dotenv import load_dotenv
 from openai import OpenAI
 from pydantic import BaseModel, Field
 
+try:
+    # Import przy uruchamianiu jako pakiet (np. from dataPreparation.keys import ...)
+    from .container import AnalysisDataContainer, KeywordItem
+except ImportError:
+    # Import przy bezpośrednim uruchomieniu pliku (python keys.py)
+    from container import AnalysisDataContainer, KeywordItem
+
 load_dotenv()
 
 
-@dataclass
-class AnalysisResult:
-    """Niezależny od dostawcy model danych przechowujący wynik analizy tekstu."""
-    category: str
-    confidence: float
-    context_reasoning: str
-    keywords: list[dict[str, str]]
-    statements: list[str]
-    total_sentences: int
+class _ApiKeywordSchema(BaseModel):
+    term: str
+    context_note: str
 
 
-class _KeywordItem(BaseModel):
-    term: str = Field(description="Słowo lub fraza kluczowa w formie podstawowej (mianownik).")
-    context_note: str = Field(description="Krótkie wyjaśnienie roli tego pojęcia w kontekście tekstu.")
-
-
-class _AnalysisSchema(BaseModel):
-    """Schemat Pydantic walidujący strukturę JSON zwróconą przez API."""
+class _ApiAnalysisSchema(BaseModel):
+    """Wewnętrzny schemat walidacji odpowiedzi z API."""
     category: str
     confidence: float = Field(ge=0.0, le=1.0)
     context_reasoning: str
-    keywords: list[_KeywordItem]
+    keywords: list[_ApiKeywordSchema]
     statements: list[str]
 
 
 class BaseTextAnalyzer(ABC):
-    """Abstrakcyjna klasa bazowa definiująca interfejs analizatora."""
+    """Interfejs bazowy analizatora tekstu."""
 
     @abstractmethod
-    def analyze(self, text: str, top_keywords: int = 5) -> AnalysisResult:
+    def analyze(self, text: str, top_keywords: int = 5) -> AnalysisDataContainer:
         pass
 
 
 class ProxyContextAnalyzer(BaseTextAnalyzer):
-    """Analizator łączący się z serwerem proxy kompatybilnym z OpenAI API."""
+    """Analizator komunikujący się z API i zwracający wypełniony obiekt AnalysisDataContainer."""
 
     DEFAULT_CATEGORIES = [
         "Technologia i IT",
@@ -79,14 +72,16 @@ class ProxyContextAnalyzer(BaseTextAnalyzer):
 
     @staticmethod
     def _clean_json_response(raw_content: str) -> str:
-        """Usuwa ewentualne znaczniki markdown ```json ... ``` wokół odpowiedzi."""
         cleaned = raw_content.strip()
         if cleaned.startswith("```"):
             cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned)
             cleaned = re.sub(r"\s*```$", "", cleaned)
         return cleaned
 
-    def analyze(self, text: str, top_keywords: int = 5) -> AnalysisResult:
+    def analyze(self, text: str, top_keywords: int = 5) -> AnalysisDataContainer:
+        # 1. Inicjalizacja pustego kontenera z pliku container.py
+        container = AnalysisDataContainer()
+
         raw_sentences = [s for s in re.split(r"(?<=[.!?])\s+", text.strip()) if s]
         allowed_categories = ", ".join(self.categories)
 
@@ -117,52 +112,49 @@ class ProxyContextAnalyzer(BaseTextAnalyzer):
         )
 
         raw_output = response.choices[0].message.content or "{}"
-        parsed = _AnalysisSchema.model_validate_json(self._clean_json_response(raw_output))
+        parsed = _ApiAnalysisSchema.model_validate_json(self._clean_json_response(raw_output))
 
-        return AnalysisResult(
+        keyword_objects = [
+            KeywordItem(term=item.term, context_note=item.context_note)
+            for item in parsed.keywords[:top_keywords]
+        ]
+
+        # 2. Wypełnienie kontenera danymi z API
+        container.populate(
+            source_text=text,
             category=parsed.category,
             confidence=round(parsed.confidence, 2),
             context_reasoning=parsed.context_reasoning,
-            keywords=[item.model_dump() for item in parsed.keywords[:top_keywords]],
+            keywords=keyword_objects,
             statements=parsed.statements,
             total_sentences=len(raw_sentences),
         )
 
+        # 3. Zwrócenie gotowego obiektu
+        return container
 
-class JsonExporter:
-    """Klasa odpowiedzialna za serializację i zapis wyników do pliku JSON."""
 
-    def __init__(self, output_path: str | Path = "wynik_analizy.json"):
-        self.output_path = Path(output_path)
-
-    def save(self, result: AnalysisResult) -> Path:
-        data = asdict(result)
-        with self.output_path.open("w", encoding="utf-8") as file:
-            json.dump(data, file, ensure_ascii=False, indent=4)
-        return self.output_path
+def run_analysis(text: str, top_keywords: int = 5) -> AnalysisDataContainer:
+    """Funkcja wejściowa zwracająca wypełniony obiekt kontenera."""
+    analyzer = ProxyContextAnalyzer(model="auto")
+    return analyzer.analyze(text, top_keywords=top_keywords)
 
 
 if __name__ == "__main__":
     print("Wklej tekst do analizy (naciśnij Enter, aby zatwierdzić):")
     user_text = input("> ").strip()
 
-
-    #print(os.getenv("FREELLM_API_KEY"))
     if not user_text:
         user_text = (
             "Spółka odnotowała w trzecim kwartale wyraźny spadek marży operacyjnej "
             "z powodu rosnących kosztów łańcucha dostaw. Zarząd rozważa emisję obligacji, "
-            "aby utrzymać płynność przed planowaną ekspansją na rynki zachodnie. "
-            "Czy akcjonariusze zaakceptują nową strategię?"
+            "aby utrzymać płynność przed planowaną ekspansją na rynki zachodnie."
         )
 
-    # Domyślnie używa model="auto"; możesz też wpisać konkretną nazwę z zakładki "Modele"
-    analyzer = ProxyContextAnalyzer(model="auto")
-    analysis_result = analyzer.analyze(user_text, top_keywords=5)
+    result_object: AnalysisDataContainer = run_analysis(user_text)
 
-    exporter = JsonExporter("wynik_analizy.json")
-    saved_file = exporter.save(analysis_result)
-
-    print(f"Kategoria: {analysis_result.category} (pewność: {analysis_result.confidence})")
-    print(f"Uzasadnienie kontekstowe: {analysis_result.context_reasoning}")
-    print(f"Zapisano wynik do pliku: {saved_file.resolve()}")
+    print(f"\nKlasa obiektu: {type(result_object).__name__}")
+    print(f"Kategoria: {result_object.category} (pewność: {result_object.confidence})")
+    print(f"Uzasadnienie: {result_object.context_reasoning}")
+    print(f"Słowa kluczowe: {result_object.keyword_terms}")
+    print(f"Stwierdzenia: {result_object.statements}")
