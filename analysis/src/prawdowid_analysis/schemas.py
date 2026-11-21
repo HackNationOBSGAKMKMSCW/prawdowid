@@ -63,6 +63,17 @@ class ReferenceSource(BaseModel):
     language: str | None = Field(
         default=None, description="Kod języka źródła (BCP-47), jeśli znany"
     )
+    fetched_at: str | None = Field(
+        default=None, description="Znacznik czasu pobrania treści, ISO 8601 UTC"
+    )
+    age_days: int | None = Field(
+        default=None, description="Wiek źródła w dniach od publikacji do dnia analizy"
+    )
+    freshness_flags: list[str] = Field(
+        default=[],
+        description="Flagi aktualności: material_archiwalny, brak_daty_publikacji, "
+        "data_publikacji_w_przyszlosci",
+    )
     provider: str | None = Field(
         default=None, description="Dostawca danych z backendu (np. google_fact_check)"
     )

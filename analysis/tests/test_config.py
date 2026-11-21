@@ -69,3 +69,10 @@ def test_mirroring_never_overrides_new_names(tmp_path, clean_env):
     analysis_env = write(tmp_path / "analysis.env", LLM_MODEL="stary")
     Settings.from_environment(analysis_env, tmp_path / "brak.env")
     assert os.environ["FREELLM_MODEL"] == "nowy"
+
+
+def test_max_source_age_from_env(tmp_path, clean_env):
+    clean_env.setenv("VERDICT_MAX_SOURCE_AGE_DAYS", "90")
+    assert Settings.from_environment(tmp_path / "a", tmp_path / "b").max_source_age_days == 90
+    clean_env.delenv("VERDICT_MAX_SOURCE_AGE_DAYS")
+    assert Settings.from_environment(tmp_path / "a", tmp_path / "b").max_source_age_days == 730

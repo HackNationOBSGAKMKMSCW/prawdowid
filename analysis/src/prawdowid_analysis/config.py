@@ -21,6 +21,7 @@ from dotenv import load_dotenv
 ANALYSIS_DIR = Path(__file__).resolve().parents[2]
 BACKEND_ENV_FILE = ANALYSIS_DIR.parent / "backend" / ".env"
 DEFAULT_MODEL = "gpt-4o-mini"  # ta sama wartość domyślna co w backend/textAnalysis
+DEFAULT_MAX_SOURCE_AGE_DAYS = 730  # 2 lata
 
 
 # Starsze nazwy z analysis/.env -> nazwy czytane przez backend/textAnalysis.
@@ -64,6 +65,8 @@ class Settings:
     max_retries: int
     json_mode: bool
     concurrency: int
+    # Źródło starsze (od publikacji) niż limit jest oznaczane jako materiał archiwalny.
+    max_source_age_days: int = DEFAULT_MAX_SOURCE_AGE_DAYS
 
     @classmethod
     def from_environment(
@@ -82,6 +85,13 @@ class Settings:
             max_retries=int(_env("FREELLM_MAX_RETRIES", default="2") or 2),
             json_mode=_bool(_env("VERDICT_JSON_MODE", default="false")),
             concurrency=max(1, int(_env("VERDICT_CONCURRENCY", default="3") or 3)),
+            max_source_age_days=max(
+                1,
+                int(
+                    _env("VERDICT_MAX_SOURCE_AGE_DAYS", default=str(DEFAULT_MAX_SOURCE_AGE_DAYS))
+                    or DEFAULT_MAX_SOURCE_AGE_DAYS
+                ),
+            ),
         )
 
 
