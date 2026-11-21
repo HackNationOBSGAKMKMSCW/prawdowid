@@ -1,0 +1,150 @@
+{
+  "categories": [
+    {
+      "code": "EMOTIONAL_LANGUAGE",
+      "letter": "A",
+      "name": "Język emocjonalny (Emotional Language)",
+      "definition": "Stosowanie słów i konstrukcji językowych, których główną funkcją jest wywołanie silnej reakcji emocjonalnej zamiast neutralnego przekazania informacji.",
+      "indicators": [
+        "Słownictwo nacechowane emocjonalnie",
+        "Obraźliwe określenia i etykietowanie",
+        "Słowa o charakterze skrajnie wartościującym",
+        "Personalizacja konfliktu i wskazywanie wrogów",
+        "Powtarzanie emocjonalnych określeń"
+      ],
+      "examples": [
+        "skandaliczna zdrada",
+        "zbrodniczy plan",
+        "bezwzględni zdrajcy",
+        "katastrofalna sytuacja"
+      ],
+      "test": "Czy dane określenie przekazuje sprawdzalną informację, czy przede wszystkim wywołuje emocję?",
+      "notes": []
+    },
+    {
+      "code": "FEAR_APPEAL",
+      "letter": "B",
+      "name": "Straszenie (Fear Appeal / Fearmongering)",
+      "definition": "Wykorzystywanie zagrożenia, strachu lub przewidywanej katastrofy do wpływania na ocenę odbiorcy.",
+      "indicators": [
+        "Prognozowanie katastrofalnych skutków bez wystarczających dowodów",
+        "Przedstawianie zagrożenia jako nieuchronnego",
+        "Pomijanie prawdopodobieństwa wystąpienia zagrożenia",
+        "Brak informacji o skali i rzeczywistym ryzyku",
+        "Przedstawianie najgorszego scenariusza jako scenariusza najbardziej prawdopodobnego"
+      ],
+      "examples": [
+        "Jeśli tego nie zatrzymamy, wszyscy poniesiemy konsekwencje",
+        "To dopiero początek nadchodzącej katastrofy"
+      ],
+      "test": "Czy tekst podaje prawdopodobieństwo, skalę, horyzont czasowy i dowody uzasadniające zagrożenie?",
+      "notes": []
+    },
+    {
+      "code": "CONSPIRACY_FRAMING",
+      "letter": "C",
+      "name": "Sugerowanie spisku (Conspiracy Framing)",
+      "definition": "Przypisywanie ukrytym grupom lub podmiotom skoordynowanych działań, zwykle bez przedstawienia weryfikowalnych dowodów potwierdzających taką koordynację.",
+      "indicators": [
+        "Przypisywanie tajnych intencji bez dowodów",
+        "Sugerowanie istnienia ukrytego centrum sterowania",
+        "Przedstawianie niezależnych zdarzeń jako elementów jednego planu",
+        "Traktowanie braku dowodów jako dowodu ukrywania prawdy",
+        "Odrzucanie kontrargumentów jako dowodu istnienia spisku"
+      ],
+      "examples": [
+        "Wszystko zostało wcześniej zaplanowane",
+        "Media nie mówią o tym, ponieważ ktoś im zabronił",
+        "To nie może być przypadek"
+      ],
+      "test": "Czy tekst przedstawia weryfikowalne dowody na istnienie koordynacji, czy tylko sugeruje jej istnienie?",
+      "notes": [
+        "Samo opisywanie rzeczywistego spisku, zmowy lub tajnego porozumienia nie jest manipulacją. Liczy się jakość dowodów."
+      ]
+    },
+    {
+      "code": "FALSE_URGENCY",
+      "letter": "D",
+      "name": "Fałszywa pilność (False Urgency)",
+      "definition": "Tworzenie presji czasowej, która ma skłonić odbiorcę do działania lub przyjęcia twierdzenia bez odpowiedniej weryfikacji.",
+      "indicators": [
+        "„Natychmiast udostępnij”",
+        "„Ostatnia szansa”",
+        "„Zanim będzie za późno”",
+        "„Musisz dowiedzieć się o tym teraz”",
+        "Wzywanie do działania bez uzasadnienia terminu"
+      ],
+      "examples": [
+        "Natychmiast udostępnij",
+        "Ostatnia szansa",
+        "Zanim będzie za późno",
+        "Musisz dowiedzieć się o tym teraz"
+      ],
+      "test": "Czy istnieje obiektywnie uzasadniony termin lub zagrożenie, które wymaga natychmiastowego działania?",
+      "notes": []
+    },
+    {
+      "code": "LACK_OF_SOURCE",
+      "letter": "E",
+      "name": "Brak źródła (Lack of Source Attribution)",
+      "definition": "Przedstawianie twierdzeń faktograficznych bez wskazania źródła, które pozwala zweryfikować ich prawdziwość.",
+      "indicators": [
+        "Brak przypisu lub odnośnika",
+        "Nieokreślone sformułowania: „eksperci twierdzą”, „badania pokazują”",
+        "Brak nazwy instytucji lub autora badania",
+        "Brak daty i kontekstu danych",
+        "Odwoływanie się do anonimowych informatorów bez wyjaśnienia podstaw ich wiarygodności"
+      ],
+      "examples": [
+        "eksperci twierdzą",
+        "badania pokazują"
+      ],
+      "test": "Czy niezależny odbiorca może dotrzeć do źródła i samodzielnie zweryfikować informację?",
+      "notes": [
+        "Warto odróżniać: brak źródła; źródło nieweryfikowalne; źródło niewiarygodne; źródło wiarygodne, ale nieadekwatne do danego twierdzenia. To cztery różne sytuacje."
+      ],
+      "subtypes": {
+        "none": "brak źródła",
+        "unverifiable": "źródło nieweryfikowalne",
+        "unreliable": "źródło niewiarygodne",
+        "inadequate": "źródło wiarygodne, ale nieadekwatne do danego twierdzenia"
+      }
+    },
+    {
+      "code": "EXAGGERATION",
+      "letter": "F",
+      "name": "Wyolbrzymienie (Exaggeration / Hyperbole)",
+      "definition": "Przedstawianie skali, znaczenia, częstotliwości lub konsekwencji zjawiska w sposób nieproporcjonalny do dostępnych dowodów.",
+      "indicators": [
+        "Uogólnienia: „wszyscy”, „nikt”, „zawsze”, „nigdy”",
+        "Nieuzasadnione określenia ilościowe: „ogromny”, „masowy”, „bezprecedensowy”",
+        "Przedstawianie incydentu jako powszechnego zjawiska",
+        "Przedstawianie korelacji jako związku przyczynowego",
+        "Przypisywanie pojedynczemu zdarzeniu szerokich konsekwencji"
+      ],
+      "examples": [],
+      "test": "Czy skala twierdzenia odpowiada skali danych, na których zostało oparte?",
+      "notes": []
+    },
+    {
+      "code": "CHERRY_PICKING",
+      "letter": "G",
+      "name": "Cherry-picking (Selective Evidence)",
+      "definition": "Selektywne wybieranie danych, przykładów lub badań wspierających określoną tezę przy pomijaniu istotnych informacji, które mogłyby zmienić interpretację.",
+      "indicators": [
+        "Przytaczanie tylko korzystnych statystyk",
+        "Pomijanie danych przeciwnych",
+        "Wybieranie nietypowego okresu badawczego",
+        "Pomijanie mianownika lub wielkości próby",
+        "Pomijanie niepewności statystycznej",
+        "Wybieranie pojedynczego badania przy istnieniu szerszego korpusu badań",
+        "Przedstawianie danych bez kontekstu historycznego"
+      ],
+      "examples": [],
+      "test": "Czy przedstawione dane są reprezentatywne dla całego badanego zjawiska i czy uwzględniono istotne dowody przeciwne?",
+      "notes": [
+        "To kryterium jest szczególnie istotne, ponieważ manipulacja może występować nawet wtedy, gdy każda przytoczona liczba jest prawdziwa."
+      ]
+    }
+  ]
+}
