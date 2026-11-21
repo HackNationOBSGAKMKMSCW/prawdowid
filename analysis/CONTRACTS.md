@@ -13,6 +13,53 @@ def retrieve(query: str, k: int = 6, filters: dict | None = None) -> list[Passag
 ```
 
 `filters` pozwala zawęzić wyniki, np. `{"source_type": ["official_primary"]}`.
+Implementacje: `prawdowid_analysis.rag.get_retriever()` — `RETRIEVER=mock` (atrapa,
+bez sieci) albo `RETRIEVER=qdrant` (hybryda dense + BM25, fuzja RRF).
+
+## Wejście analizy (`AnalysisInput`)
+
+Zespół analizy dostaje gotowe twierdzenia i źródła (URL + oczyszczony tekst). Ekstrakcja
+twierdzeń i pobieranie URL dzieją się poza `analysis/`.
+
+```json
+{
+  "request_id": "req_001",
+  "claims": [{ "claim_id": "clm_001", "text": "...", "type": "legal", "check_worthy": true }],
+  "sources": [
+    {
+      "url": "https://...",
+      "title": "...",
+      "publisher": "...",
+      "published_at": "2026-10-03",
+      "fetched_at": "2026-11-21T10:15:32Z",
+      "source_type": "official_primary",
+      "text": "<clean_text>"
+    }
+  ]
+}
+```
+
+- `text` to `clean_text`: offsety `char_start`/`char_end` pasaży liczone są względem niego.
+- `claims[].run_id` jest opcjonalne na wejściu.
+- Ingest: `ingest_sources(sources) -> {"added", "skipped", "replaced"}`.
+  `doc_id = "doc_" + sha256(znormalizowany URL)[:12]`; ten sam URL i ten sam `text_hash` →
+  `skipped`, ten sam URL i inny tekst → `replaced` (reindeks), duplikat URL w partii → `skipped`.
+- `chunk_id = f"{doc_id}_c{i}"` (numeracja od 0).
+
+## Wyjście analizy (`AnalysisOutput`), konsumuje backend
+
+```json
+{
+  "request_id": "req_001",
+  "results": [
+    { "claim": { "...": "claim" }, "passages": [], "evidence": [], "verdict": { "...": "verdict" } }
+  ],
+  "ingest": { "added": 8, "skipped": 1, "replaced": 0 }
+}
+```
+
+Modele: `analysis/src/prawdowid_analysis/schemas.py` (`SourceIn`, `AnalysisInput`,
+`IngestReport`, `ClaimResult`, `AnalysisOutput`).
 
 ## `passage` (wyjście `retrieve`)
 
@@ -120,3 +167,4 @@ def retrieve(query: str, k: int = 6, filters: dict | None = None) -> list[Passag
 | Data | Zmiana | Kto |
 | --- | --- | --- |
 | 2026-11-21 | Pierwszy szkic | zespół |
+| 2026-11-21 | Wejście/wyjście analizy (`AnalysisInput`, `AnalysisOutput`), reguły `doc_id`/dedupe, `claim.run_id` opcjonalne | osoba A |

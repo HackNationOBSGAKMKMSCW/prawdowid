@@ -1,0 +1,130 @@
+{
+  "request_id": "req_sample_001",
+  "claims": [
+    {
+      "claim_id": "clm_001",
+      "text": "Od 1 stycznia 2027 roku wniosek o paszport będzie można złożyć w dowolnym urzędzie wojewódzkim.",
+      "type": "legal",
+      "check_worthy": true
+    },
+    {
+      "claim_id": "clm_002",
+      "text": "Opłata za wydanie paszportu wzrośnie trzykrotnie.",
+      "type": "numeric",
+      "check_worthy": true
+    },
+    {
+      "claim_id": "clm_003",
+      "text": "Świadczenie wychowawcze na dziecko wynosi od tego roku 1000 zł miesięcznie.",
+      "type": "numeric",
+      "check_worthy": true
+    },
+    {
+      "claim_id": "clm_004",
+      "text": "W 2026 roku stężenie pyłu PM10 w Przykładowie przekraczało normę dobową przez ponad 60 dni.",
+      "type": "numeric",
+      "check_worthy": true
+    },
+    {
+      "claim_id": "clm_005",
+      "text": "Badanie wykazało, że szczepionka przeciw grypie zmniejsza liczbę hospitalizacji seniorów o połowę.",
+      "type": "scientific",
+      "check_worthy": true
+    },
+    {
+      "claim_id": "clm_006",
+      "text": "Nowe przepisy o kolejach regionalnych to najgorsza reforma ostatniej dekady.",
+      "type": "opinion",
+      "check_worthy": false
+    },
+    {
+      "claim_id": "clm_007",
+      "text": "Rząd zapowiedział obniżenie podatku VAT na żywność do zera od marca.",
+      "type": "event",
+      "check_worthy": true
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://example.org/atrapa/paszporty-komunikat",
+      "title": "Komunikat w sprawie zmian w wydawaniu paszportów (atrapa)",
+      "publisher": "Przykładowy Urząd Centralny (atrapa)",
+      "published_at": "2026-10-03",
+      "fetched_at": "2026-11-21T10:15:32Z",
+      "source_type": "official_primary",
+      "text": "Komunikat z dnia 3 października 2026 r.\n\nOd 1 stycznia 2027 r. wniosek o wydanie paszportu można złożyć w dowolnym urzędzie wojewódzkim, niezależnie od miejsca zameldowania wnioskodawcy. Dotychczas wniosek należało złożyć w urzędzie właściwym dla miejsca pobytu stałego. Zmiana wynika z nowelizacji ustawy o dokumentach paszportowych, przyjętej przez Sejm we wrześniu.\n\nOdbiór dokumentu nadal odbywa się osobiście, w urzędzie, w którym złożono wniosek. Czas oczekiwania na paszport nie powinien przekraczać 30 dni od dnia złożenia kompletnego wniosku. W przypadku dzieci do lat 13 wniosek składa jeden z rodziców lub opiekun prawny.\n\nWysokość opłaty paszportowej nie ulega zmianie i wynosi 140 zł za paszport dla osoby dorosłej oraz 30 zł za paszport dla dziecka. Ulgi przysługują m.in. studentom, emerytom i rencistom oraz osobom z orzeczoną niepełnosprawnością."
+    },
+    {
+      "url": "https://example.org/atrapa/statystyki-paszportowe-2026",
+      "title": "Liczba wydanych paszportów w I półroczu 2026 r. (atrapa)",
+      "publisher": "Przykładowy Urząd Statystyczny (atrapa)",
+      "published_at": "2026-08-14",
+      "fetched_at": "2026-11-21T10:16:02Z",
+      "source_type": "public_data",
+      "text": "W pierwszym półroczu 2026 r. wydano 1,24 mln paszportów, o 8 proc. więcej niż rok wcześniej. Najwięcej wniosków złożono w województwach mazowieckim i śląskim. Średni czas oczekiwania na dokument wyniósł 21 dni. Odsetek wniosków odrzuconych z powodu braków formalnych spadł do 2,1 proc."
+    },
+    {
+      "url": "https://example.org/atrapa/fact-check-oplata-paszportowa",
+      "title": "Czy paszporty zdrożeją? Sprawdzamy (atrapa)",
+      "publisher": "Przykładowy Serwis Fact-checkingowy (atrapa)",
+      "published_at": "2026-10-10",
+      "fetched_at": "2026-11-21T10:16:40Z",
+      "source_type": "fact_check",
+      "text": "W mediach społecznościowych krąży informacja, że opłata paszportowa wzrośnie trzykrotnie. Nie znaleźliśmy żadnego aktu prawnego ani komunikatu, który by to potwierdzał. Według obowiązującego rozporządzenia opłata za paszport dla osoby dorosłej wynosi 140 zł. Informację oceniamy jako fałszywą."
+    },
+    {
+      "url": "https://example.org/atrapa/swiadczenie-wychowawcze",
+      "title": "Świadczenie wychowawcze: zasady na 2026 r. (atrapa)",
+      "publisher": "Przykładowe Ministerstwo Rodziny (atrapa)",
+      "published_at": "2026-01-05",
+      "fetched_at": "2026-11-21T10:17:11Z",
+      "source_type": "official_primary",
+      "text": "Świadczenie wychowawcze przysługuje na każde dziecko do ukończenia 18. roku życia, bez względu na dochód rodziny. Od 1 stycznia 2024 r. wysokość świadczenia wynosi 800 zł miesięcznie na dziecko. W 2026 r. kwota świadczenia nie uległa zmianie.\n\nWniosek składa się wyłącznie drogą elektroniczną. Okres świadczeniowy trwa od 1 czerwca do 31 maja następnego roku. Wniosek złożony do końca kwietnia gwarantuje wypłatę świadczenia za czerwiec."
+    },
+    {
+      "url": "https://example.org/atrapa/jakosc-powietrza-przykladowo-2026",
+      "title": "Ocena jakości powietrza w Przykładowie za 2026 r. (atrapa)",
+      "publisher": "Przykładowy Inspektorat Ochrony Środowiska (atrapa)",
+      "published_at": "2026-11-02",
+      "fetched_at": "2026-11-21T10:17:45Z",
+      "source_type": "public_data",
+      "text": "W okresie od stycznia do października 2026 r. na stacji pomiarowej Przykładowo-Centrum dobowa norma stężenia pyłu PM10 (50 µg/m³) została przekroczona w 41 dniach. Dopuszczalna liczba dni z przekroczeniem w roku kalendarzowym wynosi 35. Najwięcej przekroczeń odnotowano w styczniu i lutym, w okresie grzewczym.\n\nŚrednie roczne stężenie pyłu PM2,5 wyniosło 19 µg/m³ i nie przekroczyło wartości dopuszczalnej. W porównaniu z 2025 r. liczba dni z przekroczeniem normy PM10 zmniejszyła się o 9."
+    },
+    {
+      "url": "https://example.org/atrapa/badanie-szczepienia-grypa-seniorzy",
+      "title": "Skuteczność szczepień przeciw grypie u osób po 65. roku życia (atrapa)",
+      "publisher": "Przykładowy Instytut Zdrowia Publicznego (atrapa)",
+      "published_at": "2025-12-15",
+      "fetched_at": "2026-11-21T10:18:20Z",
+      "source_type": "research",
+      "text": "Celem badania była ocena skuteczności szczepień przeciw grypie w sezonie 2024/2025 wśród osób w wieku 65 lat i więcej. Analizą objęto dane 12 400 pacjentów z pięciu województw.\n\nU osób zaszczepionych ryzyko hospitalizacji z powodu grypy było niższe o 38 proc. w porównaniu z osobami niezaszczepionymi (przedział ufności 95%: 29–46 proc.). Nie stwierdzono istotnej statystycznie różnicy w liczbie zgonów, co autorzy wiążą z niewielką liczbą zdarzeń w próbie.\n\nAutorzy zastrzegają, że badanie miało charakter obserwacyjny i nie pozwala wykluczyć wpływu czynników zakłócających, takich jak ogólny stan zdrowia osób decydujących się na szczepienie."
+    },
+    {
+      "url": "https://example.org/atrapa/depesza-koleje-regionalne",
+      "title": "Sejm przyjął ustawę o kolejach regionalnych (atrapa)",
+      "publisher": "Przykładowa Agencja Prasowa (atrapa)",
+      "published_at": "2026-11-18",
+      "fetched_at": "2026-11-21T10:19:01Z",
+      "source_type": "news_agency",
+      "text": "Sejm przyjął w środę ustawę o kolejach regionalnych. Za głosowało 251 posłów, przeciw było 190, a 8 wstrzymało się od głosu. Ustawa przenosi na samorządy województw odpowiedzialność za organizację przewozów pasażerskich na liniach regionalnych i zwiększa dotacje celowe na zakup taboru. Ustawa trafi teraz do Senatu. Przedstawiciele opozycji krytykowali tempo prac nad projektem."
+    },
+    {
+      "url": "https://example.org/atrapa/komentarz-paszport",
+      "title": "Paszport w jeden dzień? Komentarz (atrapa)",
+      "publisher": "Przykładowy Portal Informacyjny (atrapa)",
+      "published_at": "2025-06-01",
+      "fetched_at": "2026-11-21T10:19:30Z",
+      "source_type": "media",
+      "text": "Komentarz redakcji. Według naszych rozmówców paszport będzie można odebrać w jeden dzień, a cała procedura zostanie przeniesiona do internetu. Urząd nie potwierdził tych informacji."
+    },
+    {
+      "url": "https://example.org/atrapa/paszporty-komunikat/?utm_source=newsletter",
+      "title": "Komunikat w sprawie zmian w wydawaniu paszportów (atrapa) - kopia z newslettera",
+      "publisher": "Przykładowy Urząd Centralny (atrapa)",
+      "published_at": "2026-10-03",
+      "fetched_at": "2026-11-21T10:20:00Z",
+      "source_type": "official_primary",
+      "text": "Duplikat URL: ten wpis powinien zostać pominięty przy ingeście."
+    }
+  ]
+}

@@ -12,6 +12,8 @@ dependencies = [
   "pandas",
   "scikit-learn",
   "rapidfuzz",
+  "httpx",
+  "python-dotenv",
 ]
 
 [project.optional-dependencies]
