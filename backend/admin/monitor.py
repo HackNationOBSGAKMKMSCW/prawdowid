@@ -61,6 +61,15 @@ def iso(moment: datetime) -> str:
     return moment.astimezone(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
+def persons(count: int) -> str:
+    """Polska odmiana: 1 osoba, 2-4 osoby, 5-21 osób, 22-24 osoby…"""
+    if count == 1:
+        return "1 osoba"
+    if count % 10 in (2, 3, 4) and count % 100 not in (12, 13, 14):
+        return f"{count} osoby"
+    return f"{count} osób"
+
+
 def _log(event: str, level: str = "info", **fields: Any) -> None:
     with contextlib.suppress(Exception):
         from observability import log_event
@@ -327,7 +336,7 @@ class Monitor:
             users = max(s.info_gap_users for s in active_gaps)
             message = (
                 "Ten temat jest oznaczony jako luka informacyjna: nie mamy wiarygodnych źródeł, "
-                f"a pytało o niego już {users} osób. Zgłosiliśmy go do uzupełnienia."
+                f"a pytało o niego już {persons(users)}. Zgłosiliśmy go do uzupełnienia."
             )
         return CompletionResult(
             query_id, states, sorted(set(flags)), bool(active_gaps), message=message

@@ -82,6 +82,19 @@ def test_classify_severity(text, severity):
     assert classify(text).severity == severity
 
 
+def test_persons_polish_plural():
+    from admin.monitor import persons
+
+    assert [persons(n) for n in (1, 3, 5, 12, 22, 25)] == [
+        "1 osoba",
+        "3 osoby",
+        "5 osób",
+        "12 osób",
+        "22 osoby",
+        "25 osób",
+    ]
+
+
 def test_claim_kind_mapping():
     assert claim_kind("falsz", 3) == "falsz"
     assert claim_kind("falszywy", None) == "falsz"
