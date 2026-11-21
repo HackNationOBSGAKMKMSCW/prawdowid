@@ -3,7 +3,7 @@ import json
 from types import SimpleNamespace
 
 from prawdowid_analysis.config import Settings
-from prawdowid_analysis.pipeline import run, run_text, split_sentences
+from prawdowid_analysis.pipeline import run, run_text, split_sentences, verify_claims
 from prawdowid_analysis.sources import Retriever
 from tests.fakes import FakeChatClient, model_answer, source
 from tests.test_adapters import FC_CLAIM, _reading_result
@@ -358,13 +358,61 @@ def test_archival_source_is_flagged_warned_and_timestamped():
     assert result.analyzed_at == "2026-11-21T12:00:00Z"
     assert result.max_source_age_days == 730
     [report] = result.input_sources
-    assert report.freshness_flags == ["material_archiwalny"] and report.age_days > 730
+    assert report.archival_for_claims == ["T1"]
+    assert report.freshness_flags == [], "archiwalność zależy od twierdzenia, nie od źródła"
     assert report.fetched_at == "2026-11-21T12:00:00Z", (
         "źródło z zapytania pobrane w chwili analizy"
     )
-    assert "zrodla_archiwalne" in result.claims[0].freshness_flags
-    assert sum("materiał archiwalny" in w for w in result.warnings) == 1
-    assert any("2015-01-05" in w for w in result.warnings)
+    claim = result.claims[0]
+    assert claim.reference_basis == "stan_obecny" and claim.reference_date == "2026-11-21"
+    [freshness] = claim.source_freshness
+    assert freshness.age_days > 730 and freshness.freshness_flags == ["material_archiwalny"]
+    assert "zrodla_archiwalne" in claim.freshness_flags
+    archival = [w for w in result.warnings if "materiał archiwalny" in w]
+    assert len(archival) == 1 and archival[0].startswith("T1:") and "2015-01-05" in archival[0]
+    assert result.sources[0].age_days is None, "lista globalna bez wieku zależnego od twierdzenia"
+
+
+def test_age_is_measured_against_event_date_not_request_time():
+    report_2015 = source(
+        "UZ-relacja",
+        kind="uzytkownik",
+        published_at="2015-01-05",
+        text="W wyborach w 2014 roku burmistrzem Zielonogrodu został Jan Nowacki.",
+    )
+    client = FakeChatClient(no_data_answer(), no_data_answer())
+    result = asyncio.run(
+        verify_claims(
+            [
+                "W wyborach w 2014 roku burmistrzem Zielonogrodu został Jan Nowacki.",
+                "Obecnie burmistrzem Zielonogrodu jest Jan Nowacki.",
+            ],
+            extra_sources=[report_2015],
+            client=client,
+            settings=SETTINGS,
+            use_corpus=False,
+            now=NOW,
+        )
+    )
+    historical, present = result.claims
+    assert historical.reference_basis == "data_zdarzenia_z_twierdzenia"
+    assert historical.reference_date == "2014-12-31"
+    assert historical.source_freshness[0].age_days == -5, "relacja 5 dni po zdarzeniu"
+    assert historical.source_freshness[0].freshness_flags == []
+    assert "zrodla_archiwalne" not in historical.freshness_flags
+    assert present.source_freshness[0].freshness_flags == ["material_archiwalny"]
+    assert result.input_sources[0].archival_for_claims == ["T2"]
+    messages = {
+        call[1]["content"].split("<claim>\n")[1].split("\n")[0]: call[1]["content"]
+        for call in client.calls
+    }
+    historical_message = messages[
+        "W wyborach w 2014 roku burmistrzem Zielonogrodu został Jan Nowacki."
+    ]
+    assert "Data odniesienia twierdzenia: 2014-12-31" in historical_message
+    assert 'archival="tak"' not in historical_message.split("Źródła wzorcowe")[1]
+    present_message = messages["Obecnie burmistrzem Zielonogrodu jest Jan Nowacki."]
+    assert 'archival="tak"' in present_message.split("Źródła wzorcowe")[1]
 
 
 def test_fresh_sources_have_no_archival_flags():

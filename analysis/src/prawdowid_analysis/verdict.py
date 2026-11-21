@@ -18,6 +18,7 @@ from collections.abc import Sequence
 from pydantic import ValidationError
 
 from .checks import apply_checks, consistency_problems
+from .freshness import EventReference
 from .llm import ChatClient, LLMError, Message, parse_json_object
 from .prompts import SYSTEM_CANARY, build_user_message, system_prompt
 from .schemas import VERDICT_LABELS_PL, ClaimVerdict, ModelVerdict, ReferenceSource
@@ -86,6 +87,7 @@ async def assess_claim(
     context: str | None = None,
     analysis_date: str | None = None,
     max_age_days: int | None = None,
+    reference: EventReference | None = None,
 ) -> ClaimVerdict:
     """Werdykt dla twierdzenia.
 
@@ -99,7 +101,7 @@ async def assess_claim(
         client,
         bool(security_warnings),
         context,
-        (analysis_date, max_age_days),
+        (analysis_date, max_age_days, reference),
     )
     update: dict = {}
     if security_warnings:
@@ -116,7 +118,7 @@ async def _assess(
     client: ChatClient,
     suspicious_claim: bool,
     context: str | None,
-    timing: tuple[str | None, int | None] = (None, None),
+    timing: tuple[str | None, int | None, EventReference | None] = (None, None, None),
 ) -> ClaimVerdict:
     if not sources:
         return no_sources_verdict(claim_id, claim)
@@ -132,6 +134,7 @@ async def _assess(
                 context=context,
                 analysis_date=timing[0],
                 max_age_days=timing[1],
+                reference=timing[2],
             ),
         },
     ]

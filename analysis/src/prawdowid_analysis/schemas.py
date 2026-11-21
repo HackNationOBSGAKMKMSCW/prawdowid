@@ -135,6 +135,19 @@ class SourceReviewOut(BaseModel):
     why: str
 
 
+class SourceFreshness(BaseModel):
+    """Aktualność źródła względem daty odniesienia konkretnego twierdzenia."""
+
+    source_id: str
+    published_at: str | None = None
+    fetched_at: str | None = None
+    age_days: int | None = Field(
+        default=None,
+        description="Dni od publikacji do daty odniesienia (ujemne: po zdarzeniu)",
+    )
+    freshness_flags: list[str] = []
+
+
 class ClaimVerdict(BaseModel):
     claim_id: str
     claim: str
@@ -158,6 +171,17 @@ class ClaimVerdict(BaseModel):
     source_ids: list[str] = Field(default=[], description="Źródła pokazane modelowi")
     security_warnings: list[str] = Field(
         default=[], description="Wykryte próby manipulacji w treści twierdzenia"
+    )
+    reference_date: str | None = Field(
+        default=None,
+        description="Data odniesienia (czas zdarzenia z twierdzenia albo dzień analizy)",
+    )
+    reference_basis: str | None = Field(
+        default=None,
+        description="data_zdarzenia_z_twierdzenia | stan_obecny | brak_daty_zdarzenia",
+    )
+    source_freshness: list[SourceFreshness] = Field(
+        default=[], description="Wiek i flagi każdego źródła względem daty odniesienia"
     )
     freshness_flags: list[str] = Field(
         default=[],
@@ -204,8 +228,12 @@ class InputSourceOut(BaseModel):
     provider: str | None = None
     rating: str | None = None
     fetched_at: str | None = None
-    age_days: int | None = None
-    freshness_flags: list[str] = []
+    freshness_flags: list[str] = Field(
+        default=[], description="Cechy niezależne od twierdzenia: brak daty, data w przyszłości"
+    )
+    archival_for_claims: list[str] = Field(
+        default=[], description="Twierdzenia, względem których źródło jest materiałem archiwalnym"
+    )
     status: InputSourceStatus
     shown_for_claims: list[str] = Field(
         default=[], description="Twierdzenia, przy których pokazano je modelowi"

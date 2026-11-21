@@ -137,7 +137,8 @@ _CURRENT_SOURCE_RE = re.compile(r"\baktualn|\bnieaktualn|\barchiwaln", re.IGNORE
 def _misapplied_freshness(parsed: ModelVerdict, by_id: dict[str, ReferenceSource]) -> list[str]:
     """„Brak danych”, bo rzekomo brak aktualnego źródła, choć istotne źródło jest aktualne.
 
-    Aktualne = ma datę publikacji i mieści się w limicie (brak flagi archiwalnej).
+    Aktualne = ma datę publikacji i brak flag (mieści się w limicie względem daty
+    odniesienia twierdzenia; ujemny wiek to źródło opublikowane po zdarzeniu).
     O aktualności rozstrzyga limit, nie rok danych w treści (R11).
     """
     if parsed.verdict != NO_DATA:
@@ -151,7 +152,6 @@ def _misapplied_freshness(parsed: ModelVerdict, by_id: dict[str, ReferenceSource
         if review.relevant
         and (source := by_id.get(review.source_id)) is not None
         and source.age_days is not None
-        and source.age_days >= 0
         and not source.freshness_flags
     ]
     if not current:

@@ -26,9 +26,12 @@ from .adapters import claims_from_analysis, partition_fact_checks, reading_warni
 from .aggregate import aggregate
 from .config import Settings
 from .freshness import (
+    FLAG_ARCHIVAL,
     RECENCY_WEIGHT,
     annotate,
     archival_warning,
+    claim_independent,
+    event_reference,
     is_archival,
     iso_timestamp,
     recency_factor,
@@ -41,6 +44,7 @@ from .schemas import (
     InputSourceOut,
     QuarantinedSource,
     ReferenceSource,
+    SourceFreshness,
     TextVerdict,
 )
 from .security import detect_injection, screen_claim, screen_sources
@@ -148,12 +152,7 @@ async def verify_claims(
     analyzed_at = iso_timestamp(now)
     max_age = settings.max_source_age_days
 
-    def dated(source: ReferenceSource) -> ReferenceSource:
-        """Wiek i flagi aktualności względem chwili analizy."""
-        return annotate(source, now, max_age)
-
-    def prefer(source: ReferenceSource) -> float:
-        return 1.0 + RECENCY_WEIGHT * recency_factor(dated(source), max_age)
+    today = now.date()
 
     def received(source: ReferenceSource) -> ReferenceSource:
         """Źródło przekazane w zapytaniu bez znacznika pobrania: pobrane teraz."""
@@ -194,6 +193,7 @@ async def verify_claims(
     semaphore = asyncio.Semaphore(settings.concurrency)
     all_sources: dict[str, ReferenceSource] = {}
     claim_warnings: list[str] = []
+    archival_warnings: dict[tuple[int, str], str] = {}
 
     async def one(index: int, statement: str) -> ClaimVerdict:
         screened = screen_claim(statement)
@@ -205,6 +205,16 @@ async def verify_claims(
                 "przypominający polecenia dla modelu."
             )
             context = None
+        # Wiek źródeł liczymy względem czasu zdarzenia z twierdzenia (albo dnia analizy
+        # dla stanu obecnego / braku daty), nie względem chwili wpłynięcia zapytania.
+        reference = event_reference(screened.text, today)
+
+        def dated(source: ReferenceSource) -> ReferenceSource:
+            return annotate(source, reference.date, today, max_age)
+
+        def prefer(source: ReferenceSource) -> float:
+            return 1.0 + RECENCY_WEIGHT * recency_factor(dated(source), max_age)
+
         claim_sources = [
             dated(source)
             for source in keep(
@@ -220,7 +230,15 @@ async def verify_claims(
             )
         ]
         for source in claim_sources:
-            all_sources.setdefault(source.source_id, source)
+            all_sources.setdefault(source.source_id, claim_independent(source))
+            document = source.source_id.split("#", 1)[0]  # fragmenty dokumentu raz
+            if is_archival(source) and (index, document) not in archival_warnings:
+                archival_warnings[(index, document)] = archival_warning(
+                    source.model_copy(update={"source_id": document}),
+                    reference,
+                    max_age,
+                    f"T{index}",
+                )
         async with semaphore:
             t0 = time.perf_counter()
             _log(f"Twierdzenie {index}/{len(statements)}: źródeł {len(claim_sources)}, ocena...")
@@ -231,17 +249,30 @@ async def verify_claims(
                 chat,
                 security_warnings=screened.warnings,
                 context=context,
-                analysis_date=now.date().isoformat(),
+                analysis_date=today.isoformat(),
                 max_age_days=max_age,
+                reference=reference,
             )
+            flags = set(result.freshness_flags)
             if any(is_archival(s) for s in claim_sources):
-                result = result.model_copy(
-                    update={
-                        "freshness_flags": sorted(
-                            {*result.freshness_flags, CLAIM_FLAG_ARCHIVAL_SOURCES}
+                flags.add(CLAIM_FLAG_ARCHIVAL_SOURCES)
+            result = result.model_copy(
+                update={
+                    "freshness_flags": sorted(flags),
+                    "reference_date": reference.date.isoformat(),
+                    "reference_basis": reference.basis,
+                    "source_freshness": [
+                        SourceFreshness(
+                            source_id=s.source_id,
+                            published_at=s.published_at,
+                            fetched_at=s.fetched_at,
+                            age_days=s.age_days,
+                            freshness_flags=s.freshness_flags,
                         )
-                    }
-                )
+                        for s in claim_sources
+                    ],
+                }
+            )
             _log(
                 f"Twierdzenie {index}/{len(statements)}: {result.verdict} "
                 f"({time.perf_counter() - t0:.1f}s)"
@@ -259,14 +290,9 @@ async def verify_claims(
         f"Źródło [{q.source_id}] pominięto (kwarantanna): {', '.join(q.reasons)}."
         for q in quarantined.values()
     ]
-    dated_inputs = [dated(s) for s in inputs.values()]
-    archival_warnings: dict[str, str] = {}
-    for source in [*all_sources.values(), *dated_inputs]:
-        document = source.source_id.split("#", 1)[0]  # fragmenty jednego dokumentu raz
-        if is_archival(source) and document not in archival_warnings:
-            archival_warnings[document] = archival_warning(
-                source.model_copy(update={"source_id": document}), max_age
-            )
+    # Na listach globalnych tylko cechy niezależne od twierdzenia (brak daty, data
+    # w przyszłości); wiek i archiwalność są per twierdzenie (claims[].source_freshness).
+    dated_inputs = [claim_independent(annotate(s, today, today, max_age)) for s in inputs.values()]
     _log(
         f"Gotowe: {verdict} ({time.perf_counter() - started:.1f}s); "
         f"źródeł w kwarantannie: {len(quarantined)}"
@@ -282,7 +308,7 @@ async def verify_claims(
             *warnings,
             *sorted(claim_warnings),
             *quarantine_warnings,
-            *archival_warnings.values(),
+            *(archival_warnings[key] for key in sorted(archival_warnings)),
         ],
         analyzed_at=analyzed_at,
         max_source_age_days=max_age,
@@ -311,7 +337,16 @@ def input_source_report(
 
     shown: dict[str, list[str]] = {}
     cited: dict[str, list[str]] = {}
+    archival: dict[str, list[str]] = {}
     for claim in claims:
+        for entry in getattr(claim, "source_freshness", []):
+            doc = document_id(entry.source_id)
+            if (
+                doc
+                and FLAG_ARCHIVAL in entry.freshness_flags
+                and claim.claim_id not in archival.setdefault(doc, [])
+            ):
+                archival[doc].append(claim.claim_id)
         for passage_id in claim.source_ids:
             doc = document_id(passage_id)
             if doc and claim.claim_id not in shown.setdefault(doc, []):
@@ -344,8 +379,8 @@ def input_source_report(
                 provider=source.provider,
                 rating=source.rating,
                 fetched_at=source.fetched_at,
-                age_days=source.age_days,
                 freshness_flags=source.freshness_flags,
+                archival_for_claims=archival.get(sid, []),
                 status=status,
                 shown_for_claims=shown.get(sid, []),
                 cited_in_claims=cited.get(sid, []),

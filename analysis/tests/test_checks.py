@@ -194,3 +194,13 @@ def test_lack_of_current_source_is_legit_when_sources_are_archival_or_undated():
     )
     current = source(age_days=10)
     assert consistency_problems(ModelVerdict.model_validate(other_reason), [current]) == []
+
+
+def test_source_published_after_event_counts_as_current():
+    from prawdowid_analysis.checks import consistency_problems
+
+    after_event = source(published_at="2015-01-05", age_days=-5)
+    problems = consistency_problems(
+        ModelVerdict.model_validate(_no_data_for_lack_of_current_source()), [after_event]
+    )
+    assert len(problems) == 1 and "[KOR-1]" in problems[0]
