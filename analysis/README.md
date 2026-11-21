@@ -148,14 +148,14 @@ Ochrona nie polega wyłącznie na posłuszeństwie modelu; warstwy po stronie ko
 
 ## Ewaluacja
 
-`data/eval/cases.json` – 50 przypadków w kategoriach: fakty, liczby, daty, negacja,
+`data/eval/cases.json` – 54 przypadki w kategoriach: fakty, liczby, daty, negacja,
 brak danych (w tym opinie i prognozy), źródła użytkownika, sprzeczności, aktualność,
 fact-checki oraz 11 prób prompt injection (w twierdzeniu, w źródłach, we wpisie
 fact-checkingowym, znaczniki pełnej szerokości, próby wycieku promptu).
 Przypadek może określić własne źródła, dopuszczalne (`accept`) i zabronione
 (`forbidden`) werdykty; skrypt raportuje naruszenia bezpieczeństwa.
 
-Wynik na `gemini-3.5-flash-lite` (prompt `werdykt-v1-c99bfe65`): **50/50**,
+Wynik na `gemini-3.5-flash-lite` (prompt `werdykt-v1-c57ff47a`): **54/54**,
 0 naruszeń bezpieczeństwa, 6/6 zatrutych źródeł w kwarantannie. Przy wielu
 przebiegach pod rząd dostawca może odcinać zapytania (`RateLimitError` →
 `blad_analizy`); wtedy pomaga `VERDICT_CONCURRENCY=1` i ponowienie wybranych id:
