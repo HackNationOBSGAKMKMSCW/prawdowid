@@ -15,27 +15,36 @@ wartości tego samego typu dostają kolejne numery. Znaczniki są nieodwracalne.
 
 ## Co jest maskowane
 
-| Typ                                                   | Jak rozpoznajemy                                                                        |
-| ----------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| `PESEL`, `NIP`, `REGON`, `NR_KONTA`, `KARTA`, `DOWOD` | wzorzec + **suma kontrolna**; słowo-klucz przed wartością („PESEL: …”) pomija walidację |
-| `EMAIL`, `IP`                                         | wzorzec (IP z walidacją zakresu, bez „wersja 1.2.3.4”)                                  |
-| `TELEFON`                                             | `+48`/`0048`, komórkowe 9 cyfr od 4–8, stacjonarne `(22) 123 45 67`                     |
-| `ADRES`                                               | `ul.`/`al.`/`pl.`/`os.` + nazwa + numer, albo „mieszkam przy …”, „adres: …”             |
-| `KOD_POCZTOWY`                                        | `00-000` przed nazwą miejscowości                                                       |
-| `DATA_URODZENIA`                                      | data po „ur.”, „urodził się”, „data urodzenia”                                          |
-| `PASZPORT`, `NR_REJESTRACYJNY`                        | wartość po słowie „paszport” / „nr rej.”, „tablice”                                     |
+Reguły są pisane pod naturalne wiadomości: małe litery, brak kropek w skrótach
+(„ul Długa 15”), dowolne separatory w numerach („600.100.200”, „4405 1401 359”),
+litera O zamiast zera („6OO 1OO 2OO”) i e-maile zapisane słownie.
+
+| Typ                                                   | Jak rozpoznajemy                                                                                                                                              |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PESEL`, `NIP`, `REGON`, `NR_KONTA`, `KARTA`, `DOWOD` | wzorzec + **suma kontrolna**; słowo-klucz tuż przed wartością („pesel: …”) pomija walidację                                                                   |
+| `TELEFON`                                             | `+48`/`0048`/`48`, komórkowe 9 cyfr od 4–8, stacjonarne; po „tel.”, „mój nr”, „zadzwoń” dowolny numer 7–12 cyfr                                               |
+| `EMAIL`                                               | adres e-mail, także „jan małpa gmail kropka com”, „jan(at)gmail.com”, „[at] … [dot]”                                                                          |
+| `PROFIL`                                              | `@nick` i link do profilu (facebook, fb, instagram, tiktok, x/twitter, linkedin, t.me…); linki do postów zostają                                              |
+| `ADRES`                                               | `ul./ul/al./os./plac` + nazwa + numer; po „mieszkam/adres/zameldowany” także numer słownie; bez słowa-klucza „Długa 15/3”, „Długiej 15 m 3”, „przy Długiej 5” |
+| `KOD_POCZTOWY`                                        | `00-000` przed nazwą miejscowości (też małą literą), „kod 80831”                                                                                              |
+| `DATA_URODZENIA`                                      | data po „ur.”, „urodziłam się”, „urodziny”, „data urodzenia” (też „12 marca 85”); rok po „rocznik”                                                            |
+| `NR_REJESTRACYJNY`                                    | po „nr rej.”, „tablice” albo tablica w stylu `WA12345` obok słów o aucie                                                                                      |
+| `PASZPORT`, `IP`                                      | numer po słowie „paszport”; adres IP (bez „wersja 1.2.3.4”)                                                                                                   |
 
 ## Czego nie rusza (ochrona faktów)
 
-- liczb z jednostką: „500 000 000 zł”, „600 100 200 osób”, „3,5%”,
-- odwołań prawnych i przybliżeń: „poz. 1234”, „art. 212”, „druk nr …”, „około …”,
-- zwykłych dat i lat („15 października 2023”, „urodził się w 1949 roku”),
-- liczb bez poprawnej sumy kontrolnej i liczb w linkach.
+- liczb z jednostką: „500 000 000 zł”, „600 100 200 osób”, „3,5%”, „230 głosami”,
+- części większych liczb („4 500 000 000”) i odwołań prawnych: „poz. 1234”, „art. 15”, „Rozporządzenie 2016/679”,
+- zwykłych dat i lat („15 października 2023”, „Tusk 15/03”, „urodził się w 1957 roku”),
+- numerów alarmowych, wyników („2:1”), godzin, liczb bez poprawnej sumy kontrolnej i liczb w linkach,
+- miast i dzielnic („mieszkam w Krakowie”, „na Mokotowie”).
 
 ## Znane luki
 
-Adres bez słowa-klucza i bez numeru („mieszkam na Długiej w Gdańsku”), opisowe
-identyfikatory („moja szefowa z urzędu w X”), nicki i linki do prywatnych profili.
+Numery telefonów słownie („sześćset sto dwieście”), adres bez numeru i bez słowa
+„mieszkam” („pracuję na Długiej”), opisowe identyfikatory („moja szefowa z urzędu w X”)
+oraz nazwisko zapisane tuż przed numerem mieszkania, jeśli kończy się jak ulica
+(„Duda 15/3”).
 
 ## REST API
 

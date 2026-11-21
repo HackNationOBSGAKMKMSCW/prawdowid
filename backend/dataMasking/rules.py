@@ -1,9 +1,14 @@
 """Reguły wykrywania danych osobowych w polskim tekście.
 
 Każda reguła to wzorzec i opcjonalnie: walidator sumy kontrolnej, słowo-klucz
-szukane tuż przed wartością oraz flaga ``weak``. Reguły ``weak`` (sam kształt,
+szukane w pobliżu wartości oraz flaga ``weak``. Reguły ``weak`` (sam kształt,
 bez sumy kontrolnej, np. telefon) nie maskują liczb, po których stoi jednostka
-(„500 000 000 zł”) ani przed którymi stoi odwołanie prawne („poz. 1234”).
+(„500 000 000 zł”), które są częścią większej liczby („4 500 000 000”) ani przed
+którymi stoi odwołanie prawne („poz. 1234”).
+
+Reguły są pisane pod naturalne wiadomości: bez kropek w skrótach („ul Długa”),
+małymi literami, z dowolnymi separatorami w numerach („600.100.200”, „4405 1401 359”).
+Litery O w numerach („6OO 1OO 2OO”) masker zamienia na zera przed dopasowaniem.
 
 Imion i nazwisk celowo nie wykrywamy: zostają w tekście.
 """
@@ -22,7 +27,7 @@ class Keyword(Enum):
     NONE = "none"
     """Słowo-klucz nie ma znaczenia."""
     REQUIRED = "required"
-    """Bez słowa-klucza przed wartością reguła nic nie maskuje."""
+    """Bez słowa-klucza w pobliżu reguła nic nie maskuje."""
     BYPASS = "bypass"
     """Słowo-klucz przed wartością pomija walidację (użytkownik sam nazwał dane)."""
 
@@ -35,7 +40,13 @@ class Rule:
     validate: Callable[[str], bool] | None = None
     keyword: re.Pattern[str] | None = None
     keyword_mode: Keyword = Keyword.NONE
+    keyword_after: bool = False
+    """Szukaj słowa-klucza także za wartością („WA12345 to moje auto”)."""
     weak: bool = False
+    reject: re.Pattern[str] | None = None
+    """Wartość pasująca w całości do tego wzorca to co innego (np. telefon „48 600 100 200”)."""
+    inside_urls: bool = False
+    """Maskuj też w linkach (e-mail, profil); domyślnie liczby w linkach zostają."""
     blocked_after: re.Pattern[str] | None = None
     """Nie maskuj, jeśli wartość stoi zaraz po tym tekście (np. „wersja 1.2.3.4”)."""
 
@@ -43,32 +54,69 @@ class Rule:
 # Granice liczby: nie doklejona do liter/cyfr i nie będąca częścią ułamka („3,5”, „1.25”).
 _B = r"(?<!\w)(?<!\d[.,])"
 _E = r"(?!\w)(?![.,]\d)"
+# Granice liczby z separatorami: nie kawałek dłuższego ciągu grup („4 500 000 000”).
+_BS = r"(?<!\w)(?<!\d[.,])(?<!\d[ .\-])"
+_ES = r"(?!\w)(?![.,]\d)(?![ .\-]\d)"
+# Dowolny pojedynczy separator między cyframi.
+_S = r"[ .\-]?"
 
 _UPPER = "A-ZĄĆĘŁŃÓŚŹŻ"
+_LOWER = "a-ząćęłńóśźż"
 _MONTHS = (
     "stycznia|lutego|marca|kwietnia|maja|czerwca|lipca|sierpnia|"
     "września|wrzesnia|października|pazdziernika|listopada|grudnia"
 )
-
-# Nazwa ulicy: 1–4 słowa od wielkiej litery, liczba (np. „3 Maja”) albo skrót tytułu.
-_STREET = (
-    rf"(?:(?:[{_UPPER}][\w'.\-]*|\d{{1,2}}|(?i:gen|ks|św|sw|marsz|prof|kard|bpa?|al)\.)\s+){{1,4}}?"
-)
-_HOUSE = (
-    r"\d{1,4}[a-zA-Z]?(?:\s?/\s?\d{1,4}[a-zA-Z]?|\s?(?i:m\.|lok\.|lokal|mieszk\.)\s?\d{1,4})?(?!\w)"
+_NUMBER_WORDS = (
+    r"(?:jeden|jedna|dwa|dwie|trzy|cztery|pięć|piec|sześć|szesc|siedem|osiem|dziewięć|dziewiec|"
+    r"dziesięć|dziesiec|\w+naście|\w+nascie|dwadzieścia|dwadziescia|trzydzieści|trzydziesci|"
+    r"czterdzieści|czterdziesci|\w+dziesiąt|\w+dziesiat|sto)"
+    r"(?:\s+(?:jeden|dwa|trzy|cztery|pięć|piec|sześć|szesc|siedem|osiem|dziewięć|dziewiec))?"
 )
 
-# Po tym tekst jest kwotą albo statystyką, nie numerem telefonu.
+# Słowa, po których „Wyraz 15/3” to odwołanie prawne albo dokument, a nie adres.
+_NOT_STREET = (
+    r"(?!(?i:art|dz|poz|ust|nr|druk|sygn|rozdz\w*|uchwał\w*|ustaw\w*|wyrok\w*|rok\w*|tom\w*|"
+    r"str|strona|stron\w*|rozporządz\w*|rozporzadz\w*|dyrektyw\w*|kodeks\w*|pkt|par|covid|"
+    r"decyzj\w*|sprawa|sprawie|akt|aktu|załącznik\w*|zalacznik\w*|tabel\w*|rys\w*|wykres\w*|"
+    r"punkt\w*|pozycj\w*|godz\w*|numer\w*|kategori\w*|klas\w*|wiek\w*|gr|grupa|etap\w*|"
+    r"link\w*|część|czesc|cz|pytani\w*|krok\w*|odcin\w*|odc|slajd\w*|wynik\w*|ocen\w*|mecz\w*|"
+    r"rund\w*|sezon\w*|wątek|watek|post\w*|wpis\w*|zdjęci\w*|zdjec\w*|foto|wersj\w*|edycj\w*|"
+    r"zadani\w*|ćwiczeni\w*|cwiczeni\w*|lekcj\w*|rozdział\w*|część\w*|tydzień|tydzien|dzień|dzien|"
+    r"miesiąc\w*|miesiac\w*|kwartał\w*|kwartal\w*|ue|rodo|wa|pis|ko|psl)\b)"
+)
+# Słowo nazwy ulicy: od wielkiej litery, same litery („Długa”, „Kościuszki”, „Curie-Skłodowskiej”).
+_WORD = rf"[{_UPPER}][{_LOWER}{_UPPER}'\-]*[{_LOWER}{_UPPER}]\.?"
+# Nazwa ulicy od wielkiej litery: 1–4 słowa, liczba („3 Maja”) albo skrót („gen.”, „Jana Pawła II”).
+_STREET_CAP = (
+    rf"{_NOT_STREET}(?:{_WORD}|\d{{1,2}}|(?i:gen|ks|św|sw|marsz|prof|kard|bpa?|al)\.)"
+    rf"(?:\s+(?:{_WORD}|(?i:gen|ks|św|sw|marsz|prof|kard|bpa?)\.|[IVX]+)){{0,3}}"
+)
+# Po słowie „ulica”/„ul” nazwa bywa pisana małą literą: jedno słowo („ul długa 15”).
+_STREET_ANY = rf"(?:{_STREET_CAP}|[{_LOWER}][{_LOWER}\-]{{2,}})"
+_FLAT = r"(?:\s?/\s?\d{1,4}[a-zA-Z]?|\s?(?i:m\.?|lok\.?|lokal|mieszk\.?|mieszkania)\s?\d{1,4})"
+# Bez słowa-klucza: pierwsze słowo musi wyglądać jak ulica („Długa”, „Długiej”, „Kościuszki”),
+# a nie jak nazwisko („Tusk 15/3”); numer bez zera z przodu („15/03” to data).
+_LOOKS_LIKE_STREET = rf"(?=(?:\d{{1,2}}\s+)?[{_UPPER}][{_LOWER}{_UPPER}'\-]*(?:[aeiouyąęó]|ej|ów|ow|ych|ich)(?![\w]))"
+_FLAT_STRICT = r"(?:\s?/\s?[1-9]\d{0,3}[a-zA-Z]?|\s?(?i:m\.?|lok\.?|lokal|mieszk\.?|mieszkania)\s?[1-9]\d{0,3})"
+_HOUSE = rf"\d{{1,4}}[a-zA-Z]?{_FLAT}?(?!\w)(?![.,]\d)"
+_STREET_KW = (
+    r"(?:(?i:ul|os)(?:\.|(?=\s))|(?i:ulic[aąyęe]\w*|al\.|alej[aąię]|aleje|aleja|pl\.|plac(?:u|em)?|"
+    r"osiedl(?:e|u|em)))"
+)
+
+# Po tym tekst jest kwotą albo statystyką, nie danymi osobowymi.
 UNIT_AFTER = re.compile(
-    r"\s*(?:zł|zl|złotych|zlotych|pln|eur|euro|usd|dolarów|\$|€|%|proc|procent|tys|mln|mld|"
-    r"osób|osob|osoby|ludzi|mieszkańców|polaków|km|kg|ton|lat|latach|głosów|glosow|sztuk|szt|"
-    r"m2|m²|ha|razy|dawek|zgonów|przypadków)(?!\w)",
+    r"\s*(?:zł|zl|złotych|zlotych|pln|eur|euro|usd|dolarów|dolarow|\$|€|%|proc|procent\w*|tys|"
+    r"mln|mld|bln|osób|osob|osoby|ludzi|mieszkańców|mieszkancow|polaków|polakow|km|kg|ton|t\b|"
+    r"lat|latach|głos\w*|glos\w*|sztuk|szt|m2|m²|ha|razy|dawek|zgonów|zgonow|przypadków|"
+    r"przypadkow|metr\w*|minut\w*|godzin\w*|dni|stron\w*|punkt\w*|pkt|posł\w*|posl\w*|państw|"
+    r"krajów|dzieci|uczniów|pacjentów|chorych|zakażeń|zakazen)(?!\w)",
     re.IGNORECASE,
 )
 # Przed tym liczba jest odwołaniem prawnym albo przybliżoną wielkością.
 CONTEXT_BEFORE = re.compile(
-    r"(?:poz\.|dz\.\s?u\.?|art\.|nr\s+druku|druk\s+nr|sygn\.?(?:\s+akt)?|ust\.|§|"
-    r"ok\.|około|ponad|prawie|blisko|niemal|nawet|aż)\s*$",
+    r"(?<!\w)(?:poz\.|dz\.\s?u\.?|art\.|nr\s+druku|druk\s+nr|sygn\.?(?:\s+akt)?|ust\.|§|"
+    r"ok\.|około|okolo|ponad|prawie|blisko|niemal|nawet|aż|az|stron\w*|str\.)\s*$",
     re.IGNORECASE,
 )
 
@@ -83,18 +131,67 @@ def _c(pattern: str, flags: int = 0) -> re.Pattern[str]:
     return re.compile(pattern, flags)
 
 
+_PHONE_WORDS = _kw(
+    r"tel\w*|telefon\w*|kom\.|komórk\w*|komork\w*|numer\w*|nr|dzwo\w*|zadzwo\w*|oddzwo\w*|"
+    r"sms\w*|esemes\w*|whatsapp\w*|wapp|kontakt\w*|zadzwoń|dzwoń|pisz\w*"
+)
+_CAR_WORDS = _kw(
+    r"aut[oau]\w*|samoch\w*|pojazd\w*|wozem|wóz|woz|tablic\w*|rejestr\w*|blach\w*|parking\w*|"
+    r"zaparkow\w*|parkuj\w*|motor\w*|skuter\w*|ciężarów\w*|ciezarow\w*|bus\w*|furgon\w*|"
+    r"jeździ\w*|jezdzi\w*|nr\s+rej"
+)
+_MOBILE = rf"[4-8]\d{{2}}(?:{_S}\d){{6}}"
+_LANDLINE = rf"\(?[1-9]\d\)?{_S}\d{{3}}{_S}\d{{2}}{_S}\d{{2}}"
+# Separatorem w e-mailu zapisanym słownie bywa „małpa”, „(at)”, „[at]”, „kropka”, „(dot)”.
+_AT = r"(?:\s*@\s*|\s*[(\[{]\s*(?:at|małpa|malpa)\s*[)\]}]\s*|\s+(?:at|małpa|malpa)\s+)"
+_DOT = r"(?:\.|\s*[(\[{]\s*(?:dot|kropka)\s*[)\]}]\s*|\s+(?:dot|kropka)\s+)"
+_SOCIAL = (
+    r"(?:facebook\.com|fb\.com|fb\.me|m\.facebook\.com|instagram\.com|instagr\.am|tiktok\.com|"
+    r"twitter\.com|x\.com|linkedin\.com/in|t\.me|youtube\.com|threads\.net|snapchat\.com/add)"
+)
+
 RULES: tuple[Rule, ...] = (
     Rule(
         "EMAIL",
         _c(r"(?<![\w.+\-])[\w.+\-]+@[\w\-]+(?:\.[\w\-]+)*\.[A-Za-z]{2,}(?![\w\-])"),
         priority=0,
+        inside_urls=True,
+    ),
+    # E-mail zapisany słownie: „jan małpa gmail kropka com”, „jan(at)gmail.com”.
+    Rule(
+        "EMAIL",
+        _c(
+            rf"(?<![\w.+\-])[\w.+\-]+{_AT}[\w\-]+(?:{_DOT}[\w\-]+)*{_DOT}[A-Za-z]{{2,6}}(?![\w\-])",
+            re.IGNORECASE,
+        ),
+        priority=0,
+    ),
+    # Profil w serwisie społecznościowym (sam profil, bez linków do postów).
+    Rule(
+        "PROFIL",
+        _c(
+            rf"(?<![\w/.])(?:https?://)?(?:www\.)?{_SOCIAL}/@?[\w.\-]*[\w\-]"
+            r"(?:\?id=\d+)?/?(?![\w/])",
+            re.IGNORECASE,
+        ),
+        priority=0,
+        inside_urls=True,
+    ),
+    Rule(
+        "PROFIL",
+        _c(
+            r"(?<![\w@.\\/])@(?=[A-Za-z0-9_.]*[A-Za-z])[A-Za-z0-9_](?:[A-Za-z0-9_.]{0,28}[A-Za-z0-9_])?"
+            r"(?![\w@/])"
+        ),
+        priority=1,
     ),
     # Numer konta: polski (26 cyfr, opcjonalnie z „PL”) albo zagraniczny IBAN.
     Rule(
         "NR_KONTA",
         _c(
-            rf"{_B}(?:PL ?)?\d{{2}}(?: ?\d{{4}}){{6}}{_E}"
-            r"|(?<!\w)[A-Z]{2}\d{2}(?: ?[A-Z0-9]{4}){2,7}(?: ?[A-Z0-9]{1,3})?(?!\w)"
+            rf"{_B}(?:PL ?)?\d{{2}}(?:[ \-]?\d{{4}}){{6}}{_E}"
+            r"|(?<!\w)[A-Z]{2}\d{2}(?: ?[A-Z0-9]{4}){2,7}(?: ?[A-Z0-9]{1,3})?(?!\w)",
+            re.IGNORECASE,
         ),
         priority=1,
         validate=v.is_iban,
@@ -103,15 +200,18 @@ RULES: tuple[Rule, ...] = (
     ),
     Rule(
         "KARTA",
-        _c(rf"{_B}\d(?:[ \-]?\d){{12,18}}{_E}"),
+        _c(rf"{_BS}\d(?:[ \-]?\d){{12,18}}{_ES}"),
         priority=2,
         validate=v.is_payment_card,
     ),
+    # PESEL także z separatorami: „4405 1401 359”, „44-05-14-01359”.
     Rule(
         "PESEL",
-        _c(rf"{_B}\d{{11}}{_E}"),
+        _c(rf"{_BS}\d(?:[ \-]?\d){{10}}{_ES}"),
         priority=3,
         validate=v.is_pesel,
+        # „+48 600 100 200” bywa przypadkiem poprawnym PESEL-em.
+        reject=re.compile(rf"48{_S}{_MOBILE}|48{_S}{_LANDLINE}"),
         keyword=_kw("pesel"),
         keyword_mode=Keyword.BYPASS,
         weak=True,
@@ -120,7 +220,8 @@ RULES: tuple[Rule, ...] = (
         "NIP",
         _c(
             rf"{_B}(?:PL ?)?\d{{3}}(?P<s>[\- ]?)\d{{3}}(?P=s)\d{{2}}(?P=s)\d{{2}}{_E}"
-            rf"|{_B}\d{{3}}-\d{{2}}-\d{{2}}-\d{{3}}{_E}"
+            rf"|{_B}\d{{3}}-\d{{2}}-\d{{2}}-\d{{3}}{_E}",
+            re.IGNORECASE,
         ),
         priority=4,
         validate=v.is_nip,
@@ -146,7 +247,7 @@ RULES: tuple[Rule, ...] = (
     ),
     Rule(
         "DOWOD",
-        _c(r"(?<!\w)[A-Z]{3} ?\d{6}(?!\w)"),
+        _c(r"(?<!\w)[A-Za-z]{3} ?\d{6}(?!\w)"),
         priority=6,
         validate=v.is_id_card,
         keyword=_kw(r"dow[oó]d\w*|seria|nr\s+dowodu"),
@@ -154,49 +255,83 @@ RULES: tuple[Rule, ...] = (
     ),
     Rule(
         "PASZPORT",
-        _c(r"(?i:paszport\w*|passport)[^\n\d]{0,25}?(?P<v>[A-Z]{2} ?\d{7})(?!\w)"),
+        _c(r"(?i:paszport\w*|passport)[^\n\d]{0,25}?(?P<v>[A-Za-z]{2} ?\d{7})(?!\w)"),
         priority=6,
     ),
     Rule(
         "DATA_URODZENIA",
         _c(
-            r"(?<!\w)(?i:ur\.|urodzon\w*|urodził\w*\s+się|urodzil\w*\s+sie|data\s+urodzenia:?|d\.\s?ur\.)"
-            r"\s*(?i:dnia\s+|w\s+dniu\s+)?"
-            rf"(?P<v>\d{{1,2}}[./\-]\d{{1,2}}[./\-](?:\d{{4}}|\d{{2}})|\d{{1,2}}\s+(?i:{_MONTHS})\s+\d{{4}}|\d{{4}}-\d{{2}}-\d{{2}})"
-            r"(?:\s?r\.)?"
+            r"(?<!\w)(?i:ur\.|urodz\w*|urodził\w*|urodzil\w*|data\s+urodzenia|d\.\s?ur\.)"
+            r"[^\d\n]{0,25}?"
+            rf"(?P<v>\d{{1,2}}[./\-]\d{{1,2}}(?:[./\-](?:\d{{4}}|\d{{2}}))?(?![\d.]\d)"
+            rf"|\d{{1,2}}\s+(?i:{_MONTHS})(?:\s+'?(?:\d{{4}}|\d{{2}}))?(?!\d)"
+            r"|\d{4}-\d{2}-\d{2})"
         ),
         priority=7,
     ),
     Rule(
-        "ADRES",
-        _c(
-            r"(?<!\w)(?i:ul\.|ulic[aąyę]|al\.|alej[aąię]|aleje|pl\.|plac(?:u|em)?|os\.|osiedl(?:e|u|em))"
-            rf"\s*{_STREET}{_HOUSE}"
-        ),
-        priority=8,
+        "DATA_URODZENIA",
+        _c(r"(?<!\w)(?i:rocznik\w*)\s*'?(?P<v>\d{4}|\d{2})(?!\d)"),
+        priority=7,
     ),
-    # „mieszkam przy Długiej 5”, „adres: Długa 5/3”.
+    # „ul. Długa 15/3”, „ul długa 15”, „os. Tysiąclecia 45”.
+    Rule(
+        "ADRES",
+        _c(rf"(?<![\w.]){_STREET_KW}\s*{_STREET_ANY}\s+{_HOUSE}"),
+        priority=8,
+        weak=True,
+    ),
+    # Po „mieszkam/adres/zameldowany” wystarczy nazwa ulicy, a numer może być słownie.
     Rule(
         "ADRES",
         _c(
-            r"(?<!\w)(?:(?i:mieszka\w*|zamieszka\w*)[^\d\n.]{0,40}?(?i:na|przy)\s+|(?i:adres\w*):?\s+)"
-            rf"(?P<v>{_STREET}{_HOUSE})"
+            r"(?<!\w)(?i:mieszka\w*|zamieszka\w*|adres\w*|meldun\w*|zameldowan\w*|zamelduj\w*)"
+            r"[^\n.!?]{0,40}?(?:\s(?i:na|przy)\s+|[:,]\s*)"
+            rf"(?P<v>{_STREET_KW}\s*{_STREET_ANY}(?:\s+(?:{_HOUSE}|(?i:{_NUMBER_WORDS})(?!\w)))?"
+            rf"|{_STREET_CAP}\s+(?:{_HOUSE}|(?i:{_NUMBER_WORDS})(?!\w)))"
         ),
         priority=8,
     ),
-    # Z prefiksem kraju: pewny telefon.
+    # Bez słowa-klucza tylko z numerem mieszkania: „Długa 15/3”, „Długiej 15 m 3”.
+    Rule(
+        "ADRES",
+        _c(
+            rf"(?<![\w.]){_LOOKS_LIKE_STREET}{_STREET_CAP}\s+[1-9]\d{{0,2}}[a-zA-Z]?{_FLAT_STRICT}"
+            r"(?!\w)(?![.,/]\d)"
+        ),
+        priority=8,
+        weak=True,
+    ),
+    # „przy Długiej 5” – adres miejsca (praca, sklep, szkoła).
+    Rule(
+        "ADRES",
+        _c(
+            rf"(?<!\w)(?i:przy)\s+(?P<v>{_LOOKS_LIKE_STREET}{_STREET_CAP}\s+[1-9]\d{{0,2}}[a-zA-Z]?"
+            rf"{_FLAT_STRICT}?)(?!\w)(?![.,/:]\d)"
+        ),
+        priority=8,
+        weak=True,
+    ),
+    # Z prefiksem kraju: pewny telefon. „48 600 100 200” bez plusa też.
     Rule(
         "TELEFON",
-        _c(
-            r"(?<![\w+])(?:\+|00) ?48[ \-]?"
-            r"(?:\d{3}[ \-]?\d{3}[ \-]?\d{3}|\(?\d{2}\)?[ \-]?\d{3}[ \-]?\d{2}[ \-]?\d{2})(?!\w)(?![.,]\d)"
-        ),
+        _c(rf"(?:(?<![\w+])(?:\+|00){_S}48|{_BS}48){_S}(?:{_MOBILE}|{_LANDLINE}){_ES}"),
         priority=9,
+        weak=True,
     ),
-    # Komórkowy bez prefiksu: 9 cyfr zaczynających się od 4–8, z jednakowymi odstępami.
+    # Po „tel.”, „mój nr”, „zadzwoń” numer jest pewny, w dowolnym zapisie.
     Rule(
         "TELEFON",
-        _c(rf"{_B}[4-8]\d{{2}}(?P<s>[ \-]?)\d{{3}}(?P=s)\d{{3}}{_E}"),
+        _c(rf"{_BS}(?:\+?\d{_S}){{6,11}}\d{_ES}"),
+        priority=9,
+        keyword=_PHONE_WORDS,
+        keyword_mode=Keyword.REQUIRED,
+        weak=True,
+    ),
+    # Komórkowy bez prefiksu: 9 cyfr zaczynających się od 4–8, dowolne separatory.
+    Rule(
+        "TELEFON",
+        _c(rf"{_BS}{_MOBILE}{_ES}"),
         priority=9,
         weak=True,
     ),
@@ -204,8 +339,8 @@ RULES: tuple[Rule, ...] = (
     Rule(
         "TELEFON",
         _c(
-            rf"{_B}\(\d{{2}}\) ?\d{{3}}[ \-]?\d{{2}}[ \-]?\d{{2}}{_E}"
-            rf"|{_B}[1-9]\d(?P<s>[ \-])\d{{3}}(?P=s)\d{{2}}(?P=s)\d{{2}}{_E}"
+            rf"{_BS}\(\d{{2}}\) ?\d{{3}}[ .\-]?\d{{2}}[ .\-]?\d{{2}}{_ES}"
+            rf"|{_BS}[1-9]\d(?P<s>[ .\-])\d{{3}}(?P=s)\d{{2}}(?P=s)\d{{2}}{_ES}"
         ),
         priority=9,
         weak=True,
@@ -217,12 +352,17 @@ RULES: tuple[Rule, ...] = (
         validate=v.is_ipv4,
         blocked_after=re.compile(r"(?:wersj\w*|ver\.?|v\.?)\s*$", re.IGNORECASE),
     ),
-    # Kod pocztowy tylko przed nazwą miejscowości, żeby nie łapać zakresów („10-100”).
+    # Kod pocztowy przed nazwą miejscowości (też małą literą), żeby nie łapać zakresów.
     Rule(
         "KOD_POCZTOWY",
-        _c(rf"(?<![\w\-])\d{{2}}-\d{{3}}(?![\w\-])(?=,?\s+[{_UPPER}])"),
+        _c(rf"(?<![\w\-])\d{{2}}-\d{{3}}(?![\w\-])(?=,?\s+[{_UPPER}{_LOWER}]{{3,}})"),
         priority=11,
         weak=True,
+    ),
+    Rule(
+        "KOD_POCZTOWY",
+        _c(r"(?i:kod\w*(?:\s+pocztow\w*)?)\W{0,3}(?P<v>\d{2}-?\d{3})(?!\w)"),
+        priority=11,
     ),
     Rule(
         "NR_REJESTRACYJNY",
@@ -231,5 +371,17 @@ RULES: tuple[Rule, ...] = (
             r"[^\n]{0,15}?(?<!\w)(?P<v>(?=[A-Z]{1,3} ?[A-Z0-9]{0,4}\d)[A-Z]{1,3} ?[A-Z0-9]{4,5})(?!\w)"
         ),
         priority=12,
+    ),
+    # Polska tablica (pierwsza litera to województwo) tylko przy słowach o aucie.
+    Rule(
+        "NR_REJESTRACYJNY",
+        _c(
+            r"(?<!\w)(?=[BCDEFGKLNOPRSTWZ][A-Z]{0,2} ?[A-Z0-9]{0,4}\d)"
+            r"[BCDEFGKLNOPRSTWZ][A-Z]{0,2} ?[A-Z0-9]{4,5}(?!\w)"
+        ),
+        priority=12,
+        keyword=_CAR_WORDS,
+        keyword_mode=Keyword.REQUIRED,
+        keyword_after=True,
     ),
 )

@@ -88,6 +88,78 @@ MASKED: list[Case] = [
     ),
 ]
 
+# Naturalne wiadomości: bez kropek, małymi literami, z innymi separatorami.
+MASKED += [
+    Case(
+        "M1", "zadzwon 600 100200 albo tel 600.100.200", "zadzwon [TELEFON_1] albo tel [TELEFON_1]"
+    ),
+    Case("M2", "Proszę oddzwonić 48 600 100 200.", "Proszę oddzwonić [TELEFON_1]."),
+    Case("M3", "mój nr to 6OO 1OO 2OO", "mój nr to [TELEFON_1]"),
+    Case("M4", "tel: 22.123.45.67", "tel: [TELEFON_1]"),
+    Case("M5", "mój numer 512345678, dzwońcie", "mój numer [TELEFON_1], dzwońcie"),
+    Case("M6", "mój pesel 4405 1401 359 jakby co", "mój pesel [PESEL_1] jakby co"),
+    Case("M7", "pesel: 44-05-14-01359", "pesel: [PESEL_1]"),
+    Case("M8", "dowód abc123456", "dowód [DOWOD_1]"),
+    Case("M9", "ul długa 15", "[ADRES_1]"),
+    Case(
+        "M10",
+        "mieszkam ul Długa 15, 80-831 gdańsk",
+        "mieszkam [ADRES_1], [KOD_POCZTOWY_1] gdańsk",
+    ),
+    Case("M11", "kod 80831 Gdańsk", "kod [KOD_POCZTOWY_1] Gdańsk"),
+    Case("M12", "mieszkam w Gdańsku, Długa 15/3.", "mieszkam w Gdańsku, [ADRES_1]."),
+    Case("M13", "Sąsiad z Długiej 15 m 3 mówił", "Sąsiad z [ADRES_1] mówił"),
+    Case("M14", "mieszkam na ulicy Długiej piętnaście", "mieszkam na [ADRES_1]"),
+    Case("M15", "jestem zameldowany przy Kwiatowej 7a", "jestem zameldowany przy [ADRES_1]"),
+    Case(
+        "M16",
+        "Urodziłam się 12 marca 85, mieszkam w Łodzi.",
+        "Urodziłam się [DATA_URODZENIA_1], mieszkam w Łodzi.",
+    ),
+    Case(
+        "M17",
+        "mam urodziny 12.03, rocznik 1985",
+        "mam urodziny [DATA_URODZENIA_1], rocznik [DATA_URODZENIA_2]",
+    ),
+    Case("M18", "Piszcie na jan kowalski małpa gmail kropka com", "Piszcie na jan [EMAIL_1]"),
+    Case("M19", "albo jan.kowalski(at)gmail.com", "albo [EMAIL_1]"),
+    Case("M20", "mail: kasia [at] wp [dot] pl", "mail: [EMAIL_1]"),
+    Case(
+        "M21",
+        "Insta @kasia_nowak_88, fb.com/kasia.nowak.123.",
+        "Insta [PROFIL_1], [PROFIL_2].",
+    ),
+    Case(
+        "M22",
+        "https://www.facebook.com/kasia.nowak.123/",
+        "[PROFIL_1]",
+    ),
+    Case(
+        "M23",
+        "Moje auto WA12345 stoi pod blokiem.",
+        "Moje auto [NR_REJESTRACYJNY_1] stoi pod blokiem.",
+    ),
+    Case("M24", "KR 4F123 to mój samochód", "[NR_REJESTRACYJNY_1] to mój samochód"),
+    Case("M25", "pracuję w Biedronce przy Długiej 5", "pracuję w Biedronce przy [ADRES_1]"),
+    Case("M26", "Gdańsk, Długa 15/3", "Gdańsk, [ADRES_1]"),
+    Case(
+        "X2",
+        "siema, tu Kasia Nowak. zadzwon 600 100200 albo tel 600.100.200. mieszkam ul Długa 15, "
+        "80-831 gdańsk. mój pesel 4405 1401 359 jakby co. dowód abc123456",
+        "siema, tu Kasia Nowak. zadzwon [TELEFON_1] albo tel [TELEFON_1]. mieszkam [ADRES_1], "
+        "[KOD_POCZTOWY_1] gdańsk. mój pesel [PESEL_1] jakby co. dowód [DOWOD_1]",
+    ),
+    Case(
+        "X3",
+        "Dzień dobry, Krystyna Wiśniewska z tej strony. Urodziłam się 12 marca 85, mieszkam w "
+        "Gdańsku, Długa 15/3. Sąsiad z Długiej 15 m 3 mówił, że szczepionki powodują autyzm. "
+        "Proszę oddzwonić 48 600 100 200.",
+        "Dzień dobry, Krystyna Wiśniewska z tej strony. Urodziłam się [DATA_URODZENIA_1], mieszkam w "
+        "Gdańsku, [ADRES_1]. Sąsiad z [ADRES_2] mówił, że szczepionki powodują autyzm. "
+        "Proszę oddzwonić [TELEFON_1].",
+    ),
+]
+
 KEPT: list[Case] = [
     # Imiona i nazwiska
     Case("O1", "Donald Tusk i Jarosław Kaczyński", "Donald Tusk i Jarosław Kaczyński"),
@@ -135,5 +207,84 @@ KEPT: list[Case] = [
         "U3",
         "Wybory w 2025 r. wygrał kandydat z 50,89% głosów.",
         "Wybory w 2025 r. wygrał kandydat z 50,89% głosów.",
+    ),
+    # Liczby i odwołania, które nowe, luźniejsze reguły mogłyby złapać
+    Case(
+        "F1",
+        "Kosztowało to 4 500 000 000 i nikt nie protestował.",
+        "Kosztowało to 4 500 000 000 i nikt nie protestował.",
+    ),
+    Case(
+        "F2",
+        "Rozporządzenie 2016/679 (RODO) obowiązuje od 2018.",
+        "Rozporządzenie 2016/679 (RODO) obowiązuje od 2018.",
+    ),
+    Case("F3", "Art. 15 ust. 3 konstytucji", "Art. 15 ust. 3 konstytucji"),
+    Case("F4", "Przy ul. Wiejskiej uchwalono 3 ustawy.", "Przy ul. Wiejskiej uchwalono 3 ustawy."),
+    Case("F5", "Deficyt to 600.100.200 zł.", "Deficyt to 600.100.200 zł."),
+    Case(
+        "F6",
+        "Donald Tusk urodził się w 1957 roku w Gdańsku.",
+        "Donald Tusk urodził się w 1957 roku w Gdańsku.",
+    ),
+    Case(
+        "F7", "W 2023 r. urodziło się 272 tys. dzieci.", "W 2023 r. urodziło się 272 tys. dzieci."
+    ),
+    Case(
+        "F8",
+        "https://x.com/donaldtusk/status/1790000000000000000",
+        "https://x.com/donaldtusk/status/1790000000000000000",
+    ),
+    Case(
+        "F9",
+        "Szczepionka na COVID-19 i raport PKN 2023",
+        "Szczepionka na COVID-19 i raport PKN 2023",
+    ),
+    Case(
+        "F10",
+        "Samochód elektryczny kosztuje 150 000 zł.",
+        "Samochód elektryczny kosztuje 150 000 zł.",
+    ),
+    Case("F11", "Na stronach 10-100 raportu NIK", "Na stronach 10-100 raportu NIK"),
+    Case(
+        "F12",
+        "Mieszkańców Gdańska jest 486 tys., a Polaków 38 mln.",
+        "Mieszkańców Gdańska jest 486 tys., a Polaków 38 mln.",
+    ),
+    Case(
+        "F13",
+        "Sejm przyjął ustawę 230 głosami, 15 posłów było przeciw.",
+        "Sejm przyjął ustawę 230 głosami, 15 posłów było przeciw.",
+    ),
+    Case(
+        "F14",
+        "UE liczy 27 państw, Rosja zaatakowała Ukrainę 24.02.2022.",
+        "UE liczy 27 państw, Rosja zaatakowała Ukrainę 24.02.2022.",
+    ),
+    Case(
+        "F15",
+        "Numer ustawy to 1234, a budżet 512 345 678 euro.",
+        "Numer ustawy to 1234, a budżet 512 345 678 euro.",
+    ),
+    Case(
+        "F16",
+        "Tusk 15/03 powiedział, że Nowak 12/3 też.",
+        "Tusk 15/03 powiedział, że Nowak 12/3 też.",
+    ),
+    Case("F17", "Mieszkańcy ul. Długiej protestowali.", "Mieszkańcy ul. Długiej protestowali."),
+    Case("F18", "mieszkam w Krakowie od 2010 roku", "mieszkam w Krakowie od 2010 roku"),
+    Case("F19", "Strona 3/10 raportu, Link 1/1", "Strona 3/10 raportu, Link 1/1"),
+    Case(
+        "F20",
+        "Wynik meczu 2:1, spotkanie o 15:30 przy Placu Zamkowym",
+        "Wynik meczu 2:1, spotkanie o 15:30 przy Placu Zamkowym",
+    ),
+    Case("F21", "zadzwoń na 112 albo 997", "zadzwoń na 112 albo 997"),
+    Case("F22", "Mój syn Piotr ma 15 lat.", "Mój syn Piotr ma 15 lat."),
+    Case("F23", "W sondażu PiS 32,1%, KO 30,5%.", "W sondażu PiS 32,1%, KO 30,5%."),
+    Case(
+        "F24",
+        "Kowalski powiedział 12 marca 2024, że @ nie działa.",
+        "Kowalski powiedział 12 marca 2024, że @ nie działa.",
     ),
 ]

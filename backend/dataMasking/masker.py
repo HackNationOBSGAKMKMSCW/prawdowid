@@ -11,6 +11,7 @@ from .rules import CONTEXT_BEFORE, RULES, UNIT_AFTER, URL, Keyword, Rule
 # Ile znaków przed wartością przeszukujemy w poszukiwaniu słowa-klucza („PESEL: …”).
 _KEYWORD_WINDOW = 30
 _CONTEXT_WINDOW = 20
+_HAS_DIGIT = re.compile(r"\d")
 
 
 @dataclass(frozen=True)
@@ -53,15 +54,29 @@ def _value_span(match: re.Match[str]) -> tuple[int, int]:
     return match.span("v") if "v" in match.re.groupindex else match.span()
 
 
+def _keyword_near(rule: Rule, text: str, start: int, end: int) -> bool:
+    """Słowo-klucz blisko wartości, bez innych liczb pomiędzy („PESEL 123…, tel. 600…”)."""
+    if rule.keyword is None:
+        return False
+    for m in rule.keyword.finditer(text, max(0, start - _KEYWORD_WINDOW), start):
+        if not _HAS_DIGIT.search(text, m.end(), start):
+            return True
+    if rule.keyword_after:
+        for m in rule.keyword.finditer(text, end, end + _KEYWORD_WINDOW):
+            if not _HAS_DIGIT.search(text, end, m.start()):
+                return True
+    return False
+
+
 def _accepts(rule: Rule, text: str, start: int, end: int) -> bool:
     value = text[start:end]
-    keyword_found = rule.keyword is not None and bool(
-        rule.keyword.search(text, max(0, start - _KEYWORD_WINDOW), start)
-    )
+    keyword_found = _keyword_near(rule, text, start, end)
     if rule.keyword_mode is Keyword.REQUIRED and not keyword_found:
         return False
     if rule.keyword_mode is Keyword.BYPASS and keyword_found:
         return True
+    if rule.reject is not None and rule.reject.fullmatch(value):
+        return False
     before = text[max(0, start - _CONTEXT_WINDOW) : start]
     if rule.blocked_after is not None and rule.blocked_after.search(before):
         return False
@@ -71,12 +86,22 @@ def _accepts(rule: Rule, text: str, start: int, end: int) -> bool:
         if CONTEXT_BEFORE.search(before):
             return False
         # „500 000 000” to raczej kwota niż numer telefonu.
-        if rule.label == "TELEFON" and re.search(r"[ \-]000[ \-]?000$", value):
+        if rule.label == "TELEFON" and re.search(r"[ .\-]000[ .\-]?000$", value):
             return False
     return rule.validate is None or rule.validate(value)
 
 
+# Słowo z cyframi i literami O („6OO”, „1OO”): O to pewnie zero.
+_DIGITISH = re.compile(r"(?<!\w)(?=[\dOo]*\d)[\dOo]+(?!\w)")
+
+
+def _shadow(text: str) -> str:
+    """Kopia tekstu tej samej długości, w której „6OO 1OO 2OO” to „600 100 200”."""
+    return _DIGITISH.sub(lambda m: m.group().replace("O", "0").replace("o", "0"), text)
+
+
 def _candidates(text: str) -> list[_Candidate]:
+    text = _shadow(text)
     urls = [m.span() for m in URL.finditer(text)]
     found: list[_Candidate] = []
     for rule in RULES:
@@ -85,7 +110,7 @@ def _candidates(text: str) -> list[_Candidate]:
             if start == end:
                 continue
             # Liczby w linkach (identyfikatory artykułów) to nie dane osobowe.
-            if rule.label != "EMAIL" and any(u0 <= start and end <= u1 for u0, u1 in urls):
+            if not rule.inside_urls and any(u0 <= start and end <= u1 for u0, u1 in urls):
                 continue
             if _accepts(rule, text, start, end):
                 found.append(_Candidate(rule, start, end))
@@ -95,7 +120,7 @@ def _candidates(text: str) -> list[_Candidate]:
 def _normalize(label: str, value: str) -> str:
     compact = re.sub(r"[\s\-()./]", "", value).casefold()
     if label == "TELEFON":
-        compact = re.sub(r"^(?:\+|00)48", "", compact)
+        compact = re.sub(r"^(?:\+|00)?48(?=\d{9}$)", "", compact)
     elif label in {"NIP", "NR_KONTA"}:
         compact = compact.removeprefix("pl")
     return compact
@@ -111,6 +136,7 @@ def mask_personal_data(text: str) -> MaskingResult:
         return MaskingResult(text=text)
 
     # Najpierw pewniejsze reguły, przy remisie dłuższe dopasowanie.
+    shadow = _shadow(text)
     ordered = sorted(_candidates(text), key=lambda c: (c.rule.priority, -c.length, c.start))
     chosen: list[_Candidate] = []
     for cand in ordered:
@@ -125,7 +151,7 @@ def mask_personal_data(text: str) -> MaskingResult:
     cursor = 0
     for cand in chosen:
         label = cand.rule.label
-        key = (label, _normalize(label, text[cand.start : cand.end]))
+        key = (label, _normalize(label, shadow[cand.start : cand.end]))
         if key not in numbers:
             per_label[label] += 1
             numbers[key] = per_label[label]
