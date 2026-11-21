@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 pytest.importorskip("fastapi")
@@ -50,6 +52,33 @@ def test_webhook_answers_welcome_and_text(client: TestClient) -> None:
     [message] = check.json()["messages"]
     assert message["to"] == "48500"
     assert "Prawdopodobnie FAŁSZ" in message["text"]["body"]
+
+
+def test_webhook_streams_statuses_then_messages(client: TestClient) -> None:
+    response = client.post(
+        "/api/whatsapp/webhook?stream=true",
+        json=payload(
+            {
+                "from": "48500",
+                "id": "wamid.3",
+                "type": "text",
+                "text": {"body": "Szczepionki powodują autyzm"},
+            }
+        ),
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/x-ndjson")
+    events = [json.loads(line) for line in response.text.splitlines()]
+    assert [event["type"] for event in events] == ["status", "status", "messages"]
+    assert events[0]["to"] == "48500"
+    assert "Prawdopodobnie FAŁSZ" in events[-1]["messages"][0]["text"]["body"]
+
+
+def test_streaming_rejects_invalid_payload_before_streaming(client: TestClient) -> None:
+    response = client.post("/api/whatsapp/webhook?stream=true", json={"object": "page"})
+
+    assert response.status_code == 422
 
 
 def test_webhook_rejects_invalid_payloads(client: TestClient) -> None:

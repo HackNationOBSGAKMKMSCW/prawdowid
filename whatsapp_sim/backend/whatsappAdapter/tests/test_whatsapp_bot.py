@@ -79,7 +79,7 @@ class RecordingPipeline:
         self.error = error
         self.texts: list[str] = []
 
-    async def check(self, text: str) -> CheckReport:
+    async def check(self, text: str, progress=None) -> CheckReport:
         self.texts.append(text)
         if self.error is not None:
             raise self.error
@@ -152,7 +152,7 @@ async def test_slow_pipeline_times_out() -> None:
     class SlowPipeline:
         mode = "live"
 
-        async def check(self, text: str) -> CheckReport:
+        async def check(self, text: str, progress=None) -> CheckReport:
             await asyncio.sleep(1)
             raise AssertionError("unreachable")
 
@@ -273,3 +273,38 @@ async def test_forwarded_messages_get_a_chain_warning() -> None:
     assert FORWARDED_NOTE not in plain["text"]["body"]
     assert forwarded["text"]["body"].endswith(FORWARDED_NOTE)
     assert frequent["text"]["body"].endswith(FREQUENTLY_FORWARDED_NOTE)
+
+
+@pytest.mark.asyncio
+async def test_check_reports_progress_statuses() -> None:
+    from whatsappAdapter.bot import ANALYZING_STATUS, searching_status
+
+    bot = SprawdzToBot(DemoPipeline(delay_seconds=0))
+    statuses: list[str] = []
+
+    async def status(text: str) -> None:
+        statuses.append(text)
+
+    await bot.handle(incoming("Szczepionki powodują autyzm."), status=status)
+    await bot.handle(incoming("Jutro w Krakowie spadnie śnieg."), status=status)
+    await bot.handle(incoming("pomoc"), status=status)
+
+    assert statuses == [
+        ANALYZING_STATUS,
+        searching_status(1),
+        ANALYZING_STATUS,
+        searching_status(0),
+    ]
+    assert searching_status(3) == "📚 Szukam 3 twierdzeń w bazach fact-checkingowych…"
+
+
+@pytest.mark.asyncio
+async def test_failing_status_callback_does_not_break_the_check() -> None:
+    bot = SprawdzToBot(DemoPipeline(delay_seconds=0))
+
+    async def status(text: str) -> None:
+        raise RuntimeError("client went away")
+
+    [reply] = await bot.handle(incoming("Szczepionki powodują autyzm."), status=status)
+
+    assert "Prawdopodobnie FAŁSZ" in reply["text"]["body"]

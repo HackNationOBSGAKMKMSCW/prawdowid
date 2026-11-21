@@ -1,9 +1,11 @@
 """Conversation logic of the SprawdzTo WhatsApp contact."""
 
 import asyncio
+import contextlib
 import re
 import time
 import unicodedata
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from textAnalysis.analysis import AnalysisConfigurationError, AnalysisError, InputSanitizer
@@ -85,6 +87,21 @@ FREQUENTLY_FORWARDED_NOTE = (
 )
 GENERIC_ERROR_TEXT = "😕 Coś poszło nie tak po mojej stronie. Spróbuj ponownie za chwilę."
 
+ANALYZING_STATUS = "🧠 Analizuję tekst i wyciągam twierdzenia…"
+SEARCHING_FULL_TEXT_STATUS = "📚 Szukam Twojej wiadomości w bazach fact-checkingowych…"
+
+# Receives a short status line while a message is being checked.
+StatusCallback = Callable[[str], Awaitable[None]]
+
+
+def searching_status(count: int) -> str:
+    if count <= 0:
+        return SEARCHING_FULL_TEXT_STATUS
+    if count == 1:
+        return "📚 Szukam twierdzenia w bazach fact-checkingowych…"
+    return f"📚 Szukam {count} twierdzeń w bazach fact-checkingowych…"
+
+
 _GREETINGS = {
     "start",
     "menu",
@@ -122,15 +139,29 @@ class SprawdzToBot:
     def mode(self) -> str:
         return self.pipeline.mode
 
-    async def handle_webhook(self, payload: dict[str, Any]) -> list[dict[str, Any]]:
-        """Answer every user message in a webhook payload, in order."""
+    async def handle_webhook(
+        self,
+        payload: dict[str, Any],
+        status: Callable[[str, str], Awaitable[None]] | None = None,
+    ) -> list[dict[str, Any]]:
+        """Answer every user message in a webhook payload, in order.
+
+        ``status(to, text)`` is awaited with progress lines while checking.
+        """
 
         replies: list[dict[str, Any]] = []
         for message in parse_webhook(payload):
-            replies.extend(await self.handle(message))
+
+            async def notify(text: str, to: str = message.sender) -> None:
+                if status is not None:
+                    await status(to, text)
+
+            replies.extend(await self.handle(message, status=notify))
         return replies
 
-    async def handle(self, message: IncomingMessage) -> list[dict[str, Any]]:
+    async def handle(
+        self, message: IncomingMessage, status: StatusCallback | None = None
+    ) -> list[dict[str, Any]]:
         to = message.sender
         if message.kind is IncomingKind.WELCOME:
             return self._welcome(to)
@@ -140,7 +171,7 @@ class SprawdzToBot:
             if message.button_id == HELP_BUTTON.id:
                 return [text_message(to, HELP_TEXT)]
             if message.button_id in EXAMPLES:
-                return await self._check(to, message, EXAMPLES[message.button_id][1])
+                return await self._check(to, message, EXAMPLES[message.button_id][1], status)
             return self._welcome(to)
 
         command = _normalize_command(message.text)
@@ -154,7 +185,7 @@ class SprawdzToBot:
             return [text_message(to, TOO_SHORT_TEXT)]
         if len(message.text) > InputSanitizer.MAX_INPUT_LENGTH:
             return [text_message(to, TOO_LONG_TEXT)]
-        return await self._check(to, message, message.text)
+        return await self._check(to, message, message.text, status)
 
     def _welcome(self, to: str) -> list[dict[str, Any]]:
         return [
@@ -162,7 +193,13 @@ class SprawdzToBot:
             button_message(to, WELCOME_BUTTONS_TEXT, WELCOME_BUTTONS),
         ]
 
-    async def _check(self, to: str, message: IncomingMessage, text: str) -> list[dict[str, Any]]:
+    async def _check(
+        self,
+        to: str,
+        message: IncomingMessage,
+        text: str,
+        status: StatusCallback | None = None,
+    ) -> list[dict[str, Any]]:
         started_at = time.perf_counter()
         # Log only identifiers and timings; message text stays out of the console.
         print(
@@ -170,9 +207,22 @@ class SprawdzToBot:
             f"({len(text)} znaków, tryb {self.mode})...",
             flush=True,
         )
+
+        async def notify(line: str) -> None:
+            if status is None:
+                return
+            # Progress is best effort; a lost client must not break the check.
+            with contextlib.suppress(Exception):
+                await status(line)
+
+        async def on_progress(stage: str, count: int) -> None:
+            if stage == "searching":
+                await notify(searching_status(count))
+
         try:
             async with asyncio.timeout(self.check_timeout):
-                report = await self.pipeline.check(text)
+                await notify(ANALYZING_STATUS)
+                report = await self.pipeline.check(text, progress=on_progress)
             body = format_report(report)
             if message.frequently_forwarded:
                 body = f"{body}\n\n{FREQUENTLY_FORWARDED_NOTE}"

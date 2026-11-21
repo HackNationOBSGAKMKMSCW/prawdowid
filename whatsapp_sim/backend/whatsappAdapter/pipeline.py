@@ -29,10 +29,20 @@ class CheckReport:
     demo: bool = False
 
 
+# Called with a stage name and a count: ("searching", n) once statements are
+# known; n == 0 means the whole message is searched instead.
+Progress = Callable[[str, int], Awaitable[None]]
+
+
 class FactCheckPipeline(Protocol):
     mode: str
 
-    async def check(self, text: str) -> CheckReport: ...
+    async def check(self, text: str, progress: Progress | None = None) -> CheckReport: ...
+
+
+async def _report(progress: Progress | None, stage: str, count: int) -> None:
+    if progress is not None:
+        await progress(stage, count)
 
 
 Analyze = Callable[[str], Awaitable[AnalysisDataContainer]]
@@ -67,9 +77,11 @@ class LivePipeline:
         self._read_statements = read_statements
         self._read_full_text = read_full_text
 
-    async def check(self, text: str) -> CheckReport:
+    async def check(self, text: str, progress: Progress | None = None) -> CheckReport:
         analysis = await self._analyze(text)
-        if any(statement.strip() for statement in analysis.statements):
+        statements = [statement for statement in analysis.statements if statement.strip()]
+        await _report(progress, "searching", len(statements))
+        if statements:
             results = await self._read_statements(analysis)
             return CheckReport(analysis=analysis, results=results)
         result = await self._read_full_text(analysis)
@@ -221,13 +233,14 @@ class DemoPipeline:
 
     mode = "demo"
 
-    def __init__(self, *, delay_seconds: float = 1.2) -> None:
+    def __init__(self, *, delay_seconds: float = 2.0) -> None:
         self.delay_seconds = delay_seconds
 
-    async def check(self, text: str) -> CheckReport:
+    async def check(self, text: str, progress: Progress | None = None) -> CheckReport:
         sanitized, warnings = InputSanitizer.sanitize(text)
+        # Simulate the two slow steps of the live pipeline: analysis, then search.
         if self.delay_seconds > 0:
-            await asyncio.sleep(self.delay_seconds)
+            await asyncio.sleep(self.delay_seconds / 2)
 
         lowered = sanitized.casefold()
         topics = [
@@ -235,6 +248,10 @@ class DemoPipeline:
             for topic in _DEMO_TOPICS
             if all(any(stem in lowered for stem in group) for group in topic.triggers)
         ]
+        await _report(progress, "searching", len(topics))
+        if self.delay_seconds > 0:
+            await asyncio.sleep(self.delay_seconds / 2)
+
         category = topics[0].category if topics else "Ogólne / Inne"
         analysis = AnalysisDataContainer(
             source_text=sanitized,
