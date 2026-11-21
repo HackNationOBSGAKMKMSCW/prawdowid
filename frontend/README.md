@@ -22,6 +22,20 @@ npm run build      # kontrola typów + build produkcyjny do dist/
 npm run lint
 ```
 
+### Test na telefonie (Wi-Fi albo Tailscale)
+
+- **Ta sama sieć Wi-Fi:** `npm run dev:host`, potem na telefonie adres `Network`
+  z terminala, np. `http://192.168.1.23:5173`.
+- **Tailscale, adres IP:** `npm run dev:host`, potem `http://100.x.y.z:5173`
+  (IP Maca z aplikacji Tailscale).
+- **Tailscale z HTTPS (zalecane):** `npm run dev` (bez `--host`) i w drugim
+  terminalu `tailscale serve --bg 5173`. Strona jest pod
+  `https://<nazwa-maca>.<tailnet>.ts.net` tylko w Twoim tailnecie. HTTPS jest
+  potrzebny m.in. do kopiowania linku przez schowek. Wyłączenie:
+  `tailscale serve --https=443 off`.
+
+Domeny `.ts.net` są dopuszczone w `vite.config.ts` (`allowedHosts`).
+
 Domyślnie aplikacja działa na **danych przykładowych** (`VITE_API_MODE=mock`)
 i nie potrzebuje backendu. Pasek „DEMO” na górze pokazuje wszystkie
 scenariusze: wynik ze źródłami, analiza dat i manipulacji, link, opinia,
