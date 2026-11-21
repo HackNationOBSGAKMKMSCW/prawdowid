@@ -20,6 +20,7 @@ da się wykluczyć samą instrukcją:
 Każda zmiana względem odpowiedzi modelu trafia do `adjustments`.
 """
 
+import re
 from collections.abc import Sequence
 
 from .freshness import is_archival
@@ -126,7 +127,42 @@ def consistency_problems(parsed: ModelVerdict, sources: Sequence[ReferenceSource
             "(nierozstrzygnięta sprzeczność albo źródło wyjaśnione, które nie powinno być "
             "dowodem „zaprzecza” – R10)"
         )
+    problems.extend(_misapplied_freshness(parsed, by_id))
     return problems
+
+
+_CURRENT_SOURCE_RE = re.compile(r"\baktualn|\bnieaktualn|\barchiwaln", re.IGNORECASE)
+
+
+def _misapplied_freshness(parsed: ModelVerdict, by_id: dict[str, ReferenceSource]) -> list[str]:
+    """„Brak danych”, bo rzekomo brak aktualnego źródła, choć istotne źródło jest aktualne.
+
+    Aktualne = ma datę publikacji i mieści się w limicie (brak flagi archiwalnej).
+    O aktualności rozstrzyga limit, nie rok danych w treści (R11).
+    """
+    if parsed.verdict != NO_DATA:
+        return []
+    reasons = " ".join([*parsed.missing_information, *parsed.reasoning_steps])
+    if not _CURRENT_SOURCE_RE.search(reasons):
+        return []
+    current = [
+        review.source_id
+        for review in parsed.sources_reviewed
+        if review.relevant
+        and (source := by_id.get(review.source_id)) is not None
+        and source.age_days is not None
+        and source.age_days >= 0
+        and not source.freshness_flags
+    ]
+    if not current:
+        return []
+    return [
+        "werdykt „brak_wystarczajacych_danych” uzasadniony brakiem aktualnego źródła, choć "
+        f"istotne źródła {', '.join(f'[{s}]' for s in current)} są aktualne (mieszczą się "
+        "w limicie, nie mają atrybutu archival). Według R11 o aktualności rozstrzyga wyłącznie "
+        "limit, a aktualne źródło rozstrzyga stan obecny także wtedy, gdy podaje dane za "
+        "wcześniejszy okres – oceń twierdzenie ponownie na podstawie ich treści"
+    ]
 
 
 def apply_checks(

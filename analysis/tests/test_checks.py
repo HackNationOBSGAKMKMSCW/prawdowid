@@ -157,3 +157,40 @@ def test_fresh_evidence_keeps_confidence_and_has_no_flag():
     result = check(model_answer(), [fresh])
     assert result.confidence == "wysoka" and result.freshness_flags == []
     assert result.evidence[0].fetched_at == "2026-11-21T12:00:00Z"
+
+
+def _no_data_for_lack_of_current_source():
+    return model_answer(
+        verdict="brak_wystarczajacych_danych",
+        evidence=[],
+        missing_information=["Brak aktualnego źródła potwierdzającego stan na dzień analizy."],
+        sources_reviewed=[review("KOR-1")],
+    )
+
+
+def test_freshness_misapplied_to_current_source_is_reported_for_repair():
+    from prawdowid_analysis.checks import consistency_problems
+
+    current = source(published_at="2025-01-10", age_days=680)
+    problems = consistency_problems(
+        ModelVerdict.model_validate(_no_data_for_lack_of_current_source()), [current]
+    )
+    assert len(problems) == 1 and "[KOR-1]" in problems[0] and "R11" in problems[0]
+
+
+def test_lack_of_current_source_is_legit_when_sources_are_archival_or_undated():
+    from prawdowid_analysis.checks import consistency_problems
+
+    parsed = ModelVerdict.model_validate(_no_data_for_lack_of_current_source())
+    archival = source(age_days=4000, freshness_flags=["material_archiwalny"])
+    undated = source(freshness_flags=["brak_daty_publikacji"])
+    assert consistency_problems(parsed, [archival]) == []
+    assert consistency_problems(parsed, [undated]) == []
+    other_reason = model_answer(
+        verdict="brak_wystarczajacych_danych",
+        evidence=[],
+        missing_information=["Brak informacji o dacie."],
+        sources_reviewed=[review("KOR-1")],
+    )
+    current = source(age_days=10)
+    assert consistency_problems(ModelVerdict.model_validate(other_reason), [current]) == []
