@@ -1,65 +1,73 @@
-"""Klient LLM przez API zgodne z OpenAI, dostosowany do FreeLLMAPI.
+"""Klient LLM przez FreeLLMAPI, wywoływany tak jak w sekcji „Using the API” jego README.
 
-FreeLLMAPI (https://github.com/tashfeenahmed/freellmapi) to samodzielnie hostowany proxy
-z jednym endpointem `/v1/chat/completions` przed wieloma darmowymi dostawcami, z
-automatycznym przełączaniem (failover) przy 429/5xx. Ten klient:
+FreeLLMAPI (https://github.com/tashfeenahmed/freellmapi) to proxy zgodne z OpenAI przed
+wieloma darmowymi dostawcami, z automatycznym przełączaniem (failover). Wzorzec z README:
 
-- bierze konfigurację wyłącznie z analysis/.env (CONTRIBUTING.md, sekcja 5):
-  `OPENAI_BASE_URL` (np. `http://<host>:3001/v1`), `OPENAI_API_KEY` (klucz `freellmapi-…`
-  ze strony Keys w panelu), `LLM_MODEL` (`auto`, `auto:<profil>` albo przypięty model),
-  opcjonalnie `LLM_TIMEOUT_S`. Nazwa modelu nie jest wpisana w kodzie;
-- odczytuje nagłówek `X-Routed-Via: <platforma>/<model>`, bo przy `auto` dopiero on mówi,
-  który model naprawdę odpowiedział (trafia do `run.models`), oraz `X-Fallback-Attempts`;
-- `response_format` jest przekazywany „per dostawca”: gdy dostawca go odrzuci (400/422),
-  ponawia raz bez niego. Parser w `stance.py` i tak wyciąga JSON z tekstu;
-- każdą awarię zamienia na `LLMError` z `kind` (np. `quota_exceeded` przy 429 z
-  wyczerpanym budżetem, z `retry_after_s`). Potok zamienia to na status `error`,
-  nigdy na werdykt. Ponowień między dostawcami nie robimy: robi je router FreeLLMAPI.
+    client = OpenAI(base_url="http://<host>:3001/v1", api_key="freellmapi-…")
+    response = client.chat.completions.with_raw_response.create(model="auto", messages=[...])
+    completion = response.parse()
+    completion.choices[0].message.content
+    response.headers.get("x-routed-via")      # który dostawca/model naprawdę odpowiedział
 
-Funkcje wołające model (np. `stance.py`) przyjmują klienta jako parametr (`ChatClient`),
-więc w testach podstawia się atrapę bez sieci. Działa też z innym API zgodnym z OpenAI
-(np. Ollama): brak nagłówków FreeLLMAPI nie jest błędem.
+Konfiguracja wyłącznie z analysis/.env (CONTRIBUTING.md, sekcja 5):
+- `OPENAI_BASE_URL`: adres FreeLLMAPI z `/v1`,
+- `OPENAI_API_KEY`: zunifikowany klucz `freellmapi-…` ze strony Keys w panelu,
+- `LLM_MODEL`: puste = `auto` (router wybiera), albo `auto:fast`, `auto:smart`, profil
+  lub id modelu,
+- `LLM_TIMEOUT_S`: opcjonalny limit czasu klienta.
+
+Każda awaria (brak konfiguracji, timeout, błąd dostawcy, pusta odpowiedź) to `LLMError`
+z `kind`; potok zamienia go na status `error`, nigdy na werdykt. Funkcje wołające model
+(np. `stance.py`) przyjmują klienta jako parametr (`ChatClient`), więc testy działają bez sieci.
 """
 
 import os
-import time
 from dataclasses import dataclass
 from pathlib import Path
+from time import perf_counter
 from typing import Protocol
 from urllib.parse import unquote
 
 import httpx
+import openai
 from dotenv import load_dotenv
+from openai import OpenAI
 
 # analysis/.env: trzy poziomy nad tym plikiem (verdict -> prawdowid_analysis -> src -> analysis)
 _ENV_PATH = Path(__file__).resolve().parents[3] / ".env"
 
+# Wartość routera z README: „let the router pick”. To nie wybór modelu, tylko delegacja do routera.
+ROUTER_MODEL = "auto"
 # Router FreeLLMAPI ma domyślny budżet failoveru 45 s (FALLBACK_TIME_BUDGET_MS),
-# więc limit klienta musi być wyraźnie dłuższy, żeby nie przerywać trwającego failoveru.
+# więc limit klienta musi być dłuższy, żeby nie przerywać trwającego failoveru.
 DEFAULT_TIMEOUT_S = 60.0
-# Statusy, przy których dostawca mógł odrzucić `response_format`.
+# Statusy, przy których wybrany przez router dostawca mógł odrzucić `response_format`.
 _JSON_MODE_REJECTED = (400, 422)
 
 
 class LLMError(Exception):
-    """Błąd techniczny LLM. `kind` opisuje przyczynę (do logów i `run.errors`).
+    """Błąd techniczny LLM. `kind`: `config`, `connection`, `timeout`, `rate_limited`,
+    `quota_exceeded`, `provider_error`, `bad_request`, `bad_response`."""
 
-    kind: `config`, `connection`, `timeout`, `rate_limited`, `quota_exceeded`,
-    `provider_error`, `bad_request`, `bad_response`.
-    """
-
-    def __init__(self, message: str, kind: str = "provider_error", **extra) -> None:
+    def __init__(
+        self,
+        message: str,
+        kind: str = "provider_error",
+        *,
+        status_code: int | None = None,
+        retry_after_s: float | None = None,
+    ) -> None:
         super().__init__(message)
         self.kind = kind
-        self.status_code: int | None = extra.get("status_code")
-        self.retry_after_s: float | None = extra.get("retry_after_s")
+        self.status_code = status_code
+        self.retry_after_s = retry_after_s
 
 
 @dataclass(frozen=True)
 class LLMSettings:
     base_url: str
-    model: str
-    api_key: str | None = None
+    api_key: str
+    model: str = ROUTER_MODEL
     timeout_s: float = DEFAULT_TIMEOUT_S
 
     @classmethod
@@ -67,18 +75,20 @@ class LLMSettings:
         load_dotenv(_ENV_PATH, override=False)
 
         def env(name: str) -> str:
-            return (os.getenv(name) or "").strip()
+            return (os.getenv(name) or "").strip().strip('"').strip("'")
 
-        base_url, model = env("OPENAI_BASE_URL"), env("LLM_MODEL")
-        missing = [n for n, v in (("OPENAI_BASE_URL", base_url), ("LLM_MODEL", model)) if not v]
+        base_url, api_key = env("OPENAI_BASE_URL"), env("OPENAI_API_KEY")
+        missing = [
+            n for n, v in (("OPENAI_BASE_URL", base_url), ("OPENAI_API_KEY", api_key)) if not v
+        ]
         if missing:
             raise LLMError(
                 f"Brak konfiguracji LLM w analysis/.env: {', '.join(missing)}", kind="config"
             )
         return cls(
             base_url=base_url.rstrip("/"),
-            model=model,
-            api_key=env("OPENAI_API_KEY") or None,
+            api_key=api_key,
+            model=env("LLM_MODEL") or ROUTER_MODEL,
             timeout_s=float(env("LLM_TIMEOUT_S") or DEFAULT_TIMEOUT_S),
         )
 
@@ -86,12 +96,13 @@ class LLMSettings:
 @dataclass(frozen=True)
 class LLMResult:
     text: str
-    model: str  # model, który faktycznie odpowiedział (X-Routed-Via), inaczej z odpowiedzi
+    model: str  # dostawca/model z `x-routed-via`; bez nagłówka: model z odpowiedzi
     tokens_in: int
     tokens_out: int
     duration_ms: int
-    requested_model: str = ""  # wartość LLM_MODEL, np. `auto`
-    fallback_attempts: int = 0  # ile razy router FreeLLMAPI przełączył dostawcę
+    requested_model: str = ""  # wysłane `model`, np. `auto`
+    routed_via: str | None = None  # surowa wartość nagłówka `x-routed-via`
+    fallback_attempts: int = 0  # `x-fallback-attempts`: ile razy router zmienił dostawcę
 
     def as_run_model(self) -> dict:
         """Wpis do `run.models` z CONTRACTS.md."""
@@ -111,23 +122,14 @@ class ChatClient(Protocol):
     ) -> LLMResult: ...
 
 
-def _retry_after(resp: httpx.Response) -> float | None:
-    try:
-        return float(resp.headers["retry-after"])
-    except (KeyError, ValueError):
-        return None
+def _error_code(exc: openai.APIStatusError) -> str:
+    body = exc.body if isinstance(exc.body, dict) else {}
+    err = body.get("error", body)
+    return str(err.get("code") or "") if isinstance(err, dict) else ""
 
 
-def _error_code(resp: httpx.Response) -> str:
-    try:
-        err = resp.json().get("error")
-    except ValueError:
-        return ""
-    return str(err.get("code") or err.get("type") or "") if isinstance(err, dict) else ""
-
-
-def _http_error(resp: httpx.Response) -> LLMError:
-    status, code = resp.status_code, _error_code(resp)
+def _status_error(exc: openai.APIStatusError) -> LLMError:
+    status, code = exc.status_code, _error_code(exc)
     if status == 429:
         kind = "quota_exceeded" if code == "quota_exceeded" else "rate_limited"
     elif status in (400, 404, 413, 422):
@@ -136,39 +138,48 @@ def _http_error(resp: httpx.Response) -> LLMError:
         kind = "timeout"
     else:
         kind = "provider_error"
+    try:
+        retry_after = float(exc.response.headers["retry-after"])
+    except (KeyError, ValueError):
+        retry_after = None
     detail = f" ({code})" if code else ""
     return LLMError(
         f"LLM zwrócił HTTP {status}{detail}",
         kind=kind,
         status_code=status,
-        retry_after_s=_retry_after(resp),
+        retry_after_s=retry_after,
     )
 
 
-class OpenAIChatClient:
-    """Minimalny klient `/chat/completions` na httpx (bez SDK dostawcy)."""
+class FreeLLMClient:
+    """Klient czatu przez FreeLLMAPI (działa też z innym API zgodnym z OpenAI)."""
 
-    def __init__(self, settings: LLMSettings, http: httpx.Client | None = None) -> None:
+    def __init__(self, settings: LLMSettings, http_client: httpx.Client | None = None) -> None:
         self.settings = settings
         self.model = settings.model
-        headers = {"Authorization": f"Bearer {settings.api_key}"} if settings.api_key else {}
-        self._http = http or httpx.Client(
-            base_url=settings.base_url, headers=headers, timeout=settings.timeout_s
+        self._client = OpenAI(
+            base_url=settings.base_url,
+            api_key=settings.api_key,
+            timeout=settings.timeout_s,
+            # Failover między dostawcami robi router FreeLLMAPI; SDK nie ponawia,
+            # m.in. żeby nie czekać na Retry-After przy wyczerpanym limicie.
+            max_retries=0,
+            http_client=http_client,
         )
 
     @classmethod
-    def from_env(cls) -> "OpenAIChatClient":
+    def from_env(cls) -> "FreeLLMClient":
         return cls(LLMSettings.from_env())
 
-    def _post(self, body: dict) -> httpx.Response:
+    def _create(self, **kwargs):
         try:
-            return self._http.post("/chat/completions", json=body)
-        except httpx.TimeoutException as exc:
+            return self._client.chat.completions.with_raw_response.create(**kwargs)
+        except openai.APITimeoutError as exc:
             raise LLMError("Przekroczono czas oczekiwania na LLM", kind="timeout") from exc
-        except httpx.HTTPError as exc:
-            raise LLMError(
-                f"Błąd połączenia z LLM: {type(exc).__name__}", kind="connection"
-            ) from exc
+        except openai.APIConnectionError as exc:
+            raise LLMError("Brak połączenia z FreeLLMAPI", kind="connection") from exc
+        except openai.APIStatusError as exc:
+            raise _status_error(exc) from exc
 
     def chat(
         self,
@@ -178,64 +189,60 @@ class OpenAIChatClient:
         temperature: float = 0.0,
         max_tokens: int | None = None,
     ) -> LLMResult:
-        body: dict = {"model": self.model, "messages": messages, "temperature": temperature}
+        kwargs: dict = {"model": self.model, "messages": messages, "temperature": temperature}
         if max_tokens:
-            body["max_tokens"] = max_tokens
+            kwargs["max_tokens"] = max_tokens
         if json_mode:
-            body["response_format"] = {"type": "json_object"}
+            kwargs["response_format"] = {"type": "json_object"}
 
-        started = time.perf_counter()
-        resp = self._post(body)
-        if json_mode and resp.status_code in _JSON_MODE_REJECTED:
-            # Dostawca wybrany przez router mógł nie obsługiwać response_format.
-            body.pop("response_format")
-            resp = self._post(body)
-        duration_ms = int((time.perf_counter() - started) * 1000)
-        if resp.is_error:
-            raise _http_error(resp)
+        started = perf_counter()
+        try:
+            response = self._create(**kwargs)
+        except LLMError as exc:
+            # README: response_format jest przekazywany „per dostawca”. Gdy dostawca
+            # wybrany przez router go odrzuci, ponawiamy raz bez niego (parser i tak
+            # wyciąga JSON z tekstu).
+            if not (json_mode and exc.status_code in _JSON_MODE_REJECTED):
+                raise
+            kwargs.pop("response_format")
+            response = self._create(**kwargs)
+        duration_ms = int((perf_counter() - started) * 1000)
 
         try:
-            data = resp.json()
-        except ValueError as exc:
-            raise LLMError(
-                "LLM zwrócił odpowiedź, która nie jest JSON", kind="bad_response"
-            ) from exc
-        choices = data.get("choices") if isinstance(data, dict) else None
-        if not choices:
+            completion = response.parse()
+        except Exception as exc:  # noqa: BLE001 - każda zła odpowiedź to status, nie werdykt
+            raise LLMError("LLM zwrócił nieczytelną odpowiedź", kind="bad_response") from exc
+        if not getattr(completion, "choices", None):
             raise LLMError("LLM zwrócił pustą odpowiedź", kind="bad_response")
 
-        usage = data.get("usage") or {}
-        routed_via = unquote(resp.headers.get("x-routed-via", "")).strip()
+        routed_via = response.headers.get("x-routed-via")
+        routed_via = unquote(routed_via).strip() if routed_via else None
         try:
-            attempts = int(resp.headers.get("x-fallback-attempts", "0"))
+            attempts = int(response.headers.get("x-fallback-attempts") or 0)
         except ValueError:
             attempts = 0
+        usage = completion.usage
         return LLMResult(
-            text=(choices[0].get("message") or {}).get("content") or "",
-            model=routed_via or data.get("model") or self.model,
-            tokens_in=int(usage.get("prompt_tokens") or 0),
-            tokens_out=int(usage.get("completion_tokens") or 0),
+            text=completion.choices[0].message.content or "",
+            model=routed_via or completion.model or self.model,
+            tokens_in=usage.prompt_tokens if usage else 0,
+            tokens_out=usage.completion_tokens if usage else 0,
             duration_ms=duration_ms,
             requested_model=self.model,
+            routed_via=routed_via,
             fallback_attempts=attempts,
         )
 
-    def list_models(self, available_only: bool = True) -> list[str]:
-        """Modele z `/models`. W FreeLLMAPI `available=true` zwraca tylko te z aktywnym kluczem
-        (bez tego katalog jest pełny); inne API ignorują ten parametr."""
-        params = {"available": "true"} if available_only else None
+    def list_models(self) -> list[str]:
         try:
-            resp = self._http.get("/models", params=params)
-            resp.raise_for_status()
-            return sorted(m["id"] for m in resp.json().get("data", []))
-        except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
+            return sorted(m.id for m in self._client.models.list())
+        except openai.OpenAIError as exc:
             raise LLMError(
                 f"Nie udało się pobrać listy modeli: {type(exc).__name__}", kind="connection"
             ) from exc
 
 
 def is_router_model(model: str) -> bool:
-    """`auto`, `auto:<profil>` i `fusion` to wirtualne modele routera FreeLLMAPI,
-    których nie ma na liście `/models`."""
+    """`auto`, `auto:<strategia/profil>` i `fusion` to wirtualne modele routera FreeLLMAPI."""
     m = model.strip().lower()
-    return m == "auto" or m.startswith("auto:") or m == "fusion"
+    return m == ROUTER_MODEL or m.startswith(ROUTER_MODEL + ":") or m == "fusion"

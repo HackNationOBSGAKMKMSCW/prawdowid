@@ -13,6 +13,7 @@ dependencies = [
   "scikit-learn",
   "rapidfuzz",
   "httpx",
+  "openai>=1.40",
   "python-dotenv",
 ]
 

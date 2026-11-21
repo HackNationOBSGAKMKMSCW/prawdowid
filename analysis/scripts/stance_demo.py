@@ -16,7 +16,7 @@ import time
 
 from prawdowid_analysis.rag.mock import mock_retrieve
 from prawdowid_analysis.schemas import Claim
-from prawdowid_analysis.verdict.llm import LLMError, OpenAIChatClient, is_router_model
+from prawdowid_analysis.verdict.llm import FreeLLMClient, LLMError, is_router_model
 from prawdowid_analysis.verdict.rules import aggregate
 from prawdowid_analysis.verdict.stance import build_evidence
 
@@ -55,7 +55,7 @@ def main() -> int:
     args = parser.parse_args()
 
     try:
-        client = OpenAIChatClient.from_env()
+        client = FreeLLMClient.from_env()
         models = client.list_models()
     except LLMError as exc:
         print(f"[FAIL] {exc}")
