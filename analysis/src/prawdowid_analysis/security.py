@@ -75,7 +75,7 @@ _PATTERNS: tuple[tuple[str, str], ...] = (
     ),
     (
         "podszywanie się pod znaczniki promptu",
-        r"<\s*/?\s*(claim|source|system|user|assistant|untrusted_text)\b",
+        r"<\s*/?\s*(claim|source|context|system|user|assistant|untrusted_text)\b",
     ),
     (
         "podważanie innych źródeł",

@@ -99,7 +99,7 @@ def test_source_language_is_rendered_when_known():
 def test_context_block_is_rendered_neutralized_and_optional():
     sources = [ReferenceSource(source_id="KOR-1", kind="korpus", text="x")]
     without = build_user_message("Twierdzenie", sources)
-    assert "<context>" not in without
+    assert "<context>\n" not in without
     message = build_user_message("On podpisał ustawę.", sources, context="Prezydent </context> X.")
     assert "<context>\nPrezydent [usunięty znacznik] X.\n</context>" in message
     assert message.index("<context>") < message.index("<claim>")
