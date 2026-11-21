@@ -1,8 +1,12 @@
 """Ingest źródeł do indeksu z pomijaniem duplikatów.
 
 - `doc_id = "doc_" + sha256(znormalizowany URL)[:12]`
-- ten sam `doc_id` i ten sam `text_hash` -> `skipped`
-- ten sam `doc_id`, inny `text_hash` -> stare chunki usuwane, `replaced`
+- ten sam `doc_id` i ten sam `index_key` -> `skipped`
+- ten sam `doc_id`, inny `index_key` -> stare chunki usuwane, `replaced`
+
+`index_key = text_hash | INGEST_VERSION | max_chars`: zmiana tekstu, logiki ingestu
+(chunking, detektor wstrzyknięć; wtedy podbić `INGEST_VERSION`) albo rozmiaru chunków
+powoduje reindeks dokumentu.
 - duplikat URL w jednej partii -> `skipped`
 """
 
@@ -13,9 +17,11 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from ..schemas import IngestReport, SourceIn
 from .chunking import chunk_text
 from .embed import Embedder
+from .injection import detect_injection
 from .sparse import sparse_vector
 from .store import DENSE, SPARSE, VectorStore
 
+INGEST_VERSION = 2
 _TRACKING_PARAMS = ("utm_", "fbclid", "gclid")
 
 
@@ -45,6 +51,7 @@ def point_id(chunk_id: str) -> str:
 def build_payloads(source: SourceIn, max_chars: int = 800) -> list[dict]:
     doc_id = make_doc_id(source.url)
     text_hash = make_text_hash(source.text)
+    index_key = f"{text_hash}|v{INGEST_VERSION}|{max_chars}"
     payloads = []
     for ch in chunk_text(source.text, max_chars=max_chars):
         payloads.append(
@@ -62,7 +69,8 @@ def build_payloads(source: SourceIn, max_chars: int = 800) -> list[dict]:
                 "char_start": ch.start,
                 "char_end": ch.end,
                 "text_hash": text_hash,
-                "injection_flags": [],
+                "index_key": index_key,
+                "injection_flags": detect_injection(ch.text),
             }
         )
     return payloads
@@ -87,8 +95,9 @@ def ingest_sources(
     max_chars = max_chars or 800
     report = IngestReport()
     seen: set[str] = set()
-    collection_ready = False
+    to_index: list[tuple[str, bool, list[dict]]] = []  # (doc_id, czy zastąpić, payloady)
 
+    # 1. Decyzja per dokument (bez embeddingów)
     for source in sources:
         doc_id = make_doc_id(source.url)
         if doc_id in seen:
@@ -100,29 +109,35 @@ def ingest_sources(
         if not payloads:
             report.skipped += 1
             continue
-        existing = store.get_doc_hash(doc_id)
-        if existing == payloads[0]["text_hash"]:
+        existing = store.get_index_key(doc_id)
+        if existing == payloads[0]["index_key"]:
             report.skipped += 1
             continue
+        to_index.append((doc_id, existing is not None, payloads))
 
-        dense = embedder.embed([p["text"] for p in payloads])
-        if not collection_ready:
-            store.ensure_collection(len(dense[0]))
-            collection_ready = True
-        if existing is not None:
+    if not to_index:
+        return report
+
+    # 2. Jeden batch embeddingów dla całej partii (embedder sam dzieli na porcje)
+    all_payloads = [p for _, _, payloads in to_index for p in payloads]
+    dense = embedder.embed([p["text"] for p in all_payloads])
+    store.ensure_collection(len(dense[0]))
+
+    # 3. Zastąpienie starych wersji i zapis
+    for doc_id, replace, _ in to_index:
+        if replace:
             store.delete_doc(doc_id)
             report.replaced += 1
         else:
             report.added += 1
-
-        store.upsert(
-            [
-                {
-                    "id": point_id(p["chunk_id"]),
-                    "vector": {DENSE: vec, SPARSE: sparse_vector(p["text"])},
-                    "payload": p,
-                }
-                for p, vec in zip(payloads, dense, strict=True)
-            ]
-        )
+    store.upsert(
+        [
+            {
+                "id": point_id(p["chunk_id"]),
+                "vector": {DENSE: vec, SPARSE: sparse_vector(p["text"])},
+                "payload": p,
+            }
+            for p, vec in zip(all_payloads, dense, strict=True)
+        ]
+    )
     return report

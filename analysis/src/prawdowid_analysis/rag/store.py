@@ -15,7 +15,7 @@ KEYWORD_INDEXES = ("doc_id", "source_type", "published_at", "url")
 
 class VectorStore(Protocol):
     def ensure_collection(self, dim: int) -> None: ...
-    def get_doc_hash(self, doc_id: str) -> str | None: ...
+    def get_index_key(self, doc_id: str) -> str | None: ...
     def delete_doc(self, doc_id: str) -> None: ...
     def upsert(self, points: list[dict[str, Any]]) -> None: ...
 
@@ -86,8 +86,8 @@ class QdrantStore:
         self._req("DELETE", self._base)
 
     # ── dokumenty ──
-    def get_doc_hash(self, doc_id: str) -> str | None:
-        """Hash zapisanego dokumentu; None, gdy go nie ma (także gdy brak kolekcji)."""
+    def get_index_key(self, doc_id: str) -> str | None:
+        """Klucz dedupe zapisanego dokumentu; None, gdy go nie ma (także gdy brak kolekcji)."""
         if not self.collection_exists():
             return None
         res = self._req(
@@ -96,11 +96,15 @@ class QdrantStore:
             json={
                 "filter": _filter({"doc_id": doc_id}),
                 "limit": 1,
-                "with_payload": ["text_hash"],
+                "with_payload": ["index_key", "text_hash"],
                 "with_vector": False,
             },
         )["result"]["points"]
-        return res[0]["payload"]["text_hash"] if res else None
+        if not res:
+            return None
+        payload = res[0]["payload"]
+        # punkty sprzed wprowadzenia index_key -> różny klucz -> reindeks
+        return payload.get("index_key") or payload["text_hash"]
 
     def delete_doc(self, doc_id: str) -> None:
         self._req(
@@ -127,6 +131,7 @@ class QdrantStore:
         limit: int,
         prefetch_limit: int,
         filters: dict | None = None,
+        with_dense_vector: bool = False,
     ) -> list[dict]:
         flt = _filter(filters)
         prefetch = [{"query": dense, "using": DENSE, "limit": prefetch_limit, "filter": flt}]
@@ -139,6 +144,7 @@ class QdrantStore:
             "query": {"fusion": "rrf"},
             "limit": limit,
             "with_payload": True,
+            "with_vector": [DENSE] if with_dense_vector else False,
         }
         return self._req("POST", f"{self._base}/points/query", json=body)["result"]["points"]
 

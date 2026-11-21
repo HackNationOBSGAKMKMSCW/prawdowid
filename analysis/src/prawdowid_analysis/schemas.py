@@ -36,6 +36,9 @@ class Passage(BaseModel):
     char_end: int = Field(ge=0)
     text_hash: str = Field(description="sha256 zapisanego clean_text dokumentu")
     rerank_score: float
+    injection_flags: list[str] = Field(
+        default=[], description="Sygnały prób wstrzyknięcia instrukcji wykryte przy ingeście"
+    )
 
 
 class Claim(BaseModel):

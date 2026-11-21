@@ -1,0 +1,9 @@
+{"claim_id": "clm_001", "expected_urls": ["https://example.org/atrapa/paszporty-komunikat", "https://example.org/atrapa/dziennik-ustaw/2026/poz-1450"]}
+{"claim_id": "clm_002", "expected_urls": ["https://example.org/atrapa/fact-check-oplata-paszportowa", "https://example.org/atrapa/paszporty-komunikat"]}
+{"claim_id": "clm_003", "expected_urls": ["https://example.org/atrapa/swiadczenie-wychowawcze"]}
+{"claim_id": "clm_004", "expected_urls": ["https://example.org/atrapa/jakosc-powietrza-przykladowo-2026", "https://example.org/atrapa/portal-lokalny/smog-rekord"]}
+{"claim_id": "clm_005", "expected_urls": ["https://example.org/atrapa/badanie-szczepienia-grypa-seniorzy"]}
+{"claim_id": "clm_006", "expected_urls": ["https://example.org/atrapa/depesza-koleje-regionalne"]}
+{"claim_id": "clm_007", "expected_urls": ["https://example.org/atrapa/blog/vat-zywnosc"]}
+{"claim_id": "clm_008", "expected_urls": ["https://example.org/atrapa/statystyki-paszportowe-2026"]}
+{"claim_id": "clm_009", "expected_urls": []}

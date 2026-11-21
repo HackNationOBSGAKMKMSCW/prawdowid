@@ -77,11 +77,16 @@ Modele: `analysis/src/prawdowid_analysis/schemas.py` (`SourceIn`, `AnalysisInput
   "char_start": 1200,
   "char_end": 1340,
   "text_hash": "sha256:...",
-  "rerank_score": 0.91
+  "rerank_score": 0.91,
+  "injection_flags": []
 }
 ```
 
 - `source_type`: `official_primary`, `public_data`, `fact_check`, `news_agency`, `research`, `media`.
+- `rerank_score`: bezwzględna trafność pasażu dla zapytania (obecnie cosinus bge-m3, ok. 0–1);
+  można na nim oprzeć próg wstrzymania się. Kolejność wyników jest malejąca po tym polu.
+- `injection_flags`: sygnały prób wstrzyknięcia wykryte przy ingeście (`ignore_instructions`,
+  `verdict_command`, `role_override`, `prompt_markup`); pusta lista = brak sygnałów.
 - `char_start` i `char_end` dotyczą dokładnie zapisanego `clean_text` dokumentu. `text_hash` pozwala wykryć, że dokument zmieniono i offsety są nieaktualne.
 
 ## `claim`
@@ -168,3 +173,4 @@ Modele: `analysis/src/prawdowid_analysis/schemas.py` (`SourceIn`, `AnalysisInput
 | --- | --- | --- |
 | 2026-11-21 | Pierwszy szkic | zespół |
 | 2026-11-21 | Wejście/wyjście analizy (`AnalysisInput`, `AnalysisOutput`), reguły `doc_id`/dedupe, `claim.run_id` opcjonalne | osoba A |
+| 2026-11-21 | `passage.rerank_score` = cosinus po rerankingu (nie RRF); nowe pole `passage.injection_flags` (domyślnie `[]`) | osoba A |

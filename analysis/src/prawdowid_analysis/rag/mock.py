@@ -11,6 +11,7 @@ import re
 from dataclasses import dataclass
 
 from ..schemas import Passage
+from .injection import detect_injection
 
 
 @dataclass(frozen=True)
@@ -131,6 +132,7 @@ def _mock_passages() -> list[Passage]:
                     char_end=start + len(chunk),
                     text_hash=text_hash,
                     rerank_score=0.0,
+                    injection_flags=detect_injection(chunk),
                 )
             )
     return passages
