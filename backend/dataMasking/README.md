@@ -15,15 +15,15 @@ wartości tego samego typu dostają kolejne numery. Znaczniki są nieodwracalne.
 
 ## Co jest maskowane
 
-| Typ | Jak rozpoznajemy |
-| --- | --- |
+| Typ                                                   | Jak rozpoznajemy                                                                        |
+| ----------------------------------------------------- | --------------------------------------------------------------------------------------- |
 | `PESEL`, `NIP`, `REGON`, `NR_KONTA`, `KARTA`, `DOWOD` | wzorzec + **suma kontrolna**; słowo-klucz przed wartością („PESEL: …”) pomija walidację |
-| `EMAIL`, `IP` | wzorzec (IP z walidacją zakresu, bez „wersja 1.2.3.4”) |
-| `TELEFON` | `+48`/`0048`, komórkowe 9 cyfr od 4–8, stacjonarne `(22) 123 45 67` |
-| `ADRES` | `ul.`/`al.`/`pl.`/`os.` + nazwa + numer, albo „mieszkam przy …”, „adres: …” |
-| `KOD_POCZTOWY` | `00-000` przed nazwą miejscowości |
-| `DATA_URODZENIA` | data po „ur.”, „urodził się”, „data urodzenia” |
-| `PASZPORT`, `NR_REJESTRACYJNY` | wartość po słowie „paszport” / „nr rej.”, „tablice” |
+| `EMAIL`, `IP`                                         | wzorzec (IP z walidacją zakresu, bez „wersja 1.2.3.4”)                                  |
+| `TELEFON`                                             | `+48`/`0048`, komórkowe 9 cyfr od 4–8, stacjonarne `(22) 123 45 67`                     |
+| `ADRES`                                               | `ul.`/`al.`/`pl.`/`os.` + nazwa + numer, albo „mieszkam przy …”, „adres: …”             |
+| `KOD_POCZTOWY`                                        | `00-000` przed nazwą miejscowości                                                       |
+| `DATA_URODZENIA`                                      | data po „ur.”, „urodził się”, „data urodzenia”                                          |
+| `PASZPORT`, `NR_REJESTRACYJNY`                        | wartość po słowie „paszport” / „nr rej.”, „tablice”                                     |
 
 ## Czego nie rusza (ochrona faktów)
 
