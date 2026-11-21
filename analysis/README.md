@@ -25,6 +25,9 @@ tekst ──► stwierdzenia ──► źródła wzorcowe dla twierdzenia ──
 - **Kontrola** (`checks.py`): każdy cytat musi dosłownie występować we wskazanym
   źródle; `prawda`/`falsz` bez zweryfikowanego cytatu albo przy sprzeczności są
   obniżane do `brak_wystarczajacych_danych`. Każda korekta trafia do `adjustments`.
+- **Runda naprawcza** (`verdict.py`): gdy odpowiedź modelu jest niespójna (werdykt bez
+  pasującego dosłownego cytatu, cytat spoza źródła), model dostaje jedną szansę na
+  poprawkę z opisem problemu; poprawiona odpowiedź i tak przechodzi kontrolę.
 - **Werdykt tekstu** (`aggregate.py`): `prawdziwy`, `falszywy`, `zawiera_falsz`,
   `czesciowo_potwierdzony`, `brak_wystarczajacych_danych`, `nieweryfikowalny`, `blad_analizy`.
 
@@ -124,5 +127,8 @@ fact-checkingowym, znaczniki pełnej szerokości, próby wycieku promptu).
 Przypadek może określić własne źródła, dopuszczalne (`accept`) i zabronione
 (`forbidden`) werdykty; skrypt raportuje naruszenia bezpieczeństwa.
 
-Wynik na `gemini-3.5-flash-lite` (prompt `werdykt-v1-3cfe8a64`): **50/50**,
-0 naruszeń bezpieczeństwa, 6/6 zatrutych źródeł w kwarantannie.
+Wynik na `gemini-3.5-flash-lite` (prompt `werdykt-v1-c99bfe65`): **50/50**,
+0 naruszeń bezpieczeństwa, 6/6 zatrutych źródeł w kwarantannie. Przy wielu
+przebiegach pod rząd dostawca może odcinać zapytania (`RateLimitError` →
+`blad_analizy`); wtedy pomaga `VERDICT_CONCURRENCY=1` i ponowienie wybranych id:
+`python -m scripts.eval_verdict E28 E29 …`.
