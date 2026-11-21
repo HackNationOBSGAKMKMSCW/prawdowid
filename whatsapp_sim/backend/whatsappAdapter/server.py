@@ -16,6 +16,7 @@ from fastapi.responses import StreamingResponse
 from observability import ObservabilityMiddleware
 from pydantic import ValidationError
 
+from .admin_bridge import monitor_from_environment
 from .bot import BOT_NAME, SprawdzToBot
 from .cloud_api import parse_webhook
 from .pipeline import DemoPipeline, FactCheckPipeline, LivePipeline
@@ -34,7 +35,7 @@ def pipeline_from_environment() -> FactCheckPipeline:
 
 
 def create_app(bot: SprawdzToBot | None = None) -> FastAPI:
-    bot = bot or SprawdzToBot(pipeline_from_environment())
+    bot = bot or SprawdzToBot(pipeline_from_environment(), monitor=monitor_from_environment())
     app = FastAPI(title="SprawdzTo WhatsApp adapter", docs_url="/api/whatsapp/docs")
     app.add_middleware(ObservabilityMiddleware, skip_paths=("/api/whatsapp/health",))
 

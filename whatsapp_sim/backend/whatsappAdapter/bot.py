@@ -11,6 +11,7 @@ from typing import Any
 from observability import log_abstain
 from textAnalysis.analysis import AnalysisConfigurationError, AnalysisError, InputSanitizer
 
+from .admin_bridge import AdminMonitor, AdminSession
 from .cloud_api import (
     IncomingKind,
     IncomingMessage,
@@ -134,9 +135,17 @@ def _normalize_command(text: str) -> str:
 class SprawdzToBot:
     """Answer WhatsApp messages by running the configured fact-check pipeline."""
 
-    def __init__(self, pipeline: FactCheckPipeline, *, check_timeout: float = 90.0) -> None:
+    def __init__(
+        self,
+        pipeline: FactCheckPipeline,
+        *,
+        check_timeout: float = 90.0,
+        monitor: AdminMonitor | None = None,
+    ) -> None:
         self.pipeline = pipeline
         self.check_timeout = check_timeout
+        # Rejestr panelu admina: logi, blokady, luki informacyjne, alerty dezinformacji.
+        self.monitor = monitor
 
     @property
     def mode(self) -> str:
@@ -222,13 +231,27 @@ class SprawdzToBot:
             if stage == "searching":
                 await notify(searching_status(count))
 
+        admin = AdminSession(self.monitor)
+        refusal = admin.screen(to, text)
+        if refusal is not None:
+            print(
+                f"[whatsappAdapter] Wiadomość {message.message_id}: odrzucona przez monitor.",
+                flush=True,
+            )
+            return [text_message(to, refusal)]
+
         card = None
+        report = None
+        failure: str | None = None
         try:
             async with asyncio.timeout(self.check_timeout):
                 await notify(ANALYZING_STATUS)
                 report = await self.pipeline.check(text, progress=on_progress)
             card = verdict_card(report)
             body = format_report(report, headline=card is None)
+            info_gap = admin.complete(report)
+            if info_gap:
+                body = f"{body}\n\nℹ️ {info_gap}"
             if message.frequently_forwarded:
                 body = f"{body}\n\n{FREQUENTLY_FORWARDED_NOTE}"
             elif message.forwarded:
@@ -236,16 +259,22 @@ class SprawdzToBot:
         except TimeoutError:
             log_abstain("timeout", channel="whatsapp", timeout_s=self.check_timeout)
             body = TIMEOUT_TEXT
+            failure = "timeout"
         except AnalysisConfigurationError:
             log_abstain("not_configured", channel="whatsapp")
             body = NOT_CONFIGURED_TEXT
+            failure = "not_configured"
         except AnalysisError:
             log_abstain("analysis_failed", channel="whatsapp")
             body = ANALYSIS_FAILED_TEXT
+            failure = "analysis_failed"
         except Exception as exc:  # noqa: BLE001 - the chat must always get an answer
             print(f"[whatsappAdapter] Błąd: {type(exc).__name__}.", flush=True)
             log_abstain("pipeline_error", channel="whatsapp", error=type(exc).__name__)
             body = GENERIC_ERROR_TEXT
+            failure = f"pipeline_error:{type(exc).__name__}"
+        if failure is not None:
+            admin.complete(error=failure)
         print(
             f"[whatsappAdapter] Wiadomość {message.message_id}: odpowiedź po "
             f"{time.perf_counter() - started_at:.1f}s.",
