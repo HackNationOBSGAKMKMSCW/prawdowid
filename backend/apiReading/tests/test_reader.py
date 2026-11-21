@@ -4,9 +4,16 @@ from typing import Any
 
 import httpx
 import pytest
+import respx
 from apiReading import registry
 from apiReading.base import BaseApiClient, RequestSpec
-from apiReading.clients import GoogleFactCheckClient
+from apiReading.clients import (
+    DaneGovClient,
+    EurLexClient,
+    GoogleFactCheckClient,
+    SejmApiClient,
+    SejmEliClient,
+)
 from apiReading.exceptions import ApiHttpError, InvalidFiltersError, NoSourcesAvailableError
 from apiReading.models import Category, FetchResult, Item, ReadingRequest
 from apiReading.reader import read
@@ -14,12 +21,20 @@ from apiReading.registry import CLIENTS_BY_CATEGORY, clients_for_categories
 
 OTHER_API_URL = "https://api.other.invalid/search"
 GOOGLE_API_URL = "https://factchecktools.googleapis.com/v1alpha1/claims:search"
+SEJM_ELI_DETAIL_URL = "https://api.sejm.gov.pl/eli/acts/DU/2024/1984"
+SEJM_ELI_SEARCH_URL = "https://api.sejm.gov.pl/eli/acts/search"
+SEJM_PROCESS_URL = "https://api.sejm.gov.pl/sejm/term10/processes"
+EURLEX_SPARQL_URL = "https://publications.europa.eu/webapi/rdf/sparql"
+DANE_GOV_URL = "https://api.dane.gov.pl/datasets"
 
 
 @pytest.mark.asyncio
 async def test_article_extract_category_is_internal_and_not_searchable() -> None:
     assert clients_for_categories([Category.ARTICLE_EXTRACT]) == ([], [Category.ARTICLE_EXTRACT])
     assert CLIENTS_BY_CATEGORY[Category.FACT_CHECK] == (GoogleFactCheckClient,)
+    assert CLIENTS_BY_CATEGORY[Category.LEGAL_ACT] == (SejmEliClient, EurLexClient)
+    assert CLIENTS_BY_CATEGORY[Category.LEGISLATIVE_PROCESS] == (SejmApiClient,)
+    assert CLIENTS_BY_CATEGORY[Category.OPEN_DATA] == (DaneGovClient,)
 
     with pytest.raises(NoSourcesAvailableError):
         await read(
@@ -49,6 +64,13 @@ class _OtherClient(BaseApiClient):
             items=[Item(id=str(item["id"]), source=self.name, payload=item) for item in payload],
             fetched_at=datetime.now(UTC),
         )
+
+
+class _KeylessClient(_OtherClient):
+    name = "keyless"
+    base_url = "https://api.keyless.invalid"
+    supported_categories = frozenset({Category.LEGAL_ACT})
+    requires_api_key = False
 
 
 def test_reading_request_validates_and_is_immutable() -> None:
@@ -162,6 +184,116 @@ async def test_read_missing_key_returns_auth_outcome_without_request() -> None:
     assert result.results[0].error is not None
     assert result.results[0].error.source == "google_fact_check"
     assert result.items == []
+
+
+@pytest.mark.asyncio
+async def test_read_allows_client_without_api_key(monkeypatch) -> None:
+    monkeypatch.setitem(registry.CLIENTS_BY_CATEGORY, Category.LEGAL_ACT, (_KeylessClient,))
+    client = httpx.AsyncClient(
+        transport=httpx.MockTransport(
+            lambda _: httpx.Response(200, json=[{"id": "act-1", "title": "Act"}])
+        )
+    )
+
+    try:
+        result = await read(
+            ReadingRequest(query="Act", categories=[Category.LEGAL_ACT]),
+            http_client=client,
+        )
+    finally:
+        await client.aclose()
+
+    assert result.results[0].error is None
+    assert result.results[0].result is not None
+    assert [item.id for item in result.items] == ["act-1"]
+
+
+@pytest.mark.asyncio
+async def test_read_fans_out_to_real_clients_and_preserves_partial_success() -> None:
+    with respx.mock(assert_all_called=True) as router:
+        google = router.get(GOOGLE_API_URL).respond(200, json={"claims": [{"text": "claim"}]})
+        sejm_eli = router.get(SEJM_ELI_DETAIL_URL).respond(500)
+        eurlex = router.get(EURLEX_SPARQL_URL).respond(
+            200,
+            json={
+                "head": {"vars": ["celex", "title", "docType", "date"]},
+                "results": {"bindings": []},
+            },
+        )
+        result = await read(
+            ReadingRequest(
+                query="Dz.U. 2024 poz. 1984",
+                categories=[Category.FACT_CHECK, Category.LEGAL_ACT],
+            ),
+            api_keys={"google_fact_check": "google-key"},
+        )
+
+    assert google.called
+    assert sejm_eli.called
+    assert eurlex.called
+    assert [outcome.source for outcome in result.results] == [
+        "google_fact_check",
+        "sejm_eli",
+        "eurlex",
+    ]
+    assert result.results[0].result is not None
+    assert result.results[1].error is not None
+    assert isinstance(result.results[1].error, ApiHttpError)
+    assert result.results[2].error is None
+    assert [item.source for item in result.items] == ["google_fact_check"]
+
+
+@pytest.mark.asyncio
+async def test_read_runs_all_keyless_sources_for_their_categories() -> None:
+    with respx.mock(assert_all_called=True) as router:
+        router.get(SEJM_ELI_SEARCH_URL).respond(
+            200,
+            json={
+                "items": [
+                    {
+                        "publisher": "DU",
+                        "year": 2024,
+                        "pos": 5,
+                        "title": "Example act",
+                    }
+                ],
+                "totalCount": 1,
+            },
+        )
+        router.get(SEJM_PROCESS_URL).respond(
+            200,
+            json=[{"number": "5", "title": "Example bill"}],
+        )
+        router.get(EURLEX_SPARQL_URL).respond(
+            200,
+            json={
+                "head": {"vars": ["celex", "title", "docType", "date"]},
+                "results": {"bindings": []},
+            },
+        )
+        router.get(DANE_GOV_URL).respond(
+            200,
+            json={"data": [], "links": {"next": None}, "meta": {"count": 0}},
+        )
+        result = await read(
+            ReadingRequest(
+                query="public policy",
+                categories=[
+                    Category.LEGAL_ACT,
+                    Category.LEGISLATIVE_PROCESS,
+                    Category.OPEN_DATA,
+                ],
+            )
+        )
+
+    assert [outcome.source for outcome in result.results] == [
+        "sejm_eli",
+        "eurlex",
+        "sejm",
+        "dane_gov",
+    ]
+    assert all(outcome.error is None for outcome in result.results)
+    assert [item.id for item in result.items] == ["eli_du_2024_5", "sejm_10_5"]
 
 
 @pytest.mark.asyncio

@@ -36,7 +36,7 @@ async def test_package_run_reads_settings_and_closes_analyzer(monkeypatch, capsy
         def __init__(self, **kwargs) -> None:
             analyzer_options.update(kwargs)
 
-        async def analyze(self, text: str) -> AnalysisDataContainer:
+        async def analyze(self, text: str, top_keywords: int = 8) -> AnalysisDataContainer:
             assert text == "A claim."
             return result
 
@@ -76,7 +76,7 @@ async def test_package_run_stamps_utc_time_and_preserves_unmodified_input(monkey
         def __init__(self, **kwargs) -> None:
             pass
 
-        async def analyze(self, text: str) -> AnalysisDataContainer:
+        async def analyze(self, text: str, top_keywords: int = 8) -> AnalysisDataContainer:
             assert text == "  Original input  "
             return result
 

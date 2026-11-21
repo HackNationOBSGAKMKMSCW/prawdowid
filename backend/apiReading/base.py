@@ -55,6 +55,7 @@ class BaseApiClient(ABC):
     name: ClassVar[str]
     base_url: ClassVar[str]
     supported_categories: ClassVar[frozenset[Category]]
+    requires_api_key: ClassVar[bool] = True
     retry_transport_errors: ClassVar[bool] = True
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
@@ -242,9 +243,12 @@ class BaseApiClient(ABC):
         return self._client
 
     async def _send(self, client: httpx.AsyncClient, spec: RequestSpec) -> httpx.Response:
+        url = self.base_url.rstrip("/")
+        if spec.path:
+            url = f"{url}/{spec.path.lstrip('/')}"
         return await client.request(
             spec.method,
-            f"{self.base_url.rstrip('/')}/{spec.path.lstrip('/')}",
+            url,
             params=spec.params,
             json=spec.json,
             headers=spec.headers,

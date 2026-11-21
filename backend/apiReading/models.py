@@ -14,6 +14,10 @@ class Category(StrEnum):
 
     FACT_CHECK = "fact_check"
     ARTICLE_EXTRACT = "article_extract"  # Internal client contract; no reader registry source.
+    LEGAL_ACT = "legal_act"
+    LEGISLATIVE_PROCESS = "legislative_process"
+    OPEN_DATA = "open_data"
+    NEWS = "news"
 
 
 class ReadingRequest(BaseModel):
