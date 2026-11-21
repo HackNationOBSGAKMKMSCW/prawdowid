@@ -156,6 +156,11 @@ class ClaimVerdict(BaseModel):
     security_warnings: list[str] = Field(
         default=[], description="Wykryte próby manipulacji w treści twierdzenia"
     )
+    freshness_flags: list[str] = Field(
+        default=[],
+        description="zrodla_archiwalne – model widział materiał archiwalny; "
+        "werdykt_na_materiale_archiwalnym – dowody rozstrzygające są wyłącznie archiwalne",
+    )
     context: str | None = Field(
         default=None,
         description="Fragment oryginalnego tekstu pokazany modelowi do interpretacji (nie dowód)",
@@ -195,6 +200,9 @@ class InputSourceOut(BaseModel):
     published_at: str | None = None
     provider: str | None = None
     rating: str | None = None
+    fetched_at: str | None = None
+    age_days: int | None = None
+    freshness_flags: list[str] = []
     status: InputSourceStatus
     shown_for_claims: list[str] = Field(
         default=[], description="Twierdzenia, przy których pokazano je modelowi"
@@ -219,6 +227,12 @@ class TextVerdict(BaseModel):
         description="Wszystkie źródła z wejścia (użytkownik, backend) z linkami i statusem użycia",
     )
     warnings: list[str] = []
+    analyzed_at: str | None = Field(
+        default=None, description="Znacznik czasu analizy, ISO 8601 UTC (punkt odniesienia wieku)"
+    )
+    max_source_age_days: int | None = Field(
+        default=None, description="Limit aktualności: starsze źródła to materiał archiwalny"
+    )
     models: dict[str, str] = Field(
         default={},
         description="Skonfigurowane modele per etap, np. ekstrakcja_stwierdzen i werdykt",

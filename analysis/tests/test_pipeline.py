@@ -331,3 +331,67 @@ def test_input_sources_map_passages_back_to_document():
     )
     [report] = input_source_report([doc], [claim], quarantined_ids=[])
     assert report.status == "cytowane" and report.url == "https://przyklad.pl/dlugi"
+
+
+NOW = __import__("datetime").datetime(2026, 11, 21, 12, 0, tzinfo=__import__("datetime").UTC)
+
+
+def test_archival_source_is_flagged_warned_and_timestamped():
+    old = source(
+        "UZ-stare",
+        kind="uzytkownik",
+        url="https://przyklad.pl/stare",
+        published_at="2015-01-05",
+        text="W wyborach w 2014 roku burmistrzem Zielonogrodu został Jan Nowacki.",
+    )
+    client = FakeChatClient(no_data_answer())
+    result = asyncio.run(
+        run_text(
+            "Obecnie burmistrzem Zielonogrodu jest Jan Nowacki.",
+            extra_sources=[old],
+            client=client,
+            settings=SETTINGS,
+            use_corpus=False,
+            now=NOW,
+        )
+    )
+    assert result.analyzed_at == "2026-11-21T12:00:00Z"
+    assert result.max_source_age_days == 730
+    [report] = result.input_sources
+    assert report.freshness_flags == ["material_archiwalny"] and report.age_days > 730
+    assert report.fetched_at == "2026-11-21T12:00:00Z", (
+        "źródło z zapytania pobrane w chwili analizy"
+    )
+    assert "zrodla_archiwalne" in result.claims[0].freshness_flags
+    assert sum("materiał archiwalny" in w for w in result.warnings) == 1
+    assert any("2015-01-05" in w for w in result.warnings)
+
+
+def test_fresh_sources_have_no_archival_flags():
+    client = FakeChatClient(corpus_answer())
+    result = asyncio.run(run_text(EU_CLAIM, client=client, settings=SETTINGS, now=NOW))
+    assert result.claims[0].freshness_flags == []
+    assert not any("archiwalny" in w for w in result.warnings)
+    assert all(s.fetched_at for s in result.sources)
+
+
+def test_newer_sources_are_preferred_when_equally_relevant():
+    text = "Most Zielony w Zielonogrodzie ma długość 300 metrów."
+    years = [2010, 2012, 2014, 2016, 2018, 2020, 2022, 2024, 2026]
+    docs = [
+        source(f"UZ-{y}", kind="uzytkownik", published_at=f"{y}-01-01", text=text) for y in years
+    ]
+    client = FakeChatClient(no_data_answer())
+    result = asyncio.run(
+        run_text(
+            "Most Zielony ma długość 300 metrów.",
+            extra_sources=docs,
+            client=client,
+            settings=SETTINGS,
+            use_corpus=False,
+            now=NOW,
+        )
+    )
+    shown = result.claims[0].source_ids
+    assert len(shown) == 5
+    assert set(shown) == {"UZ-2018", "UZ-2020", "UZ-2022", "UZ-2024", "UZ-2026"}

@@ -7,7 +7,7 @@
 - Źródło bez daty publikacji dostaje flagę `brak_daty_publikacji` – jego
   aktualności nie da się ocenić.
 - `recency_factor` wspiera preferowanie aktualnych danych przy wyborze fragmentów:
-  świeże źródło dostaje lekką premię do wyniku BM25, archiwalne – żadnej.
+  premia do wyniku BM25 maleje z wiekiem, więc nowsze źródło wygrywa z równie trafnym starszym.
 """
 
 from datetime import UTC, date, datetime
@@ -67,10 +67,12 @@ def is_archival(source: ReferenceSource) -> bool:
 
 
 def recency_factor(source: ReferenceSource, max_age_days: int) -> float:
-    """1.0 dla źródła z dnia analizy, liniowo do 0.0 na granicy limitu; 0 bez daty."""
+    """Malejąca ze świeżością premia w (0, 1]: 1.0 z dnia analizy, 0.5 na granicy limitu,
+    0.33 przy dwukrotności limitu. Ściśle maleje, więc z dwóch równie trafnych źródeł
+    nowsze zawsze wygrywa – także wśród archiwalnych. 0 bez daty (najniżej)."""
     if source.age_days is None or source.age_days < 0 or max_age_days <= 0:
         return 0.0
-    return max(0.0, 1.0 - source.age_days / max_age_days)
+    return max_age_days / (max_age_days + source.age_days)
 
 
 def archival_warning(source: ReferenceSource, max_age_days: int) -> str:

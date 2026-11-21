@@ -18,12 +18,22 @@ import asyncio
 import re
 import sys
 import time
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
+from datetime import datetime
 from typing import Any
 
 from .adapters import claims_from_analysis, partition_fact_checks, reading_warnings
 from .aggregate import aggregate
 from .config import Settings
+from .freshness import (
+    RECENCY_WEIGHT,
+    annotate,
+    archival_warning,
+    is_archival,
+    iso_timestamp,
+    recency_factor,
+    utc_now,
+)
 from .llm import ChatClient, OpenAIChatClient
 from .prompts import prompt_version
 from .schemas import (
@@ -41,6 +51,8 @@ TOP_K_CORPUS = 5
 TOP_K_USER = 5
 MAX_FACT_CHECKS = 5
 MIN_CLAIM_WORDS = 3
+CANDIDATE_FACTOR = 3  # ilu kandydatów BM25 na miejsce rozważamy przy preferencji aktualności
+CLAIM_FLAG_ARCHIVAL_SOURCES = "zrodla_archiwalne"
 
 
 def _log(message: str) -> None:
@@ -66,6 +78,17 @@ def _user_passages_for(
     return [p for p, _ in retriever.search(claim, k=TOP_K_USER, min_score=0.0)]
 
 
+def _pick(
+    hits: Sequence[tuple[ReferenceSource, float]],
+    k: int,
+    prefer: Callable[[ReferenceSource], float] | None,
+) -> list[ReferenceSource]:
+    """Top-k po wyniku BM25 pomnożonym przez premię za aktualność (`prefer`)."""
+    if prefer is not None:
+        hits = sorted(hits, key=lambda hit: hit[1] * prefer(hit[0]), reverse=True)
+    return [source for source, _ in hits[: max(k, 0)]]
+
+
 def sources_for_claim(
     claim: str,
     *,
@@ -74,7 +97,11 @@ def sources_for_claim(
     user_retriever: Retriever | None,
     fact_checks: Sequence[ReferenceSource] = (),
     shared_fact_checks: Retriever | None = None,
+    prefer: Callable[[ReferenceSource], float] | None = None,
 ) -> list[ReferenceSource]:
+    """Źródła dla twierdzenia. `prefer` zwraca mnożnik ≥ 1 za aktualność: z szerszej
+    listy kandydatów BM25 wybieramy te, które są i trafne, i świeże."""
+    widen = CANDIDATE_FACTOR if prefer is not None else 1
     selected: dict[str, ReferenceSource] = {}
     for source in list(fact_checks)[:MAX_FACT_CHECKS]:
         selected.setdefault(source.source_id, source)
@@ -82,12 +109,19 @@ def sources_for_claim(
         budget = MAX_FACT_CHECKS - len(selected)
         # Wymagamy co najmniej jednego wspólnego słowa (wynik > 0), nie progu BM25:
         # pula bywa mała, a wtedy IDF jest niski nawet dla trafnych wpisów.
-        for source, _ in shared_fact_checks.search(claim, k=max(budget, 0), min_score=1e-9):
+        hits = shared_fact_checks.search(claim, k=max(budget, 0) * widen, min_score=1e-9)
+        for source in _pick(hits, budget, prefer):
             selected.setdefault(source.source_id, source)
     if corpus is not None:
-        for passage, _ in corpus.search(claim, k=TOP_K_CORPUS):
+        hits = corpus.search(claim, k=TOP_K_CORPUS * widen)
+        for passage in _pick(hits, TOP_K_CORPUS, prefer):
             selected.setdefault(passage.source_id, passage)
-    for passage in _user_passages_for(claim, user_passages, user_retriever):
+    if user_retriever is not None and len(user_passages) > TOP_K_USER:
+        hits = user_retriever.search(claim, k=TOP_K_USER * widen, min_score=0.0)
+        user_selected = _pick(hits, TOP_K_USER, prefer)
+    else:
+        user_selected = _user_passages_for(claim, user_passages, user_retriever)
+    for passage in user_selected:
         selected.setdefault(passage.source_id, passage)
     return list(selected.values())
 
@@ -106,9 +140,27 @@ async def verify_claims(
     keywords: Sequence[str] = (),
     source_text: str = "",
     models: Mapping[str, str] | None = None,
+    now: datetime | None = None,
 ) -> TextVerdict:
     started = time.perf_counter()
     settings = settings or Settings.from_environment()
+    now = now or utc_now()
+    analyzed_at = iso_timestamp(now)
+    max_age = settings.max_source_age_days
+
+    def dated(source: ReferenceSource) -> ReferenceSource:
+        """Wiek i flagi aktualności względem chwili analizy."""
+        return annotate(source, now, max_age)
+
+    def prefer(source: ReferenceSource) -> float:
+        return 1.0 + RECENCY_WEIGHT * recency_factor(dated(source), max_age)
+
+    def received(source: ReferenceSource) -> ReferenceSource:
+        """Źródło przekazane w zapytaniu bez znacznika pobrania: pobrane teraz."""
+        return (
+            source if source.fetched_at else source.model_copy(update={"fetched_at": analyzed_at})
+        )
+
     if corpus is None and use_corpus:
         corpus = Retriever.from_directory()
     quarantined: dict[str, QuarantinedSource] = {}
@@ -119,9 +171,9 @@ async def verify_claims(
             quarantined.setdefault(item.source_id, item)
         return clean
 
-    fact_checks = fact_checks or {}
-    extra_sources = list(extra_sources)
-    shared_fact_checks = list(shared_fact_checks)
+    fact_checks = {k: [received(s) for s in v] for k, v in (fact_checks or {}).items()}
+    extra_sources = [received(s) for s in extra_sources]
+    shared_fact_checks = [received(s) for s in shared_fact_checks]
     # Wszystkie źródła z wejścia (dokumenty, nie fragmenty) – do raportu z linkami.
     inputs: dict[str, ReferenceSource] = {}
     for source in [
@@ -153,16 +205,20 @@ async def verify_claims(
                 "przypominający polecenia dla modelu."
             )
             context = None
-        claim_sources = keep(
-            sources_for_claim(
-                expand_query(screened.text, keywords),
-                corpus=corpus if use_corpus else None,
-                user_passages=user_passages,
-                user_retriever=user_retriever,
-                fact_checks=fact_checks.get(statement, ()),
-                shared_fact_checks=shared_retriever,
+        claim_sources = [
+            dated(source)
+            for source in keep(
+                sources_for_claim(
+                    expand_query(screened.text, keywords),
+                    corpus=corpus if use_corpus else None,
+                    user_passages=user_passages,
+                    user_retriever=user_retriever,
+                    fact_checks=fact_checks.get(statement, ()),
+                    shared_fact_checks=shared_retriever,
+                    prefer=prefer,
+                )
             )
-        )
+        ]
         for source in claim_sources:
             all_sources.setdefault(source.source_id, source)
         async with semaphore:
@@ -176,6 +232,14 @@ async def verify_claims(
                 security_warnings=screened.warnings,
                 context=context,
             )
+            if any(is_archival(s) for s in claim_sources):
+                result = result.model_copy(
+                    update={
+                        "freshness_flags": sorted(
+                            {*result.freshness_flags, CLAIM_FLAG_ARCHIVAL_SOURCES}
+                        )
+                    }
+                )
             _log(
                 f"Twierdzenie {index}/{len(statements)}: {result.verdict} "
                 f"({time.perf_counter() - t0:.1f}s)"
@@ -193,6 +257,14 @@ async def verify_claims(
         f"Źródło [{q.source_id}] pominięto (kwarantanna): {', '.join(q.reasons)}."
         for q in quarantined.values()
     ]
+    dated_inputs = [dated(s) for s in inputs.values()]
+    archival_warnings: dict[str, str] = {}
+    for source in [*all_sources.values(), *dated_inputs]:
+        document = source.source_id.split("#", 1)[0]  # fragmenty jednego dokumentu raz
+        if is_archival(source) and document not in archival_warnings:
+            archival_warnings[document] = archival_warning(
+                source.model_copy(update={"source_id": document}), max_age
+            )
     _log(
         f"Gotowe: {verdict} ({time.perf_counter() - started:.1f}s); "
         f"źródeł w kwarantannie: {len(quarantined)}"
@@ -203,8 +275,15 @@ async def verify_claims(
         claims=claims,
         sources=list(all_sources.values()),
         quarantined_sources=list(quarantined.values()),
-        input_sources=input_source_report(list(inputs.values()), claims, quarantined),
-        warnings=[*warnings, *sorted(claim_warnings), *quarantine_warnings],
+        input_sources=input_source_report(dated_inputs, claims, quarantined),
+        warnings=[
+            *warnings,
+            *sorted(claim_warnings),
+            *quarantine_warnings,
+            *archival_warnings.values(),
+        ],
+        analyzed_at=analyzed_at,
+        max_source_age_days=max_age,
         models={**(models or {}), "werdykt": settings.model},
         prompt_version=prompt_version(),
     )
@@ -262,6 +341,9 @@ def input_source_report(
                 published_at=source.published_at,
                 provider=source.provider,
                 rating=source.rating,
+                fetched_at=source.fetched_at,
+                age_days=source.age_days,
+                freshness_flags=source.freshness_flags,
                 status=status,
                 shown_for_claims=shown.get(sid, []),
                 cited_in_claims=cited.get(sid, []),

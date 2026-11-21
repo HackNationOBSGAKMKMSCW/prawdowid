@@ -60,7 +60,10 @@ def test_recency_factor_prefers_newer():
     archival = annotate(source(published_at="2010-01-01"), NOW, 730)
     undated = annotate(source(), NOW, 730)
     assert recency_factor(newer, 730) > recency_factor(older, 730) > 0
-    assert recency_factor(archival, 730) == 0 == recency_factor(undated, 730)
+    assert recency_factor(older, 730) > recency_factor(archival, 730) > 0
+    assert recency_factor(undated, 730) == 0
+    at_limit = annotate(source(published_at="2024-11-21"), NOW, 730)
+    assert recency_factor(at_limit, 730) == 0.5
 
 
 def test_archival_warning_mentions_date_age_and_limit():
