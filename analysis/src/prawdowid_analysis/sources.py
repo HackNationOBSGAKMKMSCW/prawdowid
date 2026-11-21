@@ -54,6 +54,7 @@ def tokenize(text: str) -> list[str]:
 
 
 KEYWORD_MATCH_CHARS = 4
+CORPUS_LANGUAGE = "pl"  # język dokumentów w data/sources
 
 
 def _words(text: str) -> list[str]:

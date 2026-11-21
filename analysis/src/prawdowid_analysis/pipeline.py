@@ -28,7 +28,7 @@ from .llm import ChatClient, OpenAIChatClient
 from .prompts import prompt_version
 from .schemas import ClaimVerdict, QuarantinedSource, ReferenceSource, TextVerdict
 from .security import screen_claim, screen_sources
-from .sources import Retriever, expand_query, split_source
+from .sources import CORPUS_LANGUAGE, Retriever, expand_query, split_source
 from .verdict import assess_claim
 
 TOP_K_CORPUS = 5
@@ -181,6 +181,24 @@ async def verify_claims(
     )
 
 
+def language_mismatch_warnings(language_code: str | None, use_corpus: bool) -> list[str]:
+    """Ostrzega, gdy język tekstu (z textAnalysis) różni się od języka korpusu.
+
+    Wyszukiwanie BM25 dopasowuje słowa, więc tekst w innym języku zwykle nie
+    znajdzie nic w polskim korpusie i dostanie „brak danych” bez innej przyczyny.
+    """
+    if not use_corpus or not language_code:
+        return []
+    primary = language_code.strip().lower().split("-")[0]
+    if not primary or primary == CORPUS_LANGUAGE:
+        return []
+    return [
+        f"Tekst jest w języku „{language_code}”, a korpus wzorcowy po polsku: wyszukiwanie "
+        "w korpusie może nie znaleźć pasujących źródeł (wynik „brak danych” może wynikać "
+        "z różnicy języków, a nie z braku informacji)."
+    ]
+
+
 def _as_result_list(reading_results: Any) -> list[Any]:
     """Przyjmuje listę wyników (`apiReading.run()`) albo pojedynczy wynik
     (`apiReading.run_full_text()`), także w postaci słownika po `model_dump()`."""
@@ -209,12 +227,15 @@ async def run(
     claims = claims_from_analysis(analysis)
     results = _as_result_list(reading_results)
     pools = partition_fact_checks(results, claims.statements)
+    language_warnings = language_mismatch_warnings(
+        claims.language_code, kwargs.get("use_corpus", True)
+    )
     return await verify_claims(
         claims.statements,
         fact_checks=pools.per_statement,
         shared_fact_checks=pools.shared,
         extra_sources=extra_sources,
-        warnings=[*warnings, *claims.warnings, *reading_warnings(results)],
+        warnings=[*warnings, *claims.warnings, *reading_warnings(results), *language_warnings],
         keywords=claims.keywords,
         **kwargs,
     )

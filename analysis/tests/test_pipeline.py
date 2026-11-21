@@ -207,3 +207,23 @@ def test_run_accepts_mixed_and_dumped_reading_results():
     )
     assert client.calls[0][1]["content"].count('kind="fact_check"') == 2
     assert len([s for s in result.sources if s.kind == "fact_check"]) == 2
+
+
+def test_language_mismatch_warning():
+    from prawdowid_analysis.pipeline import language_mismatch_warnings
+
+    assert language_mismatch_warnings("pl", True) == []
+    assert language_mismatch_warnings("pl-PL", True) == []
+    assert language_mismatch_warnings(None, True) == []
+    assert language_mismatch_warnings("en", False) == []
+    assert "„en”" in language_mismatch_warnings("en", True)[0]
+
+
+def test_run_reports_language_mismatch():
+    analysis = SimpleNamespace(
+        statements=["Poland joined the EU in 2004."], security_warnings=[], language_code="en"
+    )
+    result = asyncio.run(
+        run(analysis, client=FakeChatClient(), settings=SETTINGS, corpus=Retriever([]))
+    )
+    assert any("korpus wzorcowy po polsku" in w for w in result.warnings)
