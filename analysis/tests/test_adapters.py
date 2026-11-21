@@ -114,3 +114,43 @@ def test_partition_separates_per_statement_and_full_text_results():
     assert list(pools.per_statement) == [statement]
     assert len(pools.shared) == 2, "wspólna pula bez duplikatów"
     assert all(s.kind == "fact_check" for s in pools.shared)
+
+
+def test_google_source_keeps_language_and_provider():
+    source = sources_from_reading_results([_reading_result("q", [FC_CLAIM])])["q"][0]
+    assert source.language == "pl"
+    assert source.provider == "google_fact_check"
+
+
+def test_euvsdisinfo_payload_becomes_source():
+    from prawdowid_analysis.adapters import fact_check_sources
+
+    payload = {
+        "title": "Zachód planuje atak",
+        "summary": "Przekaz twierdzi, że NATO przygotowuje inwazję.",
+        "url": "https://euvsdisinfo.eu/report/x",
+        "published_at": "2024-05-01T00:00:00Z",
+        "languages_of_outlet": ["ru"],
+        "countries": ["Polska"],
+        "disproof": {"text": "Brak dowodów na takie plany."},
+        "rating": "disinformation",
+        "source_name": "EUvsDisinfo",
+    }
+    item = SimpleNamespace(id="euvd_1", source="euvsdisinfo", payload=payload)
+    [source] = fact_check_sources([item])
+    assert source.source_id.startswith("EUVD-")
+    assert source.provider == "euvsdisinfo" and source.language == "ru"
+    assert "Sprostowanie: Brak dowodów na takie plany." in source.text
+    assert source.published_at == "2024-05-01"
+
+
+def test_reading_warnings_report_truncation_and_unknown_providers():
+    from prawdowid_analysis.adapters import reading_warnings
+
+    result = _reading_result("pełny tekst", [FC_CLAIM])
+    result.request.metadata = {"truncated": True}
+    result.items.append(SimpleNamespace(id="x", source="nowy_dostawca", payload={"a": 1}))
+    warnings = reading_warnings([result])
+    assert any("1000 znaków" in w for w in warnings)
+    assert any("„nowy_dostawca”" in w for w in warnings)
+    assert sources_from_reading_results([result])["pełny tekst"], "wpis Google nadal użyty"

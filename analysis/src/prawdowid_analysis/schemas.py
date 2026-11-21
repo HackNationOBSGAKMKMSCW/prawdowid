@@ -60,6 +60,12 @@ class ReferenceSource(BaseModel):
     rating: str | None = Field(
         default=None, description="Ocena fact-checkera (textualRating), tylko dla kind=fact_check"
     )
+    language: str | None = Field(
+        default=None, description="Kod języka źródła (BCP-47), jeśli znany"
+    )
+    provider: str | None = Field(
+        default=None, description="Dostawca danych z backendu (np. google_fact_check)"
+    )
 
 
 # ── Odpowiedź modelu (schemat wymuszany promptem) ────────────────────────────

@@ -97,6 +97,8 @@ def build_user_message(
             "published_at": source.published_at or "nieznana",
             "title": source.title,
         }
+        if source.language:
+            attrs["language"] = source.language
         rendered = " ".join(f'{k}="{_attr(v)}"' for k, v in attrs.items())
         blocks.append(f"<source {rendered}>\n{neutralize(source.text)}\n</source>")
     joined = "\n\n".join(blocks)

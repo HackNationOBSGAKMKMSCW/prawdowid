@@ -21,7 +21,7 @@ import time
 from collections.abc import Iterable, Mapping, Sequence
 from typing import Any
 
-from .adapters import claims_from_analysis, partition_fact_checks, reading_errors
+from .adapters import claims_from_analysis, partition_fact_checks, reading_warnings
 from .aggregate import aggregate
 from .config import Settings
 from .llm import ChatClient, OpenAIChatClient
@@ -213,7 +213,7 @@ async def run(
         fact_checks=pools.per_statement,
         shared_fact_checks=pools.shared,
         extra_sources=extra_sources,
-        warnings=[*warnings, *claims.warnings, *reading_errors(results)],
+        warnings=[*warnings, *claims.warnings, *reading_warnings(results)],
         **kwargs,
     )
 

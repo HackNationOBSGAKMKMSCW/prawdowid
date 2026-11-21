@@ -65,21 +65,19 @@ def _source_id(prefix: str, *parts: str) -> str:
     return f"{prefix}-{digest}"
 
 
-def fact_check_sources(items: Iterable[Any]) -> list[ReferenceSource]:
-    """Zamienia elementy `Item` z Google Fact Check na źródła wzorcowe."""
-    sources: dict[str, ReferenceSource] = {}
-    for item in items:
-        claim = _get(item, "payload") or {}
-        for review in _get(claim, "claimReview") or []:
-            text = _fact_check_text(claim, review)
-            rating = _clean(_get(review, "textualRating")) or None
-            if not text or rating is None:
-                continue  # bez oceny wpis nic nie rozstrzyga
-            publisher = _get(review, "publisher") or {}
-            url = _clean(_get(review, "url")) or None
-            source_id = _source_id("FC", url or "", text)
-            sources[source_id] = ReferenceSource(
-                source_id=source_id,
+def _google_sources(payload: Any) -> list[ReferenceSource]:
+    """Google Fact Check: `payload` to surowy obiekt `claims[]` (claimReview na recenzję)."""
+    sources = []
+    for review in _get(payload, "claimReview") or []:
+        text = _fact_check_text(payload, review)
+        rating = _clean(_get(review, "textualRating")) or None
+        if not text or rating is None:
+            continue  # bez oceny wpis nic nie rozstrzyga
+        publisher = _get(review, "publisher") or {}
+        url = _clean(_get(review, "url")) or None
+        sources.append(
+            ReferenceSource(
+                source_id=_source_id("FC", url or "", text),
                 kind="fact_check",
                 title=_clean(_get(review, "title")),
                 publisher=_clean(_get(publisher, "name")) or _clean(_get(publisher, "site")),
@@ -87,7 +85,77 @@ def fact_check_sources(items: Iterable[Any]) -> list[ReferenceSource]:
                 published_at=_clean(_get(review, "reviewDate"))[:10] or None,
                 text=text,
                 rating=rating,
+                language=_clean(_get(review, "languageCode")) or None,
+                provider="google_fact_check",
             )
+        )
+    return sources
+
+
+def _euvsdisinfo_sources(payload: Any) -> list[ReferenceSource]:
+    """EUvsDisinfo: znormalizowany `payload` wg docs/plans/...-004 (pola wstępne,
+    do potwierdzenia, gdy klient powstanie). Każdy wpis to udokumentowany przypadek
+    dezinformacji, więc jego ocena to zawsze „dezinformacja”."""
+    summary = _clean(_get(payload, "summary"))
+    title = _clean(_get(payload, "title"))
+    if not (summary or title):
+        return []
+    disproof = _get(payload, "disproof")
+    if isinstance(disproof, Mapping):
+        disproof = _get(disproof, "text") or _get(disproof, "url")
+    rating = _clean(_get(payload, "rating")) or "disinformation"
+    lines = [
+        ("Przypadek dezinformacji", title),
+        ("Opis przekazu", summary),
+        ("Ocena EUvsDisinfo", rating),
+        ("Sprostowanie", _clean(disproof)),
+        ("Kraje", ", ".join(map(_clean, _get(payload, "countries") or []))),
+    ]
+    languages = [_clean(code) for code in _get(payload, "languages_of_outlet") or []]
+    url = _clean(_get(payload, "url")) or None
+    text = "\n".join(f"{label}: {value}" for label, value in lines if value)
+    return [
+        ReferenceSource(
+            source_id=_source_id("EUVD", url or "", text),
+            kind="fact_check",
+            title=title,
+            publisher=_clean(_get(payload, "source_name")) or "EUvsDisinfo",
+            url=url,
+            published_at=_clean(_get(payload, "published_at"))[:10] or None,
+            text=text,
+            rating=rating,
+            language=languages[0] if len(languages) == 1 else None,
+            provider="euvsdisinfo",
+        )
+    ]
+
+
+_PROVIDER_PARSERS = {
+    "google_fact_check": _google_sources,
+    "euvsdisinfo": _euvsdisinfo_sources,
+}
+
+
+def _provider(item: Any) -> str | None:
+    provider = _clean(_get(item, "source")) or None
+    if provider is None and _get(_get(item, "payload"), "claimReview") is not None:
+        return "google_fact_check"  # starsze dane bez pola source
+    return provider
+
+
+def fact_check_sources(items: Iterable[Any]) -> list[ReferenceSource]:
+    """Zamienia elementy `Item` z `apiReading` na źródła wzorcowe.
+
+    Format `payload` zależy od dostawcy (`item.source`); wpisy od dostawcy bez
+    parsera są pomijane i zgłaszane przez `reading_warnings`.
+    """
+    sources: dict[str, ReferenceSource] = {}
+    for item in items:
+        parser = _PROVIDER_PARSERS.get(_provider(item) or "")
+        if parser is None:
+            continue
+        for source in parser(_get(item, "payload") or {}):
+            sources.setdefault(source.source_id, source)
     return list(sources.values())
 
 
@@ -183,5 +251,33 @@ def reading_errors(results: Iterable[Any]) -> list[str]:
     if missing_categories:
         warnings.append(
             "Brak dostawcy danych dla kategorii: " + ", ".join(sorted(missing_categories)) + "."
+        )
+    return warnings
+
+
+def reading_warnings(results: Iterable[Any]) -> list[str]:
+    """Wszystkie ostrzeżenia z wyników `apiReading`: błędy dostawców, obcięte
+    zapytania pełnym tekstem i wpisy od dostawców bez parsera."""
+    results = list(results or [])
+    warnings = reading_errors(results)
+    truncated = sum(
+        1
+        for result in results
+        if _get(_get(_get(result, "request"), "metadata") or {}, "truncated") is True
+    )
+    if truncated:
+        warnings.append(
+            "Wyszukiwanie fact-checków pełnym tekstem objęło tylko początek tekstu "
+            "(backend obcina zapytanie do 1000 znaków); dalsza część nie była wyszukiwana."
+        )
+    unsupported: dict[str, int] = {}
+    for result in results:
+        for item in _get(result, "items") or []:
+            provider = _provider(item) or "nieznany"
+            if provider not in _PROVIDER_PARSERS:
+                unsupported[provider] = unsupported.get(provider, 0) + 1
+    for provider, count in sorted(unsupported.items()):
+        warnings.append(
+            f"Pominięto {count} wpisów od dostawcy „{provider}”: brak obsługi jego formatu danych."
         )
     return warnings

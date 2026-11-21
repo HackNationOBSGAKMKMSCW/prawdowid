@@ -89,3 +89,8 @@ def test_fullwidth_and_zero_width_tags_are_neutralized():
     assert message.count("</source>") == 1
     assert message.count("</claim>") == 1
     assert "＜" not in message and "\u200b" not in message
+
+
+def test_source_language_is_rendered_when_known():
+    sources = [ReferenceSource(source_id="FC-1", kind="fact_check", text="x", language="en")]
+    assert 'language="en"' in build_user_message("Twierdzenie", sources)
