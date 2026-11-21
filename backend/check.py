@@ -12,9 +12,10 @@ import uuid
 from typing import Literal
 from urllib.parse import urlsplit
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from ratelimit import rate_limit
 from retrieval import get_retriever
 from schemas import Claim, Passage, Verdict
 
@@ -90,7 +91,7 @@ class CheckResponse(BaseModel):
     duration_ms: int
 
 
-@router.post("/check")
+@router.post("/check", dependencies=[Depends(rate_limit)])
 def check(req: CheckRequest) -> CheckResponse:
     started = time.perf_counter()
     run_id = f"run_{uuid.uuid4().hex[:12]}"
