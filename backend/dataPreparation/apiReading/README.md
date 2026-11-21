@@ -1,37 +1,51 @@
-# API reading clients
+# API reading
 
-`apiReading` is an async library for fetching and normalizing data from several
-third-party APIs. Each client shares one `fetch_data(filters)` interface;
-`fetch_all` runs clients concurrently and returns per-source results/errors.
-The included `ExampleAClient` and `ExampleBClient` demonstrate the extension
-points and use reserved `.invalid` hosts until real APIs are selected.
+`apiReading` is an async library for reading from third-party APIs by category.
+The primary entry point accepts one `ReadingRequest`, selects matching
+providers, queries them concurrently, and returns a `ReadingResult` with
+per-provider outcomes and a combined item list.
 
 ```python
 import asyncio
 
-import httpx
-
-from apiReading import ExampleAClient, ExampleBClient, fetch_all
+from apiReading import Category, ReadingRequest, read
 
 
 async def collect() -> None:
-    async with httpx.AsyncClient() as shared_client:
-        clients = {
-            ExampleAClient(client=shared_client, api_key="..."): {"category": "news"},
-            ExampleBClient(client=shared_client): {"query": "election", "limit": 25},
-        }
-        outcomes = await fetch_all(clients)
-        for outcome in outcomes:
-            if outcome.error:
-                print(outcome.source, outcome.error)
-            else:
-                print(outcome.source, outcome.result.items)
+    result = await read(
+        ReadingRequest(
+            query="claim text",
+            categories=[Category.FACT_CHECK],
+            language_code="pl",
+            metadata={"record_id": 42},
+        ),
+        api_keys={"google_fact_check": "..."},
+    )
+
+    for outcome in result.results:
+        if outcome.error:
+            print(outcome.source, outcome.error)
+    for item in result.items:
+        print(item.payload.get("text"), item.payload.get("claimReview"))
 
 
 asyncio.run(collect())
 ```
 
-When a client creates its own HTTP connection pool, use its async context
-manager or call `await client.aclose()`. An injected `httpx.AsyncClient` remains
-owned by the caller. Retries are performed by the client only for idempotent
-GET requests; callers should not retry blindly on top of this behavior.
+`metadata` is opaque caller data: it is echoed in `result.request` and never
+sent to a provider. The query text is sent to Google's Fact Check Tools API,
+which is outside the EEA per the project classification. `read()` requires
+Google's API key in the `api_keys` mapping.
+
+`read()` creates and closes a pooled `httpx.AsyncClient` for the call. A caller
+can supply a shared client instead; it remains caller-owned and is never closed
+by the library. Missing API keys and individual provider failures appear as
+typed errors in `result.results`. Categories without a registered provider are
+listed in `result.categories_without_source`; if none of the requested
+categories has a provider, `read()` raises `NoSourcesAvailableError`.
+
+The low-level `GoogleFactCheckClient.fetch_data(filters)` and `fetch_all(...)`
+interfaces remain available for provider-specific use. They perform one page
+per request; use the returned `next_cursor` as `page_token` to fetch another
+page. Retries are bounded and handled by each client, so callers should not
+retry blindly on top of this behavior.

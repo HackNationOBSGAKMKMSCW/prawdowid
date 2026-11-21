@@ -1,6 +1,7 @@
-"""Illustrative API clients demonstrating the extension points."""
+"""Registered third-party API clients."""
 
-from .example_a import ExampleAClient
-from .example_b import ExampleBClient
+from .google_fact_check import GoogleFactCheckClient
 
-__all__ = ["ExampleAClient", "ExampleBClient"]
+CLIENT_CLASSES = (GoogleFactCheckClient,)
+
+__all__ = ["CLIENT_CLASSES", "GoogleFactCheckClient"]

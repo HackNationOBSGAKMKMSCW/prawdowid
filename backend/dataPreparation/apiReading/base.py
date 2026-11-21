@@ -23,7 +23,7 @@ from .exceptions import (
     ApiTimeoutError,
     InvalidFiltersError,
 )
-from .models import FetchResult
+from .models import Category, FetchResult, ReadingRequest
 
 logger = logging.getLogger(__name__)
 _RETRYABLE_STATUSES = {502, 503, 504}
@@ -53,11 +53,23 @@ class BaseApiClient(ABC):
 
     name: ClassVar[str]
     base_url: ClassVar[str]
+    supported_categories: ClassVar[frozenset[Category]]
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
         super().__init_subclass__(**kwargs)
-        if not cls.__dict__.get("name") or not cls.__dict__.get("base_url"):
-            raise TypeError("API clients must define class attributes 'name' and 'base_url'")
+        if (
+            not cls.__dict__.get("name")
+            or not cls.__dict__.get("base_url")
+            or not cls.__dict__.get("supported_categories")
+            or not isinstance(cls.__dict__.get("supported_categories"), frozenset)
+        ):
+            raise TypeError(
+                "API clients must define 'name', 'base_url', and non-empty frozenset "
+                "'supported_categories'"
+            )
+
+        if not all(isinstance(category, Category) for category in cls.supported_categories):
+            raise TypeError("API client supported_categories must contain Category values")
 
         parsed_url = urlparse(cls.base_url)
         if parsed_url.scheme != "https" or not parsed_url.netloc:
@@ -129,6 +141,10 @@ class BaseApiClient(ABC):
     @abstractmethod
     def build_request(self, filters: dict[str, Any]) -> RequestSpec:
         """Validate filters and map them to one HTTP request."""
+
+    @abstractmethod
+    def filters_from_request(self, request: ReadingRequest) -> dict[str, Any]:
+        """Map a shared read request to this API's filter vocabulary."""
 
     @abstractmethod
     def parse_response(self, response: httpx.Response) -> FetchResult:

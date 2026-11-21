@@ -55,3 +55,7 @@ class ApiResponseError(ApiReadingError):
 
 class InvalidFiltersError(ApiReadingError, ValueError):
     """Caller-provided filters are invalid; no request was made."""
+
+
+class NoSourcesAvailableError(ApiReadingError, ValueError):
+    """No registered API can serve any requested category."""
