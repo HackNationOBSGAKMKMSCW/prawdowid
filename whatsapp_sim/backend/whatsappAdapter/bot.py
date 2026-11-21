@@ -15,11 +15,12 @@ from .cloud_api import (
     IncomingMessage,
     ReplyButton,
     button_message,
+    cta_url_message,
     parse_webhook,
     split_text,
     text_message,
 )
-from .formatting import format_report
+from .formatting import format_report, verdict_card
 from .pipeline import FactCheckPipeline
 
 BOT_NAME = "SprawdzTo"
@@ -87,6 +88,7 @@ FREQUENTLY_FORWARDED_NOTE = (
 )
 GENERIC_ERROR_TEXT = "😕 Coś poszło nie tak po mojej stronie. Spróbuj ponownie za chwilę."
 
+SOURCE_BUTTON_TEXT = "Otwórz źródło"
 ANALYZING_STATUS = "🧠 Analizuję tekst i wyciągam twierdzenia…"
 SEARCHING_FULL_TEXT_STATUS = "📚 Szukam Twojej wiadomości w bazach fact-checkingowych…"
 
@@ -219,11 +221,13 @@ class SprawdzToBot:
             if stage == "searching":
                 await notify(searching_status(count))
 
+        card = None
         try:
             async with asyncio.timeout(self.check_timeout):
                 await notify(ANALYZING_STATUS)
                 report = await self.pipeline.check(text, progress=on_progress)
-            body = format_report(report)
+            card = verdict_card(report)
+            body = format_report(report, headline=card is None)
             if message.frequently_forwarded:
                 body = f"{body}\n\n{FREQUENTLY_FORWARDED_NOTE}"
             elif message.forwarded:
@@ -242,4 +246,17 @@ class SprawdzToBot:
             f"{time.perf_counter() - started_at:.1f}s.",
             flush=True,
         )
-        return [text_message(to, chunk) for chunk in split_text(body)]
+        replies = [text_message(to, chunk) for chunk in split_text(body)]
+        if card is not None:
+            replies.insert(
+                0,
+                cta_url_message(
+                    to,
+                    header=card.header,
+                    body=card.body,
+                    footer=card.footer,
+                    display_text=SOURCE_BUTTON_TEXT,
+                    url=card.url,
+                ),
+            )
+        return replies

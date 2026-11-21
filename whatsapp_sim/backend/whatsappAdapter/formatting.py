@@ -10,6 +10,7 @@ from typing import Any
 from apiReading.exceptions import ApiAuthError
 from apiReading.models import ReadingResult
 
+from .cloud_api import MAX_HEADER_CHARS, MAX_INTERACTIVE_BODY_CHARS
 from .pipeline import CheckReport
 from .verdicts import OverallVerdict, Verdict, classify_rating, overall_verdict
 
@@ -30,6 +31,20 @@ _OVERALL_HEADLINES = {
     OverallVerdict.CONFLICTING: "🔀 *Oceny są rozbieżne*",
     OverallVerdict.UNVERIFIED: "❔ *Brak jednoznacznej oceny*",
     OverallVerdict.NO_DATA: "🔍 *Nie znalazłem weryfikacji*",
+}
+
+# Plain-text card headers (interactive headers do not support markup).
+_CARD_HEADERS = {
+    OverallVerdict.FALSE: "❌ Prawdopodobnie FAŁSZ",
+    OverallVerdict.MISLEADING: "⚠️ Wprowadza w błąd",
+    OverallVerdict.TRUE: "✅ Prawdopodobnie PRAWDA",
+    OverallVerdict.CONFLICTING: "🔀 Oceny są rozbieżne",
+    OverallVerdict.UNVERIFIED: "❔ Brak jednoznacznej oceny",
+}
+_OVERALL_TO_VERDICT = {
+    OverallVerdict.FALSE: Verdict.FALSE,
+    OverallVerdict.MISLEADING: Verdict.MISLEADING,
+    OverallVerdict.TRUE: Verdict.TRUE,
 }
 
 _NO_DATA_TIPS = (
@@ -126,16 +141,82 @@ def _missing_key(report: CheckReport) -> bool:
     )
 
 
-def format_report(report: CheckReport) -> str:
-    """Render the full reply: overall verdict, evidence per statement, caveats."""
+@dataclass(frozen=True)
+class VerdictCard:
+    """Headline verdict with the most relevant source, sent as a link card."""
 
-    results = report.results
-    all_reviews = {
+    header: str
+    body: str
+    footer: str
+    url: str
+
+
+def _all_reviews(report: CheckReport) -> dict[tuple[str, str, str], _Review]:
+    return {
         review.key: review
-        for result in results
+        for result in report.results
         for item in result.items
         for review in _reviews_of(item.payload)
     }
+
+
+def _reviews_word(count: int) -> str:
+    """Polish plural of "weryfikacja" for a count (1, 2-4, 5+)."""
+
+    if count == 1:
+        return "weryfikacja"
+    if 2 <= count % 10 <= 4 and not 12 <= count % 100 <= 14:
+        return "weryfikacje"
+    return "weryfikacji"
+
+
+def verdict_card(report: CheckReport) -> VerdictCard | None:
+    """Summarize the verdict as a card, or None when there is no linked review."""
+
+    reviews = _all_reviews(report)
+    overall = overall_verdict(review.verdict for review in reviews.values())
+    if overall not in _CARD_HEADERS:
+        return None
+
+    wanted = _OVERALL_TO_VERDICT.get(overall)
+    candidates = []
+    for result in report.results:
+        for item in result.items:
+            subject = item.payload.get("text") if report.searched_full_text else None
+            subject = subject or result.request.query
+            for review in _reviews_of(item.payload):
+                if review.url:
+                    candidates.append((subject, review))
+    if not candidates:
+        return None
+    subject, top = next(
+        ((subject, review) for subject, review in candidates if review.verdict is wanted),
+        candidates[0],
+    )
+
+    meta = " · ".join(part for part in (top.publisher, top.date) if part)
+    body = f"_„{_clip(subject, 300)}”_\n\n{VERDICT_ICONS[top.verdict]} *{top.rating}* — {meta}"
+    count = len(reviews)
+    footer = f"SprawdzTo · {count} {_reviews_word(count)}"
+    if report.demo:
+        footer += " · dane demo"
+    return VerdictCard(
+        header=_CARD_HEADERS[overall][:MAX_HEADER_CHARS],
+        body=body[:MAX_INTERACTIVE_BODY_CHARS],
+        footer=footer,
+        url=top.url,
+    )
+
+
+def format_report(report: CheckReport, *, headline: bool = True) -> str:
+    """Render the full reply: overall verdict, evidence per statement, caveats.
+
+    With ``headline=False`` the verdict lines are left out because a
+    ``verdict_card`` already shows them.
+    """
+
+    results = report.results
+    all_reviews = _all_reviews(report)
     failed = [result for result in results if _result_failed(result)]
     footer: list[str] = []
 
@@ -151,7 +232,9 @@ def format_report(report: CheckReport) -> str:
     overall = overall_verdict(review.verdict for review in all_reviews.values())
     sections = ["🔎 *Wynik sprawdzenia*", _OVERALL_HEADLINES[overall]]
     publishers = sorted({review.publisher for review in all_reviews.values()})
-    if overall is OverallVerdict.NO_DATA:
+    if not headline:
+        sections = ["🔎 *Szczegóły sprawdzenia*"]
+    elif overall is OverallVerdict.NO_DATA:
         sections[-1] += (
             "\n_Nie ma tego w bazach redakcji fact-checkingowych. To nie znaczy, "
             "że informacja jest prawdziwa ani że jest fałszywa._"

@@ -17,6 +17,9 @@ MAX_TEXT_BODY_CHARS = 4096
 MAX_REPLY_BUTTONS = 3
 MAX_BUTTON_TITLE_CHARS = 20
 MAX_BUTTON_ID_CHARS = 256
+MAX_HEADER_CHARS = 60
+MAX_FOOTER_CHARS = 60
+MAX_INTERACTIVE_BODY_CHARS = 1024
 
 
 class _Lenient(BaseModel):
@@ -198,6 +201,44 @@ def button_message(to: str, body: str, buttons: list[ReplyButton]) -> dict[str, 
                 ]
             },
         },
+    }
+
+
+def cta_url_message(
+    to: str,
+    *,
+    header: str,
+    body: str,
+    footer: str,
+    display_text: str,
+    url: str,
+) -> dict[str, Any]:
+    """Build a Cloud API interactive "call to action URL" message (a card with a link)."""
+
+    if not 1 <= len(header) <= MAX_HEADER_CHARS:
+        raise ValueError(f"header must be 1-{MAX_HEADER_CHARS} characters")
+    if not 1 <= len(body) <= MAX_INTERACTIVE_BODY_CHARS:
+        raise ValueError(f"body must be 1-{MAX_INTERACTIVE_BODY_CHARS} characters")
+    if len(footer) > MAX_FOOTER_CHARS:
+        raise ValueError(f"footer must be at most {MAX_FOOTER_CHARS} characters")
+    if not 1 <= len(display_text) <= MAX_BUTTON_TITLE_CHARS:
+        raise ValueError(f"display_text must be 1-{MAX_BUTTON_TITLE_CHARS} characters")
+    if not url.startswith(("https://", "http://")):
+        raise ValueError("url must be an http(s) URL")
+    interactive: dict[str, Any] = {
+        "type": "cta_url",
+        "header": {"type": "text", "text": header},
+        "body": {"text": body},
+        "action": {"name": "cta_url", "parameters": {"display_text": display_text, "url": url}},
+    }
+    if footer:
+        interactive["footer"] = {"text": footer}
+    return {
+        "messaging_product": "whatsapp",
+        "recipient_type": "individual",
+        "to": to,
+        "type": "interactive",
+        "interactive": interactive,
     }
 
 

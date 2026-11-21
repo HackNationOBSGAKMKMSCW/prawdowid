@@ -49,9 +49,12 @@ def test_webhook_answers_welcome_and_text(client: TestClient) -> None:
     assert welcome.status_code == 200
     assert welcome.json()["messages"][0]["text"]["body"] == WELCOME_TEXT
     assert check.status_code == 200
-    [message] = check.json()["messages"]
-    assert message["to"] == "48500"
-    assert "Prawdopodobnie FAŁSZ" in message["text"]["body"]
+    card, details = check.json()["messages"]
+    assert card["to"] == details["to"] == "48500"
+    assert card["interactive"]["type"] == "cta_url"
+    assert card["interactive"]["header"]["text"] == "❌ Prawdopodobnie FAŁSZ"
+    assert card["interactive"]["action"]["parameters"]["url"].startswith("https://example.org/")
+    assert details["type"] == "text"
 
 
 def test_webhook_streams_statuses_then_messages(client: TestClient) -> None:
@@ -72,7 +75,7 @@ def test_webhook_streams_statuses_then_messages(client: TestClient) -> None:
     events = [json.loads(line) for line in response.text.splitlines()]
     assert [event["type"] for event in events] == ["status", "status", "messages"]
     assert events[0]["to"] == "48500"
-    assert "Prawdopodobnie FAŁSZ" in events[-1]["messages"][0]["text"]["body"]
+    assert events[-1]["messages"][0]["interactive"]["type"] == "cta_url"
 
 
 def test_streaming_rejects_invalid_payload_before_streaming(client: TestClient) -> None:

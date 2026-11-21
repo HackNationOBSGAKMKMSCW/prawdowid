@@ -241,9 +241,12 @@ def test_format_report_drops_non_http_links() -> None:
 async def test_demo_pipeline_answers_known_topics_and_labels_demo_data() -> None:
     bot = SprawdzToBot(DemoPipeline(delay_seconds=0))
 
-    [reply] = await bot.handle(incoming("Słyszałem, że szczepionki powodują autyzm."))
-    body = reply["text"]["body"]
-    assert "❌ *Prawdopodobnie FAŁSZ*" in body
+    card, details = await bot.handle(incoming("Słyszałem, że szczepionki powodują autyzm."))
+    assert card["interactive"]["header"]["text"] == "❌ Prawdopodobnie FAŁSZ"
+    assert card["interactive"]["footer"]["text"] == "SprawdzTo · 2 weryfikacje · dane demo"
+    body = details["text"]["body"]
+    assert body.startswith("🔎 *Szczegóły sprawdzenia*")
+    assert "Prawdopodobnie FAŁSZ" not in body
     assert "Tryb demonstracyjny" in body
 
     [unknown] = await bot.handle(incoming("Jutro w Krakowie będzie padać deszcz."))
@@ -266,9 +269,9 @@ async def test_forwarded_messages_get_a_chain_warning() -> None:
     bot = SprawdzToBot(DemoPipeline(delay_seconds=0))
     text = "Maszty 5G roznoszą koronawirusa, przekaż dalej!"
 
-    [plain] = await bot.handle(incoming(text))
-    [forwarded] = await bot.handle(incoming(text, forwarded=True))
-    [frequent] = await bot.handle(incoming(text, forwarded=True, frequently_forwarded=True))
+    _, plain = await bot.handle(incoming(text))
+    _, forwarded = await bot.handle(incoming(text, forwarded=True))
+    _, frequent = await bot.handle(incoming(text, forwarded=True, frequently_forwarded=True))
 
     assert FORWARDED_NOTE not in plain["text"]["body"]
     assert forwarded["text"]["body"].endswith(FORWARDED_NOTE)
@@ -305,6 +308,45 @@ async def test_failing_status_callback_does_not_break_the_check() -> None:
     async def status(text: str) -> None:
         raise RuntimeError("client went away")
 
-    [reply] = await bot.handle(incoming("Szczepionki powodują autyzm."), status=status)
+    card, _ = await bot.handle(incoming("Szczepionki powodują autyzm."), status=status)
 
-    assert "Prawdopodobnie FAŁSZ" in reply["text"]["body"]
+    assert card["interactive"]["header"]["text"] == "❌ Prawdopodobnie FAŁSZ"
+
+
+def test_verdict_card_picks_a_source_matching_the_verdict() -> None:
+    from whatsappAdapter.formatting import verdict_card
+
+    analysis = AnalysisDataContainer(source_text="t", statements=["A."])
+    report = CheckReport(
+        analysis,
+        [
+            reading_result(
+                "A.",
+                [
+                    claim("Manipulacja", "Redakcja X", "https://fact.example/x"),
+                    claim("Fałsz", "Redakcja Y", "https://fact.example/y"),
+                    claim("Fałsz", "Redakcja Z", "https://fact.example/z"),
+                ],
+            )
+        ],
+    )
+
+    card = verdict_card(report)
+
+    assert card is not None
+    assert card.header == "❌ Prawdopodobnie FAŁSZ"
+    assert card.url == "https://fact.example/y"
+    assert "„A.”" in card.body and "Redakcja Y" in card.body
+    assert card.footer == "SprawdzTo · 3 weryfikacje"
+
+
+def test_no_card_without_reviews_or_links() -> None:
+    from whatsappAdapter.formatting import verdict_card
+
+    analysis = AnalysisDataContainer(source_text="t", statements=["A."])
+    no_reviews = CheckReport(analysis, [reading_result("A.", [])])
+    no_links = CheckReport(analysis, [reading_result("A.", [claim("Fałsz", "X", "")])])
+
+    assert verdict_card(no_reviews) is None
+    assert verdict_card(no_links) is None
+    assert "🔍 *Nie znalazłem weryfikacji*" in format_report(no_reviews)

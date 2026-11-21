@@ -5,6 +5,7 @@ from whatsappAdapter.cloud_api import (
     IncomingKind,
     ReplyButton,
     button_message,
+    cta_url_message,
     parse_webhook,
     split_text,
     text_message,
@@ -129,3 +130,32 @@ def test_parse_webhook_reads_forwarded_context() -> None:
     assert first.forwarded and not first.frequently_forwarded
     assert second.forwarded and second.frequently_forwarded
     assert not third.forwarded
+
+
+def test_cta_url_message_uses_cloud_api_shape_and_limits() -> None:
+    message = cta_url_message(
+        "48500",
+        header="❌ Fałsz",
+        body="Treść",
+        footer="SprawdzTo",
+        display_text="Otwórz źródło",
+        url="https://fact.example/1",
+    )
+    assert message["interactive"] == {
+        "type": "cta_url",
+        "header": {"type": "text", "text": "❌ Fałsz"},
+        "body": {"text": "Treść"},
+        "footer": {"text": "SprawdzTo"},
+        "action": {
+            "name": "cta_url",
+            "parameters": {"display_text": "Otwórz źródło", "url": "https://fact.example/1"},
+        },
+    }
+    with pytest.raises(ValueError):
+        cta_url_message(
+            "48500", header="x" * 61, body="b", footer="", display_text="d", url="https://x"
+        )
+    with pytest.raises(ValueError):
+        cta_url_message(
+            "48500", header="h", body="b", footer="", display_text="d", url="javascript:x"
+        )
