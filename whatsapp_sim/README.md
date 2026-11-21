@@ -66,9 +66,6 @@ Open <http://localhost:5174>. Vite proxies `/api` to the adapter on port 8000.
   buttons, WhatsApp formatting (`*bold*`, `_italic_`, `~strike~`, links),
   light and dark themes, full screen on phones. History is kept in
   localStorage.
-- Side panel: adapter status, one-click example prompts (including a
-  prompt-injection attempt), and an inspector for the webhook and response
-  JSON.
 
 ## Endpoints
 
