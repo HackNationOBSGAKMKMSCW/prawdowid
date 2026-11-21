@@ -1,2 +1,7 @@
 fastapi
 uvicorn
+openai>=3.0
+python-dotenv
+dateparser
+rapidfuzz
+pytest
