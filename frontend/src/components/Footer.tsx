@@ -1,8 +1,7 @@
-import type { ReactNode } from 'react';
-import { NavLink } from 'react-router-dom';
-import { useGoToSection } from '../lib/navigation.ts';
+import { useState, type ReactNode } from 'react';
+import InfoDialog, { type InfoKind } from './InfoDialog.tsx';
 
-const ICONS: Record<string, ReactNode> = {
+const ICONS: Record<InfoKind, ReactNode> = {
   how: (
     <>
       <circle cx="12" cy="12" r="9" />
@@ -29,58 +28,48 @@ const ICONS: Record<string, ReactNode> = {
   ),
 };
 
-function Icon({ name }: { name: keyof typeof ICONS }) {
-  return (
-    <svg
-      className="footer-link__icon"
-      viewBox="0 0 24 24"
-      width="22"
-      height="22"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-      focusable="false"
-    >
-      {ICONS[name]}
-    </svg>
-  );
-}
+const LINKS: { kind: InfoKind; label: string }[] = [
+  { kind: 'how', label: 'Jak to działa' },
+  { kind: 'sources', label: 'Lista źródeł' },
+  { kind: 'a11y', label: 'Deklaracja dostępności' },
+  { kind: 'help', label: 'Pomoc' },
+];
 
 export default function Footer() {
-  const goToSection = useGoToSection();
+  const [open, setOpen] = useState<InfoKind | null>(null);
 
   return (
     <footer className="site-footer">
       <div className="site-footer__inner">
         <nav aria-label="Informacje">
           <ul className="footer-links">
-            <li>
-              <a href="/#jak" className="footer-link" onClick={(e) => goToSection(e, 'jak')}>
-                <Icon name="how" />
-                Jak to działa
-              </a>
-            </li>
-            <li>
-              <a href="/#zrodla" className="footer-link" onClick={(e) => goToSection(e, 'zrodla')}>
-                <Icon name="sources" />
-                Lista źródeł
-              </a>
-            </li>
-            <li>
-              <NavLink to="/deklaracja-dostepnosci" className="footer-link">
-                <Icon name="a11y" />
-                Deklaracja dostępności
-              </NavLink>
-            </li>
-            <li>
-              <NavLink to="/pomoc" className="footer-link">
-                <Icon name="help" />
-                Pomoc
-              </NavLink>
-            </li>
+            {LINKS.map(({ kind, label }) => (
+              <li key={kind}>
+                <button
+                  type="button"
+                  className="footer-link"
+                  aria-haspopup="dialog"
+                  onClick={() => setOpen(kind)}
+                >
+                  <svg
+                    className="footer-link__icon"
+                    viewBox="0 0 24 24"
+                    width="22"
+                    height="22"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                    focusable="false"
+                  >
+                    {ICONS[kind]}
+                  </svg>
+                  {label}
+                </button>
+              </li>
+            ))}
           </ul>
         </nav>
         <p className="site-footer__owner">
@@ -88,6 +77,7 @@ export default function Footer() {
           Ministerstwo Spraw Zagranicznych
         </p>
       </div>
+      <InfoDialog kind={open} onClose={() => setOpen(null)} onSwitch={setOpen} />
     </footer>
   );
 }

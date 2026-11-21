@@ -9,6 +9,8 @@ interface ModalProps {
   tone?: 'info' | 'warning' | 'danger' | 'success';
   /** Blokuje zamykanie (np. w trakcie wysyłania). */
   busy?: boolean;
+  /** Szersze okno na dłuższe treści informacyjne. */
+  wide?: boolean;
   children: ReactNode;
 }
 
@@ -23,6 +25,7 @@ export default function Modal({
   icon,
   tone = 'info',
   busy,
+  wide,
   children,
 }: ModalProps) {
   const ref = useRef<HTMLDialogElement>(null);
@@ -42,13 +45,18 @@ export default function Modal({
   // Zmiana kroku w otwartym oknie (np. „Dziękujemy”) przenosi fokus na jego główny przycisk.
   useEffect(() => {
     const dialog = ref.current;
-    if (dialog?.open) dialog.querySelector<HTMLElement>('[data-autofocus]')?.focus();
+    if (!dialog?.open) return;
+    dialog.scrollTop = 0;
+    const target =
+      dialog.querySelector<HTMLElement>('[data-autofocus]') ??
+      dialog.querySelector<HTMLElement>('.modal__title');
+    target?.focus();
   }, [title]);
 
   return (
     <dialog
       ref={ref}
-      className="modal"
+      className={wide ? 'modal modal--wide' : 'modal'}
       aria-labelledby={titleId}
       onCancel={(e) => {
         e.preventDefault();
@@ -74,7 +82,7 @@ export default function Modal({
             {icon}
           </span>
         )}
-        <h2 id={titleId} className="modal__title">
+        <h2 id={titleId} className="modal__title" tabIndex={-1}>
           {title}
         </h2>
         {children}

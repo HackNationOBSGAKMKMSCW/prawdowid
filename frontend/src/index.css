@@ -874,8 +874,11 @@ a:focus-visible {
 }
 
 .footer-link {
+  width: 100%;
   min-height: 56px;
   height: 100%;
+  cursor: pointer;
+  text-align: left;
   padding: 10px 14px;
   display: flex;
   align-items: center;
@@ -1216,4 +1219,120 @@ button:disabled {
 
 [data-hc='true'] .choice:has(input:checked) {
   border-width: 4px;
+}
+
+/* ---------- Okna informacyjne (stopka) ---------- */
+
+.modal--wide {
+  width: min(100% - 32px, 640px);
+}
+
+.modal__title:focus {
+  outline: none;
+}
+
+.modal__content {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.modal .panel {
+  background: var(--c-page);
+  padding: 20px;
+}
+
+.modal .panel__title {
+  font-size: 22px;
+}
+
+.modal .source-groups__item:first-child {
+  border-top: 0;
+  padding-top: 4px;
+}
+
+.modal .whatsapp {
+  border-top: 0;
+  padding-top: 4px;
+}
+
+.modal__box > .modal__actions:last-child {
+  position: sticky;
+  bottom: -24px;
+  margin: 0 -24px -24px;
+  padding: 16px 24px 24px;
+  background: var(--c-surface);
+  border-top: 1px solid var(--c-line);
+}
+
+.faq {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.faq__item {
+  border: 2px solid var(--c-line);
+  border-radius: 14px;
+  background: var(--c-surface);
+}
+
+.faq__item[open] {
+  border-color: var(--c-navy);
+}
+
+.faq__question {
+  min-height: 56px;
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font: 700 19px/1.35 var(--font);
+  color: var(--c-navy);
+  cursor: pointer;
+  list-style: none;
+}
+
+.faq__question::-webkit-details-marker {
+  display: none;
+}
+
+.faq__question::after {
+  content: '+';
+  flex: none;
+  font: 800 24px/1 var(--font);
+}
+
+.faq__item[open] .faq__question::after {
+  content: '–';
+}
+
+.faq__question:focus-visible {
+  outline: 3px solid var(--c-navy);
+  outline-offset: 2px;
+  border-radius: 12px;
+}
+
+.faq__answer {
+  margin: 0;
+  padding: 0 16px 16px;
+  font-size: 19px;
+  line-height: 1.55;
+  color: var(--c-text-body);
+}
+
+.inline-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--c-link);
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+[data-hc='true'] .inline-link {
+  color: #00007a !important;
 }
