@@ -26,7 +26,8 @@ from .aggregate import aggregate
 from .config import Settings
 from .llm import ChatClient, OpenAIChatClient
 from .prompts import prompt_version
-from .schemas import ClaimVerdict, ReferenceSource, TextVerdict
+from .schemas import ClaimVerdict, QuarantinedSource, ReferenceSource, TextVerdict
+from .security import screen_claim, screen_sources
 from .sources import Retriever, split_source
 from .verdict import assess_claim
 
@@ -93,7 +94,16 @@ async def verify_claims(
     settings = settings or Settings.from_environment()
     if corpus is None and use_corpus:
         corpus = Retriever.from_directory()
-    user_passages = [p for s in extra_sources for p in split_source(s)]
+    quarantined: dict[str, QuarantinedSource] = {}
+
+    def keep(sources: Iterable[ReferenceSource]) -> list[ReferenceSource]:
+        clean, rejected = screen_sources(sources)
+        for item in rejected:
+            quarantined.setdefault(item.source_id, item)
+        return clean
+
+    # Źródła użytkownika sprawdzamy w całości: zatruty fragment odrzuca cały dokument.
+    user_passages = [p for s in keep(extra_sources) for p in split_source(s)]
     user_retriever = Retriever(user_passages) if len(user_passages) > TOP_K_USER else None
     fact_checks = fact_checks or {}
 
@@ -101,21 +111,32 @@ async def verify_claims(
     chat = client or OpenAIChatClient(settings)
     semaphore = asyncio.Semaphore(settings.concurrency)
     all_sources: dict[str, ReferenceSource] = {}
+    claim_warnings: list[str] = []
 
     async def one(index: int, statement: str) -> ClaimVerdict:
-        claim_sources = sources_for_claim(
-            statement,
-            corpus=corpus if use_corpus else None,
-            user_passages=user_passages,
-            user_retriever=user_retriever,
-            fact_checks=fact_checks.get(statement, ()),
+        screened = screen_claim(statement)
+        claim_warnings.extend(f"T{index}: {w}" for w in screened.warnings)
+        claim_sources = keep(
+            sources_for_claim(
+                screened.text,
+                corpus=corpus if use_corpus else None,
+                user_passages=user_passages,
+                user_retriever=user_retriever,
+                fact_checks=fact_checks.get(statement, ()),
+            )
         )
         for source in claim_sources:
             all_sources.setdefault(source.source_id, source)
         async with semaphore:
             t0 = time.perf_counter()
             _log(f"Twierdzenie {index}/{len(statements)}: źródeł {len(claim_sources)}, ocena...")
-            result = await assess_claim(f"T{index}", statement, claim_sources, chat)
+            result = await assess_claim(
+                f"T{index}",
+                screened.text,
+                claim_sources,
+                chat,
+                security_warnings=screened.warnings,
+            )
             _log(
                 f"Twierdzenie {index}/{len(statements)}: {result.verdict} "
                 f"({time.perf_counter() - t0:.1f}s)"
@@ -129,13 +150,21 @@ async def verify_claims(
             await chat.aclose()
 
     verdict, summary = aggregate(claims)
-    _log(f"Gotowe: {verdict} ({time.perf_counter() - started:.1f}s)")
+    quarantine_warnings = [
+        f"Źródło [{q.source_id}] pominięto (kwarantanna): {', '.join(q.reasons)}."
+        for q in quarantined.values()
+    ]
+    _log(
+        f"Gotowe: {verdict} ({time.perf_counter() - started:.1f}s); "
+        f"źródeł w kwarantannie: {len(quarantined)}"
+    )
     return TextVerdict(
         verdict=verdict,
         summary=summary,
         claims=claims,
         sources=list(all_sources.values()),
-        warnings=list(warnings),
+        quarantined_sources=list(quarantined.values()),
+        warnings=[*warnings, *sorted(claim_warnings), *quarantine_warnings],
         prompt_version=prompt_version(),
     )
 
