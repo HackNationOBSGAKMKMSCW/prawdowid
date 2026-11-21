@@ -40,6 +40,8 @@ Jeśli któryś moduł się nie importuje albo funkcja zmieniła nazwę, patch j
 
 ## Konwencje dla zespołu
 
+Jak dodać logowanie do nowego modułu, krok po kroku z przykładami: [NOWE_MODULY.md](NOWE_MODULY.md).
+
 - Zamiast `print` używaj `logger = logging.getLogger(__name__)`. Logi z modułów też trafiają do pliku, oznaczone `request_id`.
 - Zdarzenia domenowe zapisuj przez `log_event("nazwa", **pola)`, a wstrzymanie werdyktu przez `log_abstain("powód")`.
 - Nowy etap do zmierzenia oznacz dekoratorem `@traced("modul.etap")`. Bez zmiany kodu możesz go też dodać zmienną `LOG_TRACE_TARGETS`.

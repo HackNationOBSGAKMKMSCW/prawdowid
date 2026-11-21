@@ -42,6 +42,8 @@ def log_abstain(reason: str, **fields: Any) -> None:
     """Record that the system withheld a verdict (call from the place that decides it)."""
     metrics = current()
     if metrics is not None:
+        if reason in metrics.abstain_reasons:  # same decision reported twice in one request
+            return
         metrics.abstain(reason)
     log_event("abstain", level="warning", reason=reason, **fields)
 

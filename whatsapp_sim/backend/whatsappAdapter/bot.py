@@ -8,6 +8,7 @@ import unicodedata
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+from observability import log_abstain
 from textAnalysis.analysis import AnalysisConfigurationError, AnalysisError, InputSanitizer
 
 from .cloud_api import (
@@ -233,13 +234,17 @@ class SprawdzToBot:
             elif message.forwarded:
                 body = f"{body}\n\n{FORWARDED_NOTE}"
         except TimeoutError:
+            log_abstain("timeout", channel="whatsapp", timeout_s=self.check_timeout)
             body = TIMEOUT_TEXT
         except AnalysisConfigurationError:
+            log_abstain("not_configured", channel="whatsapp")
             body = NOT_CONFIGURED_TEXT
         except AnalysisError:
+            log_abstain("analysis_failed", channel="whatsapp")
             body = ANALYSIS_FAILED_TEXT
         except Exception as exc:  # noqa: BLE001 - the chat must always get an answer
             print(f"[whatsappAdapter] Błąd: {type(exc).__name__}.", flush=True)
+            log_abstain("pipeline_error", channel="whatsapp", error=type(exc).__name__)
             body = GENERIC_ERROR_TEXT
         print(
             f"[whatsappAdapter] Wiadomość {message.message_id}: odpowiedź po "
