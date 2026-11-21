@@ -12,6 +12,7 @@ Opcjonalny nagłówek ``X-Admin-User`` trafia do audytu zmian konfiguracji.
 from __future__ import annotations
 
 import hmac
+import os
 from collections import deque
 from datetime import timedelta
 from pathlib import Path
@@ -77,6 +78,12 @@ def create_router(
 
     admin = [Depends(require_admin)]
 
+    def log_path() -> Path:
+        """Ten sam plik, do którego pisze observability (``LOG_FILE`` albo domyślny)."""
+        from observability.logconfig import DEFAULT_LOG_FILE
+
+        return log_file or Path(os.getenv("LOG_FILE") or DEFAULT_LOG_FILE)
+
     def not_found(what: str) -> HTTPException:
         return HTTPException(404, f"Nie znaleziono: {what}")
 
@@ -140,10 +147,9 @@ def create_router(
         limit: int = Query(200, ge=1, le=2000),
     ) -> dict[str, Any]:
         """Techniczne logi observability (JSON Lines), najnowsze na końcu."""
-        from observability.logconfig import DEFAULT_LOG_FILE
         from observability.report import iter_events
 
-        path = log_file or DEFAULT_LOG_FILE
+        path = log_path()
         tail: deque[dict[str, Any]] = deque(maxlen=limit)
         for item in iter_events(path, since):
             if event and item.get("event") != event:
@@ -157,10 +163,9 @@ def create_router(
 
     @router.get("/events/summary", dependencies=admin)
     def events_summary(since: str | None = None) -> dict[str, Any]:
-        from observability.logconfig import DEFAULT_LOG_FILE
         from observability.report import iter_events, summarize
 
-        return summarize(iter_events(log_file or DEFAULT_LOG_FILE, since))
+        return summarize(iter_events(log_path(), since))
 
     # --- użytkownicy -------------------------------------------------------------------
 
@@ -295,8 +300,6 @@ def create_router(
     @router.get("/config/models", dependencies=admin)
     async def available_models() -> dict[str, Any]:
         """Modele zgłaszane przez skonfigurowany endpoint (``GET /models``)."""
-        import os
-
         from openai import AsyncOpenAI
 
         apply_config(runtime.load())
