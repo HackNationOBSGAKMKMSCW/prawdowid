@@ -44,9 +44,15 @@ DEFAULT_TIMEOUT_S = 60.0
 # Statusy, przy których wybrany przez router dostawca mógł odrzucić `response_format`.
 _JSON_MODE_REJECTED = (400, 422)
 # Chwilowe awarie dostawcy (np. 503 „overloaded” z Gemini), po których warto ponowić.
-# 429 celowo pominięte: przy wyczerpanym limicie ponawianie tylko wydłuża odpowiedź.
+# 429 obsługiwane osobno (`_rate_limit_wait`).
 _TRANSIENT_STATUSES = (500, 502, 503, 504)
 DEFAULT_RETRIES = 2
+# Chwilowy limit zapytań na minutę (429 `rate_limited`): jedno ponowienie po krótkiej
+# przerwie. Wyczerpany budżet (`quota_exceeded`) albo długie `Retry-After` -> bez ponowienia,
+# bo czekanie tylko wydłużyłoby odpowiedź ponad cel 30 s.
+DEFAULT_RATE_LIMIT_RETRIES = 1
+DEFAULT_RATE_LIMIT_WAIT_S = 5.0
+MAX_RATE_LIMIT_WAIT_S = 15.0
 
 
 class LLMError(Exception):
@@ -75,6 +81,8 @@ class LLMSettings:
     timeout_s: float = DEFAULT_TIMEOUT_S
     retries: int = DEFAULT_RETRIES  # ponowienia po chwilowym 5xx (bez routera z failoverem)
     retry_backoff_s: float = 1.0  # odstęp: backoff * 2**próba
+    rate_limit_retries: int = DEFAULT_RATE_LIMIT_RETRIES  # ponowienia po 429 `rate_limited`
+    rate_limit_wait_s: float = DEFAULT_RATE_LIMIT_WAIT_S  # przerwa, gdy brak `Retry-After`
 
     @classmethod
     def from_env(cls) -> "LLMSettings":
@@ -97,6 +105,7 @@ class LLMSettings:
             model=env("LLM_MODEL") or ROUTER_MODEL,
             timeout_s=float(env("LLM_TIMEOUT_S") or DEFAULT_TIMEOUT_S),
             retries=int(env("LLM_RETRIES") or DEFAULT_RETRIES),
+            rate_limit_retries=int(env("LLM_RATE_LIMIT_RETRIES") or DEFAULT_RATE_LIMIT_RETRIES),
         )
 
 
@@ -188,14 +197,30 @@ class FreeLLMClient:
         except openai.APIStatusError as exc:
             raise _status_error(exc) from exc
 
+    def _rate_limit_wait(self, exc: LLMError) -> float | None:
+        """Przerwa przed ponowieniem po 429 albo None, gdy nie warto ponawiać."""
+        if exc.kind != "rate_limited":
+            return None
+        wait = exc.retry_after_s
+        if wait is None:
+            wait = self.settings.rate_limit_wait_s
+        return wait if wait <= MAX_RATE_LIMIT_WAIT_S else None
+
     def _create(self, **kwargs):
-        for attempt in range(self.settings.retries + 1):
+        transient = rate_limited = 0
+        while True:
             try:
                 return self._create_once(**kwargs)
             except LLMError as exc:
-                if exc.status_code not in _TRANSIENT_STATUSES or attempt == self.settings.retries:
+                wait = self._rate_limit_wait(exc)
+                if wait is not None and rate_limited < self.settings.rate_limit_retries:
+                    rate_limited += 1
+                    sleep(wait)
+                elif exc.status_code in _TRANSIENT_STATUSES and transient < self.settings.retries:
+                    sleep(self.settings.retry_backoff_s * 2**transient)
+                    transient += 1
+                else:
                     raise
-                sleep(self.settings.retry_backoff_s * 2**attempt)
 
     def chat(
         self,

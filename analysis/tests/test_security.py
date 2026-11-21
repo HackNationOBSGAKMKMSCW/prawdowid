@@ -64,10 +64,12 @@ def test_other_mock_documents_are_clean():
     assert clean and all(injection_flags(p.text) == [] for p in clean)
 
 
-def test_sample_input_sources_are_clean():
+def test_sample_input_flags_only_the_injection_document():
+    """W danych przykładowych jest jeden celowy atak (scenariusz E); reszta, w tym fact-check
+    z „Informację oceniamy jako fałszywą”, nie może dawać fałszywych alarmów."""
     data = AnalysisInput.model_validate(json.loads(SAMPLE.read_text(encoding="utf-8")))
     flagged = {s.title: injection_flags(s.text) for s in data.sources if injection_flags(s.text)}
-    assert flagged == {}  # w tym fact-check z "Informację oceniamy jako fałszywą"
+    assert list(flagged) == ["Zerowy VAT na żywność już od marca? (atrapa)"]
 
 
 def test_injected_passage_never_reaches_llm_and_cannot_be_evidence():

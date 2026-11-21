@@ -14,7 +14,10 @@ from prawdowid_analysis.verdict.llm import (
 )
 
 SETTINGS = LLMSettings(
-    base_url="http://llm.test/v1", api_key="freellmapi-test", retry_backoff_s=0.0
+    base_url="http://llm.test/v1",
+    api_key="freellmapi-test",
+    retry_backoff_s=0.0,
+    rate_limit_wait_s=0.0,
 )
 
 
@@ -148,6 +151,45 @@ def test_persistent_503_gives_up_after_retries():
     with pytest.raises(LLMError) as exc:
         _chat(handler)
     assert exc.value.kind == "provider_error" and len(calls) == SETTINGS.retries + 1
+
+
+def test_short_rate_limit_is_retried_once_then_succeeds():
+    calls = []
+
+    def handler(request):
+        calls.append(1)
+        if len(calls) == 1:
+            return httpx.Response(429, json={"error": {"message": "slow"}})
+        return httpx.Response(200, json=_completion())
+
+    assert _chat(handler).text == '{"stance": "neutral"}'
+    assert len(calls) == 2
+
+
+def test_persistent_rate_limit_gives_up_after_one_retry():
+    calls = []
+
+    def handler(request):
+        calls.append(1)
+        return httpx.Response(429, json={"error": {"message": "slow"}})
+
+    with pytest.raises(LLMError) as exc:
+        _chat(handler)
+    assert exc.value.kind == "rate_limited" and len(calls) == SETTINGS.rate_limit_retries + 1
+
+
+def test_long_retry_after_is_not_waited_for():
+    calls = []
+
+    def handler(request):
+        calls.append(1)
+        return httpx.Response(
+            429, json={"error": {"message": "slow"}}, headers={"retry-after": "60"}
+        )
+
+    with pytest.raises(LLMError) as exc:
+        _chat(handler)
+    assert exc.value.kind == "rate_limited" and len(calls) == 1
 
 
 def test_list_models_strips_gemini_prefix():

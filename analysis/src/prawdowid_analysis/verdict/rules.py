@@ -81,6 +81,11 @@ def _low(*factors: str) -> Strength:
     return Strength(level="low", factors=list(factors))
 
 
+def is_checkable(claim: Claim) -> bool:
+    """Czy twierdzenie sprawdzamy w źródłach (opinia i niesprawdzalne -> nie)."""
+    return claim.type != "opinion" and claim.check_worthy
+
+
 def aggregate(
     claim: Claim,
     evidence: list[Evidence],
@@ -98,7 +103,7 @@ def aggregate(
     if error:
         return error_status(claim.claim_id, error)
 
-    if claim.type == "opinion" or not claim.check_worthy:
+    if not is_checkable(claim):
         reason = "twierdzenie typu opinia" if claim.type == "opinion" else "niesprawdzalne"
         return _verdict(
             claim,

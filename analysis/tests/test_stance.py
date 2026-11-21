@@ -1,6 +1,7 @@
 """stance.py na atrapie retrievera z fałszywym klientem LLM (bez sieci)."""
 
 import json
+import re
 
 import pytest
 
@@ -9,11 +10,14 @@ from prawdowid_analysis.schemas import Claim
 from prawdowid_analysis.verdict.llm import LLMError, LLMResult
 from prawdowid_analysis.verdict.rules import aggregate
 from prawdowid_analysis.verdict.stance import (
+    MAX_BATCH,
     SYSTEM_PROMPT,
     assess_passage,
+    assess_passages,
     build_evidence,
     build_messages,
     neutralize,
+    parse_batch_response,
     parse_response,
 )
 
@@ -26,7 +30,8 @@ CLAIM = Claim(
 
 
 class FakeClient:
-    """Odpowiada według chunk_id z wiadomości; zapamiętuje wysłane wiadomości."""
+    """Odpowiada zbiorczo `{"assessments": [...]}` według chunk_id pasaży w wiadomości;
+    zapamiętuje wysłane wiadomości. Odpowiedź, która nie jest JSON-em, idzie bez zmian."""
 
     model = "fake"
 
@@ -35,8 +40,17 @@ class FakeClient:
 
     def chat(self, messages, *, json_mode=False, temperature=0.0, max_tokens=None):
         self.calls.append(messages)
-        user = messages[-1]["content"]
-        text = next((a for cid, a in self.answers.items() if f'id="{cid}"' in user), self.default)
+        ids = re.findall(r'<source id="([^"]+)"', messages[-1]["content"])
+        items = []
+        for cid in ids:
+            raw = self.answers.get(cid, self.default)
+            try:
+                items.append({"id": cid, **json.loads(raw)})
+            except json.JSONDecodeError:
+                return self._result(raw)
+        return self._result(json.dumps({"assessments": items}, ensure_ascii=False))
+
+    def _result(self, text):
         return LLMResult(text=text, model=self.model, tokens_in=100, tokens_out=10, duration_ms=5)
 
 
@@ -153,7 +167,8 @@ def test_end_to_end_on_mock_retrieve_gives_evidence_and_verdict():
         }
     )
     evidence, assessments = build_evidence(CLAIM, passages, client)
-    assert len(evidence) == len(passages) == len(client.calls)
+    assert len(evidence) == len(passages) and len(client.calls) == 1  # jedno wywołanie
+    assert all(p.text in client.calls[0][-1]["content"] for p in passages)
     assert len({e.evidence_id for e in evidence}) == len(evidence)
     assert all(e.claim_id == CLAIM.claim_id for e in evidence)
     assert all(a.llm.tokens_in == 100 for a in assessments)
@@ -213,7 +228,7 @@ def test_refutes_with_heading_quote_is_downgraded_to_neutral():
     assert a.quote_verified and a.stance == "neutral" and a.downgraded == "heading_quote"
     from prawdowid_analysis.verdict.stance import to_evidence
 
-    assert aggregate(CLAIM, [to_evidence(CLAIM, a, 0)]).outcome == "insufficient_evidence"
+    assert aggregate(CLAIM, [to_evidence(CLAIM, a, 0)], [p]).outcome == "insufficient_evidence"
 
 
 def test_body_quote_from_same_passage_is_kept():
@@ -232,6 +247,57 @@ def test_news_lede_similar_to_title_is_not_a_heading():
     # heading tylko na początku dokumentu: ten sam krótki akapit w środku -> nie nagłówek
     mid = _passage(STATUTE, char_start=500)
     assert not is_heading_quote("Ustawa z dnia 24 września 2026 r.", mid)
+
+
+# ── jedno wywołanie na twierdzenie ───────────────────────────────────────────
+
+
+def test_batch_response_maps_by_id_then_by_position():
+    ids = ["a_c0", "b_c1", "c_c2"]
+    text = json.dumps(
+        {
+            "assessments": [
+                {"id": "b_c1", "stance": "refutes", "quote": "x"},
+                {"id": "zle_id", "stance": "supports", "quote": "y"},  # pozycja 1 zajęta
+                {"stance": "neutral"},  # bez id -> pozycja 2
+            ]
+        }
+    )
+    assert parse_batch_response(text, ids) == {
+        "a_c0": ("insufficient", "", False),  # brak oceny -> fallback
+        "b_c1": ("refutes", "x", True),
+        "c_c2": ("neutral", "", True),
+    }
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["", "Jasne!", '{"assessments": "nie lista"}', '{"stance": "supports", "quote": "q"}'],
+)
+def test_bad_batch_response_falls_back_for_every_passage(text):
+    out = parse_batch_response(text, ["a", "b"])
+    assert set(out.values()) == {("insufficient", "", False)}
+
+
+def test_single_passage_accepts_plain_stance_object():
+    assert parse_batch_response('{"stance": "neutral"}', ["a"]) == {"a": ("neutral", "", True)}
+
+
+def test_large_input_is_split_into_batches():
+    passages = [_passage(f"Zdanie numer {i}.") for i in range(MAX_BATCH + 2)]
+    passages = [p.model_copy(update={"chunk_id": f"doc_x_c{i}"}) for i, p in enumerate(passages)]
+    client = FakeClient({})
+    assessments = assess_passages(CLAIM, passages, client)
+    assert len(client.calls) == 2 and [a.chunk_id for a in assessments] == [
+        p.chunk_id for p in passages
+    ]
+
+
+def test_opinion_is_not_sent_to_llm():
+    opinion = CLAIM.model_copy(update={"type": "opinion", "check_worthy": False})
+    client = FailingClient()  # wywołanie by rzuciło LLMError
+    assert build_evidence(opinion, mock_retrieve(CLAIM.text), client) == ([], [])
+    assert aggregate(opinion, [], []).outcome == "not_verifiable"
 
 
 def test_prompt_says_missing_information_is_not_refutation():

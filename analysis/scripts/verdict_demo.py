@@ -254,12 +254,14 @@ def report(
             + (f"; cytat to mediana {statistics.median(ratios):.0%} pasażu" if ratios else "")
         )
     if assessments:
-        calls = [a.llm.duration_ms for a in assessments]
-        tok_in = [a.llm.tokens_in for a in assessments]
+        # Jedno wywołanie ocenia kilka pasaży: oceny z tego samego wywołania dzielą `llm`.
+        llm_calls = list({id(a.llm): a.llm for a in assessments if a.llm}.values())
+        calls = [r.duration_ms for r in llm_calls]
+        tok_in = [r.tokens_in for r in llm_calls]
         print(
-            f"LLM: {len(calls)} wywołań, mediana {int(statistics.median(calls))} ms, "
-            f"max {max(calls)} ms; tokeny wejścia mediana {int(statistics.median(tok_in))}; "
-            f"modele {dict(Counter(a.llm.model for a in assessments))}"
+            f"LLM: {len(calls)} wywołań na {len(assessments)} pasaży, mediana "
+            f"{int(statistics.median(calls))} ms, max {max(calls)} ms; tokeny wejścia mediana "
+            f"{int(statistics.median(tok_in))}; modele {dict(Counter(r.model for r in llm_calls))}"
         )
     if claim_ms:
         print(f"Czas na twierdzenie: mediana {statistics.median(claim_ms) / 1000:.1f} s")
