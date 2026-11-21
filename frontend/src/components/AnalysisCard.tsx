@@ -1,8 +1,19 @@
+import type { CSSProperties } from 'react';
 import type { AnalysisCardView } from '../lib/result.ts';
 
-export default function AnalysisCard({ card }: { card: AnalysisCardView }) {
+export default function AnalysisCard({
+  card,
+  index = 0,
+}: {
+  card: AnalysisCardView;
+  index?: number;
+}) {
   return (
-    <article className="analysis-card" data-tone={card.tone}>
+    <article
+      className="analysis-card"
+      data-tone={card.tone}
+      style={{ '--i': index } as CSSProperties}
+    >
       <div className="analysis-card__head">
         <span className="dot dot--md" aria-hidden="true">
           {card.icon}

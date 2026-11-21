@@ -58,11 +58,11 @@ export default function ResultScreen({ result }: { result: CheckResult }) {
       </button>
 
       {view.claims.map((claim, i) => (
-        <ClaimCard key={`${result.id ?? 'claim'}-${i}`} claim={claim} />
+        <ClaimCard key={`${result.id ?? 'claim'}-${i}`} claim={claim} index={i} />
       ))}
 
-      {view.cards.map((card) => (
-        <AnalysisCard key={card.key} card={card} />
+      {view.cards.map((card, i) => (
+        <AnalysisCard key={card.key} card={card} index={view.claims.length + i} />
       ))}
 
       <p className="note note--muted">

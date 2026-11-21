@@ -66,6 +66,7 @@ export default function StartScreen() {
       <div className="whatsapp">
         <span className="whatsapp__label">Możesz też napisać na WhatsApp:</span>
         <Link
+          viewTransition
           className="whatsapp-link"
           to={input.trim() ? `/whatsapp?text=${encodeURIComponent(input.trim())}` : '/whatsapp'}
         >

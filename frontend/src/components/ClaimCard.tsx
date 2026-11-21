@@ -1,15 +1,19 @@
-import { useId, useState } from 'react';
+import { useId, useState, type CSSProperties } from 'react';
 import type { Claim } from '../api/types.ts';
 import { VERDICTS } from '../content/verdicts.ts';
 
-export default function ClaimCard({ claim }: { claim: Claim }) {
+export default function ClaimCard({ claim, index = 0 }: { claim: Claim; index?: number }) {
   const [open, setOpen] = useState(false);
   const listId = useId();
   const verdict = VERDICTS[claim.verdict];
   const sources = claim.sources ?? [];
 
   return (
-    <article className="claim" data-verdict={claim.verdict}>
+    <article
+      className="claim"
+      data-verdict={claim.verdict}
+      style={{ '--i': index } as CSSProperties}
+    >
       <div className="claim__head">
         <span className="dot dot--lg" aria-hidden="true">
           {verdict.icon}

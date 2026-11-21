@@ -1012,17 +1012,6 @@ a:focus-visible {
   background: rgb(20 26 36 / 55%);
 }
 
-.modal[open] {
-  animation: pw-modal-in 0.18s ease-out;
-}
-
-@keyframes pw-modal-in {
-  from {
-    opacity: 0;
-    transform: translateY(12px);
-  }
-}
-
 .modal__box {
   position: relative;
   padding: 28px 24px 24px;
@@ -1505,5 +1494,376 @@ button:disabled {
   /* Na telefonie nad polem pisania czatu, żeby nie zasłaniać przycisku „Wyślij”. */
   .wa-view .view-switch {
     bottom: 84px;
+  }
+}
+
+/* ==========================================================================
+   Animacje
+   Spokojne i krótkie; przy „ogranicz animacje” w systemie wszystko jest
+   natychmiastowe (reguła prefers-reduced-motion wyżej i na końcu pliku).
+   ========================================================================== */
+
+:root {
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes pw-rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+}
+
+@keyframes pw-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes pw-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.4) rotate(-12deg);
+  }
+  70% {
+    transform: scale(1.12) rotate(3deg);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes pw-slide-down {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+}
+
+@keyframes pw-shake {
+  20%,
+  60% {
+    transform: translateX(-6px);
+  }
+  40%,
+  80% {
+    transform: translateX(6px);
+  }
+}
+
+@keyframes pw-breathe {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgb(10 47 99 / 22%);
+  }
+  50% {
+    box-shadow: 0 0 0 16px rgb(10 47 99 / 0%);
+  }
+}
+
+/* ---------- Ekrany i strony ---------- */
+
+.page > * {
+  animation: pw-rise 0.5s var(--ease-out) both;
+}
+
+.page > :nth-child(2) {
+  animation-delay: 0.05s;
+}
+
+.page > :nth-child(3) {
+  animation-delay: 0.1s;
+}
+
+.page > :nth-child(4) {
+  animation-delay: 0.15s;
+}
+
+.page > :nth-child(5) {
+  animation-delay: 0.2s;
+}
+
+.page > :nth-child(n + 6) {
+  animation-delay: 0.25s;
+}
+
+/* Karty wyniku wchodzą jedna po drugiej. */
+.page > .claim,
+.page > .analysis-card {
+  animation-delay: calc(0.12s + var(--i, 0) * 0.12s);
+}
+
+.claim .dot,
+.analysis-card .dot {
+  animation: pw-pop 0.55s var(--ease-spring) both;
+  animation-delay: calc(0.3s + var(--i, 0) * 0.12s);
+}
+
+.page--state .state-icon {
+  animation: pw-pop 0.6s var(--ease-spring) both;
+}
+
+/* Sprawdzanie: pulsująca poświata wokół wskaźnika. */
+.spinner {
+  animation:
+    pw-spin 0.9s linear infinite,
+    pw-breathe 1.8s ease-in-out infinite;
+}
+
+/* ---------- Formularz ---------- */
+
+.textarea {
+  transition:
+    border-color 0.2s,
+    box-shadow 0.2s;
+}
+
+.textarea[aria-invalid='true'] {
+  animation: pw-shake 0.4s ease-in-out;
+}
+
+.field-error {
+  animation: pw-slide-down 0.25s var(--ease-out) both;
+}
+
+/* ---------- Przyciski ---------- */
+
+.btn-primary,
+.btn-secondary,
+.btn-danger,
+.btn-outline,
+.pill-toggle,
+.footer-link,
+.whatsapp-link,
+.choice {
+  transition:
+    background-color 0.2s,
+    color 0.2s,
+    border-color 0.2s,
+    box-shadow 0.2s,
+    transform 0.2s var(--ease-out);
+}
+
+.btn-primary:hover,
+.btn-danger:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px -8px rgb(10 47 99 / 55%);
+}
+
+.btn-secondary:hover,
+.btn-outline:hover,
+.pill-toggle:hover,
+.footer-link:hover,
+.whatsapp-link:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px -8px rgb(20 26 36 / 35%);
+}
+
+.btn-primary:active,
+.btn-secondary:active,
+.btn-danger:active,
+.btn-outline:active,
+.pill-toggle:active,
+.footer-link:active,
+.whatsapp-link:active {
+  transform: translateY(0) scale(0.98);
+  box-shadow: none;
+}
+
+.btn-primary:disabled,
+.btn-danger:disabled {
+  transform: none;
+  box-shadow: none;
+}
+
+.footer-link__icon,
+.whatsapp-link__icon {
+  transition: transform 0.3s var(--ease-spring);
+}
+
+.footer-link:hover .footer-link__icon,
+.whatsapp-link:hover .whatsapp-link__icon {
+  transform: scale(1.15) rotate(-6deg);
+}
+
+.btn-link {
+  transition: color 0.2s;
+}
+
+/* ---------- Źródła i pytania ---------- */
+
+.claim-sources__item {
+  animation: pw-slide-down 0.35s var(--ease-out) both;
+}
+
+.claim-sources__item:nth-child(2) {
+  animation-delay: 0.06s;
+}
+
+.claim-sources__item:nth-child(n + 3) {
+  animation-delay: 0.12s;
+}
+
+.faq__item {
+  transition: border-color 0.2s;
+}
+
+.faq__question::after {
+  transition: transform 0.3s var(--ease-spring);
+}
+
+.faq__item[open] .faq__question::after {
+  transform: rotate(180deg);
+}
+
+.faq__item[open] .faq__answer {
+  animation: pw-slide-down 0.3s var(--ease-out) both;
+}
+
+/* ---------- Okna modalne ---------- */
+
+.modal[open] {
+  animation: pw-modal-in 0.35s var(--ease-spring);
+}
+
+.modal[open]::backdrop {
+  animation: pw-fade 0.25s ease-out;
+}
+
+@keyframes pw-modal-in {
+  from {
+    opacity: 0;
+    transform: translateY(24px) scale(0.96);
+  }
+}
+
+.modal__icon {
+  animation: pw-pop 0.55s var(--ease-spring) 0.1s both;
+}
+
+/* ---------- Przycisk demo WhatsApp w rogu ---------- */
+
+@keyframes pw-switch-in {
+  from {
+    opacity: 0;
+    transform: translateY(24px) scale(0.6);
+  }
+}
+
+@keyframes pw-ping {
+  0% {
+    transform: scale(1);
+    opacity: 0.55;
+  }
+  80%,
+  100% {
+    transform: scale(1.9);
+    opacity: 0;
+  }
+}
+
+.view-switch {
+  animation: pw-switch-in 0.6s var(--ease-spring) 0.8s both;
+  transition:
+    opacity 0.2s,
+    box-shadow 0.25s,
+    transform 0.25s var(--ease-spring);
+}
+
+.view-switch:hover,
+.view-switch:focus-visible {
+  transform: translateY(-3px);
+}
+
+.view-switch:active {
+  transform: scale(0.95);
+}
+
+.view-switch__icon {
+  position: relative;
+  transition: transform 0.35s var(--ease-spring);
+}
+
+/* Fala wokół ikony – kilka razy po wejściu, żeby przyciągnąć uwagę, potem spokój. */
+.view-switch__icon::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: inherit;
+  z-index: -1;
+  animation: pw-ping 2.2s var(--ease-out) 1.6s 3 both;
+}
+
+.view-switch:hover .view-switch__icon,
+.view-switch:focus-visible .view-switch__icon {
+  transform: rotate(-12deg) scale(1.08);
+}
+
+.view-switch__text {
+  transition:
+    max-width 0.45s var(--ease-spring),
+    padding 0.45s var(--ease-spring),
+    opacity 0.3s;
+  opacity: 0;
+}
+
+.view-switch:hover .view-switch__text,
+.view-switch:focus-visible .view-switch__text {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .view-switch__text {
+    opacity: 1;
+  }
+}
+
+/* ---------- Przejście między stroną a czatem ---------- */
+
+::view-transition-old(root) {
+  animation: pw-vt-out 0.28s var(--ease-out) both;
+}
+
+::view-transition-new(root) {
+  animation: pw-vt-in 0.42s var(--ease-out) both;
+}
+
+@keyframes pw-vt-out {
+  to {
+    opacity: 0;
+    transform: scale(0.97);
+    filter: blur(2px);
+  }
+}
+
+@keyframes pw-vt-in {
+  from {
+    opacity: 0;
+    transform: scale(1.02);
+  }
+}
+
+/* ---------- Bez animacji ---------- */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-delay: 0s !important;
+    animation-iteration-count: 1 !important;
+    transition: none !important;
+  }
+
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation: none !important;
+  }
+
+  .view-switch__icon::after {
+    display: none;
   }
 }

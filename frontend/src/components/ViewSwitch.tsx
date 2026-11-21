@@ -15,6 +15,7 @@ export default function ViewSwitch() {
   return (
     <Link
       to={to}
+      viewTransition
       className="view-switch"
       data-target={onWhatsApp ? 'web' : 'whatsapp'}
       aria-label={label}
