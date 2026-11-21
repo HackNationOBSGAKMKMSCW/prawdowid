@@ -140,7 +140,7 @@ The work below is optional follow-up after you decide on the design.
 ### Phase 3: integrate (fixes F1-F4, F9, F10)
 
 - [x] Make the analyzer async (`AsyncOpenAI`) with timeout, retry, and handled `ValidationError`.
-- [x] Add independent `POST /api/analyze` and `POST /api/check` endpoints; the latter accepts the analysis object.
+- [x] Expose one async package entry point per operation; package users call methods directly, with no application HTTP endpoints.
 - [x] Remove the demo item routes and debug route.
 - [x] Remove the empty tracked `dataAnalysis/test.py` placeholder and rename `analys.py` to `analysis.py`.
 - [ ] Add a second provider (deferred: no second API source was specified).
@@ -168,16 +168,22 @@ The work below is optional follow-up after you decide on the design.
 
 Executed on 2026-11-21 on branch `feat/independent-analysis-reading-api`. The user selected Phases 1, 2, 3, and 5 and clarified that this should remain an independently usable backend component with two operations: analyze text, then fetch API data using the resulting analysis object. Phase 4 (frontend and deployment) was not selected.
 
-The analysis result now carries its topic category and detected language. `run_analysis()` returns that object; `run_api_reading()` accepts it and searches each extracted statement, preserving the topic label as metadata and passing the language to the provider. The HTTP endpoints expose those operations separately at `/api/analyze` and `/api/check`.
+The analysis result now carries its topic category and detected language. The package entry points are `await textAnalysis.run(text)` and `await apiReading.run(analysis)`. The latter searches each extracted statement, preserving the topic label as metadata and passing the language to the provider. No application HTTP server or endpoints are used; the reader's provider requests remain internal to `apiReading.run()`.
 
 The second-provider item remains deferred because no additional API source was specified. Existing analyzer heuristic limitations (F15) and frontend/deployment findings (D1-D5) remain outside the selected implementation scope; Vercel and cross-origin behavior were not validated. These are deliberate scope decisions, not claims that those items were fixed.
 
-Verification: 49 backend tests pass; `ruff check backend`, `ruff format --check backend`, and `python -c "import main"` from `backend/` pass. Python 3.14 dependency installation succeeded in the existing virtual environment.
+Verification at the initial implementation commit: 49 backend tests passed; Ruff checks passed; the FastAPI app imported from `backend/`. The subsequent interface correction replaces the server entry point with direct package methods and updates its verification in the follow-up change.
+
+### Interface correction after user clarification
+
+The user clarified that these packages are called as methods by a larger application, not through this repository's HTTP server. The public package interfaces are now exactly `textAnalysis.run(text)` and `apiReading.run(analysis)`. FastAPI routes and dependencies were removed, and `vercel.json` no longer declares a backend HTTP service. The frontend/deployment phase remains otherwise unvalidated.
+
+Verification after this correction: 48 backend tests pass; `ruff check backend`, `ruff format --check backend`, direct imports of both package entry points, and JSON parsing of `vercel.json` pass. The `FREELLM_API_KEY` settings attribute spelling was corrected and `textAnalysis.run()` now has a configuration-path test with a mocked analyzer.
 
 ## Dependencies and risks
 
 - Python 3.14 wheel availability for pydantic-core and openai (C3).
-- The FreeLLM endpoint is private; a hosted or configurable LLM is needed for deployment.
+- The FreeLLM endpoint must be supplied through configuration; the package is intended to be imported by its host application rather than deployed as an HTTP service.
 - A Google Fact Check API key is required; coverage of Polish claims is limited, so results may often be empty.
 - LLM-extracted "statements" may not be good search queries. The quality of the mapping needs evaluation.
 

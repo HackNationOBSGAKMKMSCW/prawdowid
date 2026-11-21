@@ -4,21 +4,12 @@ from typing import Any
 
 import httpx
 import pytest
-
-from backend.dataPreparation.apiReading import (
-    ApiHttpError,
-    BaseApiClient,
-    Category,
-    FetchResult,
-    GoogleFactCheckClient,
-    InvalidFiltersError,
-    Item,
-    NoSourcesAvailableError,
-    ReadingRequest,
-    RequestSpec,
-    read,
-    registry,
-)
+from apiReading import registry
+from apiReading.base import BaseApiClient, RequestSpec
+from apiReading.clients import GoogleFactCheckClient
+from apiReading.exceptions import ApiHttpError, InvalidFiltersError, NoSourcesAvailableError
+from apiReading.models import Category, FetchResult, Item, ReadingRequest
+from apiReading.reader import read
 
 OTHER_API_URL = "https://api.other.invalid/search"
 GOOGLE_API_URL = "https://factchecktools.googleapis.com/v1alpha1/claims:search"
@@ -180,7 +171,7 @@ async def test_read_with_only_unregistered_categories_raises_without_http(monkey
 async def test_owned_http_client_closes_when_read_is_cancelled(monkeypatch) -> None:
     from importlib import import_module
 
-    reader_module = import_module("backend.dataPreparation.apiReading.reader")
+    reader_module = import_module("apiReading.reader")
     real_async_client = httpx.AsyncClient
     request_started = asyncio.Event()
     tracked_client: httpx.AsyncClient | None = None

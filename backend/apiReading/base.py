@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import random
+import time
 from abc import ABC, abstractmethod
 from collections.abc import Mapping
 from datetime import UTC, datetime
@@ -156,6 +157,12 @@ class BaseApiClient(ABC):
         attempt = 0
 
         while True:
+            attempt_started_at = time.perf_counter()
+            print(
+                f"[apiReading:{self.name}] {spec.method} próba "
+                f"{attempt + 1}/{self.max_retries + 1}...",
+                flush=True,
+            )
             try:
                 if self._semaphore is None:
                     response = await self._send(client, spec)
@@ -164,16 +171,18 @@ class BaseApiClient(ABC):
                         response = await self._send(client, spec)
             except httpx.TimeoutException as exc:
                 if retryable and attempt < self.max_retries:
-                    await self._sleep_before_retry(attempt)
+                    await self._sleep_before_retry(attempt, reason="timeout")
                     attempt += 1
                     continue
+                print(f"[apiReading:{self.name}] Timeout bez kolejnych prób.", flush=True)
                 logger.warning("API request timed out: source=%s", self.name)
                 raise ApiTimeoutError(self.name, "request timed out", cause=exc) from exc
             except httpx.TransportError as exc:
                 if retryable and attempt < self.max_retries:
-                    await self._sleep_before_retry(attempt)
+                    await self._sleep_before_retry(attempt, reason="błąd połączenia")
                     attempt += 1
                     continue
+                print(f"[apiReading:{self.name}] Połączenie nie powiodło się.", flush=True)
                 logger.warning("API connection failed: source=%s", self.name)
                 raise ApiConnectionError(self.name, "request failed", cause=exc) from exc
             except httpx.InvalidURL as exc:
@@ -185,30 +194,42 @@ class BaseApiClient(ABC):
             if status == 429:
                 retry_after = _parse_retry_after(response.headers.get("Retry-After"))
                 if retryable and attempt < self.max_retries:
-                    await self._sleep_before_retry(attempt, retry_after)
+                    await self._sleep_before_retry(
+                        attempt,
+                        retry_after,
+                        reason="limit zapytań HTTP 429",
+                    )
                     attempt += 1
                     continue
+                print(f"[apiReading:{self.name}] HTTP 429; brak kolejnych prób.", flush=True)
                 raise ApiRateLimitError(
                     self.name,
                     "API rate limit exceeded",
                     retry_after=retry_after,
                 )
             if status in _RETRYABLE_STATUSES and retryable and attempt < self.max_retries:
-                await self._sleep_before_retry(attempt)
+                await self._sleep_before_retry(attempt, reason=f"HTTP {status}")
                 attempt += 1
                 continue
             if status in (401, 403):
+                print(f"[apiReading:{self.name}] Odrzucono autoryzację: HTTP {status}.", flush=True)
                 raise ApiAuthError(
                     self.name,
                     "API rejected authentication",
                     status_code=status,
                 )
             if status < 200 or status >= 300:
+                print(f"[apiReading:{self.name}] Nieudana odpowiedź HTTP {status}.", flush=True)
                 raise ApiHttpError(
                     self.name,
                     "API returned an unsuccessful status",
                     status_code=status,
                 )
+            print(
+                f"[apiReading:{self.name}] HTTP {status} po "
+                f"{time.perf_counter() - attempt_started_at:.1f}s.",
+                flush=True,
+            )
             return response
 
     def _get_client(self) -> httpx.AsyncClient:
@@ -229,12 +250,23 @@ class BaseApiClient(ABC):
             timeout=self._http_timeout,
         )
 
-    async def _sleep_before_retry(self, attempt: int, retry_after: float | None = None) -> None:
+    async def _sleep_before_retry(
+        self,
+        attempt: int,
+        retry_after: float | None = None,
+        *,
+        reason: str = "błąd przejściowy",
+    ) -> None:
         if retry_after is not None:
             delay = min(retry_after, 60.0)
         else:
             delay = min(self.retry_backoff * (2**attempt), 30.0)
             delay += random.uniform(0, delay * 0.1)
+        print(
+            f"[apiReading:{self.name}] {reason}; czekam {delay:.1f}s przed próbą "
+            f"{attempt + 2}/{self.max_retries + 1}.",
+            flush=True,
+        )
         await asyncio.sleep(delay)
 
 
