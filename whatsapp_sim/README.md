@@ -66,6 +66,14 @@ Open <http://localhost:5174>. Vite proxies `/api` to the adapter on port 8000.
   buttons, WhatsApp formatting (`*bold*`, `_italic_`, `~strike~`, links),
   light and dark themes, full screen on phones. History is kept in
   localStorage.
+- Forwarded messages: the paperclip opens a menu to insert a sample chain
+  message or send the draft as forwarded (`context.forwarded` in the
+  webhook). The bot adds a chain-message warning to its answer.
+- Live progress: while a message is checked, the chat shows the steps
+  streamed by the adapter (analysis, fact-check search) instead of plain
+  typing dots.
+- Verdict card: the answer starts with a card coloured by the verdict and an
+  "Otwórz źródło" button, followed by the detailed sources.
 
 ## Endpoints
 
@@ -73,6 +81,7 @@ Open <http://localhost:5174>. Vite proxies `/api` to the adapter on port 8000.
 | --- | --- | --- |
 | `GET` | `/api/whatsapp/health` | `{"status": "ok", "mode": "live" \| "demo"}` |
 | `POST` | `/api/whatsapp/webhook` | Cloud API webhook in, `{"messages": [...]}` out |
+| `POST` | `/api/whatsapp/webhook?stream=true` | Same, as NDJSON: `status` events while checking, then `messages` |
 
 Supported incoming message types: `text`, `interactive` (`button_reply`,
 `list_reply`), `button`, and `request_welcome` (sent by the simulator when the
@@ -88,6 +97,14 @@ chat opens). Other types get a "text only" reply.
 - Ratings from fact-checkers are mapped to false / misleading / true /
   unverified (`verdicts.py`) and combined into one headline verdict; true and
   false ratings together are reported as conflicting.
+- When a linked review is found, the reply starts with an interactive
+  `cta_url` message (verdict header, checked statement with the most
+  relevant rating, review-count footer, source link button); the detailed
+  text follows. This is a real Cloud API message type.
+- Forwarded messages (`context.forwarded` / `frequently_forwarded`) get a
+  chain-message warning.
+- Status lines from the streaming endpoint are a simulator feature; on real
+  WhatsApp they would be ordinary messages or the typing indicator.
 - Replies longer than WhatsApp's 4096-character limit are split.
 - Message text is never printed to the console; only message IDs and timings.
 
