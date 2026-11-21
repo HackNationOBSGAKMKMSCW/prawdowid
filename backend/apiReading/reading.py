@@ -12,6 +12,25 @@ from .models import Category, ReadingRequest, ReadingResult
 from .reader import read
 
 
+def format_result(result: ReadingResult) -> str:
+    """Render one result as readable lines: claim, publisher, rating, url."""
+    lines = [f"[apiReading] Wyniki dla: {result.request.query} (elementów: {len(result.items)})"]
+    for outcome in result.results:
+        if outcome.error is not None:
+            lines.append(
+                f"  BŁĄD {outcome.source}: {type(outcome.error).__name__}: {outcome.error}"
+            )
+    if not result.items:
+        lines.append("  Nie znaleziono sprawdzonych faktów.")
+    for item in result.items:
+        claim = item.payload
+        lines.append(f"  [{item.source}] {claim.get('text', '')} (autor: {claim.get('claimant')})")
+        for review in claim.get("claimReview") or []:
+            publisher = (review.get("publisher") or {}).get("name")
+            lines.append(f"    - {publisher} | {review.get('textualRating')} | {review.get('url')}")
+    return "\n".join(lines)
+
+
 async def run(analysis: AnalysisDataContainer) -> list[ReadingResult]:
     """Fetch one result per analyzed statement using the fact-check source.
 
@@ -98,4 +117,6 @@ async def run(analysis: AnalysisDataContainer) -> list[ReadingResult]:
         f"[apiReading] Pakiet zakończył pracę po {time.perf_counter() - started_at:.1f}s.",
         flush=True,
     )
+    for result in results:
+        print(format_result(result), flush=True)
     return results
