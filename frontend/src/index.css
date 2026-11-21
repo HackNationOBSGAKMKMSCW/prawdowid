@@ -1383,3 +1383,88 @@ button:disabled {
 [data-hc='true'] .whatsapp-link {
   border-color: #00007a !important;
 }
+
+/* ---------- Przełącznik widoków: Strona / WhatsApp ---------- */
+
+.view-switch {
+  --view-switch-h: 52px;
+  height: var(--view-switch-h);
+  padding: 0 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--c-navy);
+  font-family: var(--font);
+}
+
+.view-switch__tabs {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 12%);
+}
+
+.view-switch__tab {
+  min-height: 38px;
+  padding: 0 18px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 999px;
+  color: #fff;
+  font: 700 16px var(--font);
+  text-decoration: none;
+}
+
+.view-switch__tab:hover {
+  color: #fff;
+  background: rgb(255 255 255 / 12%);
+}
+
+.view-switch__tab[data-active='true'] {
+  background: #fff;
+  color: var(--c-navy);
+}
+
+.view-switch__tab:focus-visible {
+  outline: 3px solid #fff;
+  outline-offset: 2px;
+}
+
+[data-hc='true'] .view-switch__tab[data-active='true'] {
+  background: #000 !important;
+  color: #fff !important;
+  text-decoration: none !important;
+}
+
+[data-hc='true'] .view-switch__tab[data-active='true'] * {
+  color: #fff !important;
+}
+
+/* Widok WhatsApp: symulator zajmuje resztę ekranu pod przełącznikiem. */
+
+.wa-view {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+.wa-view .wa-app {
+  flex: 1;
+  min-height: calc(100dvh - 52px);
+}
+
+.wa-view .wa-page {
+  min-height: calc(100dvh - 52px);
+}
+
+.wa-view .wa-phone {
+  height: min(860px, calc(100dvh - 52px - 48px));
+}
+
+@media (max-width: 900px) {
+  .wa-view .wa-phone {
+    height: calc(100dvh - 52px);
+  }
+}

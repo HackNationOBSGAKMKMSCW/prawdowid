@@ -1,6 +1,6 @@
 import type { FormEvent, KeyboardEvent } from 'react';
 import { Link } from 'react-router-dom';
-import { SOURCE_GROUPS, WHATSAPP_NUMBER, whatsappUrl } from '../content/sources.ts';
+import { SOURCE_GROUPS, WHATSAPP_NUMBER } from '../content/sources.ts';
 import { VERDICT_ORDER, VERDICTS } from '../content/verdicts.ts';
 import { useChecker } from '../lib/checker.ts';
 
@@ -65,11 +65,9 @@ export default function StartScreen() {
 
       <div className="whatsapp">
         <span className="whatsapp__label">Możesz też napisać na WhatsApp:</span>
-        <a
+        <Link
           className="whatsapp-link"
-          href={whatsappUrl(input)}
-          target="_blank"
-          rel="noopener noreferrer"
+          to={input.trim() ? `/whatsapp?text=${encodeURIComponent(input.trim())}` : '/whatsapp'}
         >
           <svg
             className="whatsapp-link__icon"
@@ -87,11 +85,10 @@ export default function StartScreen() {
           <span>
             <span className="whatsapp-link__number">{WHATSAPP_NUMBER}</span>
             <span className="whatsapp-link__hint">
-              {input.trim() ? 'Otwórz czat z tą wiadomością' : 'Otwórz czat'}
+              {input.trim() ? 'Wyślij tę wiadomość na czacie' : 'Otwórz czat'}
             </span>
           </span>
-          <span className="sr-only"> (otwiera się w nowej karcie)</span>
-        </a>
+        </Link>
       </div>
 
       <section id="jak" className="panel" aria-labelledby="jak-h">

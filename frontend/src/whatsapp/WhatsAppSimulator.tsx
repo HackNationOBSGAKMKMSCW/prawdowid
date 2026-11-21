@@ -276,7 +276,7 @@ export default function WhatsAppSimulator() {
           kind: 'notice',
           id: newMessageId(),
           time: Date.now(),
-          text: `Brak odpowiedzi od adaptera SprawdzTo (${detail}). Uruchom backend: ${START_COMMAND}`,
+          text: `Brak odpowiedzi od adaptera WhatsApp (${detail}). Uruchom backend: ${START_COMMAND}`,
         });
       } finally {
         setActivity((prev) => prev.filter((entry) => entry.id !== id));
@@ -323,7 +323,7 @@ export default function WhatsAppSimulator() {
   return (
     <div className="wa-app">
       <div className="wa-page">
-        <section className="wa-phone" aria-label="Symulator WhatsApp: czat ze SprawdzTo">
+        <section className="wa-phone" aria-label="Symulator WhatsApp: czat z Prawdowidem">
           <StatusBar />
           <header className="wa-header">
             <span className="wa-icon-button" title="Niedostępne w symulatorze">
@@ -331,7 +331,7 @@ export default function WhatsAppSimulator() {
             </span>
             <SprawdzToAvatar size={40} />
             <div className="wa-contact">
-              <span className="wa-contact-name">SprawdzTo</span>
+              <span className="wa-contact-name">Prawdowid</span>
               <span className={`wa-contact-status${typing > 0 ? ' is-typing' : ''}`}>
                 {headerStatus}
               </span>
@@ -350,7 +350,7 @@ export default function WhatsAppSimulator() {
           <div className="wa-chat" ref={scrollRef} role="log" aria-live="polite">
             <div className="wa-chip wa-chip--notice">
               <LockIcon width={12} height={12} />
-              To symulator WhatsApp. Wiadomości trafiają do lokalnego adaptera SprawdzTo, nie do
+              To symulator WhatsApp. Wiadomości trafiają do lokalnego adaptera Prawdowida, nie do
               serwerów WhatsApp.
             </div>
 
@@ -442,7 +442,7 @@ export default function WhatsAppSimulator() {
             {visibleActivity.map((entry) => (
               <div key={entry.id} className="wa-row wa-row--in wa-row--first">
                 {entry.steps.length === 0 ? (
-                  <div className="wa-bubble wa-typing" aria-label="SprawdzTo pisze">
+                  <div className="wa-bubble wa-typing" aria-label="Prawdowid pisze">
                     <span />
                     <span />
                     <span />
@@ -525,7 +525,7 @@ export default function WhatsAppSimulator() {
                 value={draft}
                 maxLength={16_000}
                 placeholder="Wiadomość"
-                aria-label="Wiadomość do SprawdzTo"
+                aria-label="Wiadomość do Prawdowida"
                 onChange={(event) => setDraft(event.target.value)}
                 onKeyDown={onKeyDown}
               />

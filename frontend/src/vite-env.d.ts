@@ -9,8 +9,6 @@ interface ImportMetaEnv {
   readonly VITE_DEMO_BAR?: string;
   /** Numer WhatsApp pokazywany na stronie startowej. */
   readonly VITE_WHATSAPP_NUMBER?: string;
-  /** Adres czatu WhatsApp, domyślnie https://wa.me/<numer>. */
-  readonly VITE_WHATSAPP_URL?: string;
 }
 
 interface ImportMeta {

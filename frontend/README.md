@@ -1,8 +1,13 @@
 # Prawdowid – frontend
 
-Aplikacja webowa Prawdowida: użytkownik wkleja wiadomość albo link i dostaje
-wynik z werdyktem dla każdego zdania oraz źródłami, które może sam przeczytać.
-Interfejs według projektu „Prawdowid v4”.
+Aplikacja webowa Prawdowida z dwoma widokami, przełączanymi u góry ekranu:
+
+- **Strona** (`/`) – użytkownik wkleja wiadomość albo link i dostaje wynik z
+  werdyktem dla każdego zdania oraz źródłami. Interfejs według projektu „Prawdowid v4”.
+- **WhatsApp** (`/whatsapp`) – symulator czatu z Prawdowidem
+  (`src/whatsapp/`), rozmawia z adapterem z `whatsapp_sim/backend`. Nic nie trafia
+  do prawdziwego WhatsAppa. Numer na stronie startowej otwiera ten widok z
+  wpisaną wiadomością (`/whatsapp?text=…`).
 
 React 19 + TypeScript + Vite, bez bibliotek UI. Czcionka Source Sans 3 jest
 dołączona lokalnie (`@fontsource`), bez Google Fonts.
@@ -119,5 +124,6 @@ src/
 ├── content/      teksty werdyktów, lista źródeł
 ├── lib/          stan sprawdzania, nawigacja, mowa, preferencje, formatowanie
 ├── pages/        podstrony informacyjne
-└── screens/      ekrany strony głównej
+├── screens/      ekrany strony głównej
+└── whatsapp/     widok WhatsApp: symulator czatu
 ```
