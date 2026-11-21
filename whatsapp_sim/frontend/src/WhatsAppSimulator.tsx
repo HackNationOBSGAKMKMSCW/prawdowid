@@ -167,7 +167,10 @@ function StatusBar() {
 
 export default function WhatsAppSimulator() {
   const [items, setItems] = useState<ChatItem[]>(loadItems);
-  const [draft, setDraft] = useState('');
+  // Link z Prawdowida (`?text=…`) wstawia wiadomość gotową do wysłania.
+  const [draft, setDraft] = useState(
+    () => new URLSearchParams(window.location.search).get('text') ?? '',
+  );
   const [forwardDraft, setForwardDraft] = useState(false);
   const [attachOpen, setAttachOpen] = useState(false);
   const [activity, setActivity] = useState<Activity[]>([]);

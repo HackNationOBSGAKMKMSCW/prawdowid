@@ -99,3 +99,17 @@ export const SOURCE_NAMES: Record<string, string> = {
 };
 
 export const WHATSAPP_NUMBER = import.meta.env.VITE_WHATSAPP_NUMBER || '+48 22 000 00 00';
+
+/**
+ * Link otwierający czat WhatsApp. Domyślnie `https://wa.me/<numer>`; w dev można
+ * ustawić `VITE_WHATSAPP_URL=http://localhost:5174`, żeby otwierać symulator z whatsapp_sim.
+ * Wpisana wiadomość trafia do parametru `text` i pojawia się gotowa do wysłania.
+ */
+export function whatsappUrl(text?: string): string {
+  const base =
+    import.meta.env.VITE_WHATSAPP_URL || `https://wa.me/${WHATSAPP_NUMBER.replace(/\D/g, '')}`;
+  const url = new URL(base, window.location.origin);
+  const message = text?.trim();
+  if (message) url.searchParams.set('text', message);
+  return url.toString();
+}
