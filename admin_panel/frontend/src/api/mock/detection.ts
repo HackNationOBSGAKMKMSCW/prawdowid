@@ -137,14 +137,14 @@ export function buildClusters(
 
 export const DEFAULT_RECIPIENT_ROLE: Record<AlertType, Role> = {
   information_gap: 'analyst',
-  query_surge: 'moderator',
+  query_surge: 'admin',
   high_risk: 'analyst',
   prompt_injection: 'admin',
   incident_match: 'analyst',
-  source_status: 'moderator',
+  source_status: 'admin',
   system: 'admin',
   disinformation: 'analyst',
-  dangerous_user: 'moderator',
+  dangerous_user: 'admin',
 };
 
 /** An alert as computed from current data — before status and notifications are applied. */

@@ -410,7 +410,7 @@ export class HttpAdminApi implements AdminApi {
   }
 
   escalateAlert(): Promise<ModeratorCase> {
-    return Promise.reject(unsupported('Sprawy moderatora'));
+    return Promise.reject(unsupported('Sprawy'));
   }
 
   // ── topics / information gaps ─────────────────────────────────────────────
@@ -653,16 +653,16 @@ export class HttpAdminApi implements AdminApi {
     return Promise.resolve([]);
   }
   getCase(): Promise<ModeratorCase> {
-    return Promise.reject(unsupported('Sprawy moderatora'));
+    return Promise.reject(unsupported('Sprawy'));
   }
   updateCase(): Promise<ModeratorCase> {
-    return Promise.reject(unsupported('Sprawy moderatora'));
+    return Promise.reject(unsupported('Sprawy'));
   }
   addCaseComment(): Promise<ModeratorCase> {
-    return Promise.reject(unsupported('Sprawy moderatora'));
+    return Promise.reject(unsupported('Sprawy'));
   }
   forwardCase(): Promise<ModeratorCase> {
-    return Promise.reject(unsupported('Sprawy moderatora'));
+    return Promise.reject(unsupported('Sprawy'));
   }
   listSources(): Promise<Source[]> {
     return Promise.resolve([]);

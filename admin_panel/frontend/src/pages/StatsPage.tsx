@@ -5,7 +5,7 @@ import { BarList, StackedBar, TimeSeriesChart } from '../components/charts.tsx';
 import { channelLabel, VERDICT } from '../components/labels.ts';
 import { Async, Card, Kpi, PageHeader, Tabs } from '../components/ui.tsx';
 import { useAsync } from '../hooks/useAsync.ts';
-import { fmtDateTime, fmtDuration, fmtInt, fmtPct, fmtPln, fmtTime, plural } from '../utils/format.ts';
+import { fmtDateTime, fmtDuration, fmtInt, fmtPct, fmtTime, plural } from '../utils/format.ts';
 
 const RANGES = [
   { value: '24', label: '24 h' },
@@ -26,7 +26,7 @@ export default function StatsPage() {
     <>
       <PageHeader
         title="Statystyki"
-        description="Ruch w usłudze, wyniki sprawdzeń, czas odpowiedzi i koszt."
+        description="Ruch w usłudze, wyniki sprawdzeń i czas odpowiedzi."
         actions={<Tabs label="Zakres czasu" value={range} onChange={setRange} options={[...RANGES]} />}
       />
 
@@ -42,11 +42,7 @@ export default function StatsPage() {
                 hint={`${fmtInt(s.abstained)} zapytań`}
               />
               <Kpi icon="refresh" label="Typowy czas odpowiedzi" value={fmtDuration(s.medianLatencyMs)} hint={`najwolniejsze 5%: ${fmtDuration(s.p95LatencyMs)}`} />
-              {supports('checkCost') ? (
-                <Kpi icon="cpu" label="Koszt 1000 sprawdzeń" value={fmtPln(s.costPer1000Pln)} hint={`łącznie ${fmtPln(s.costTotalPln)} (szacunek)`} />
-              ) : (
-                <Kpi icon="users" label="Użytkownicy" value={fmtInt(s.users ?? 0)} hint={`${s.blockedUsers ?? 0} zablokowanych teraz`} />
-              )}
+              <Kpi icon="users" label="Użytkownicy" value={fmtInt(s.users ?? 0)} hint={`${s.blockedUsers ?? 0} zablokowanych teraz`} />
               {s.dangerousQueries !== undefined && (
                 <Kpi
                   icon="alert"

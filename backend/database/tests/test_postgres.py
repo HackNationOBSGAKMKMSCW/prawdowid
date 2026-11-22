@@ -1,6 +1,7 @@
 """Integracja z PostgreSQL: migracje, konta, tokeny, źródła, dziennik działań i zapytań, API."""
 
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import pytest
 
@@ -108,7 +109,7 @@ def test_expired_token_and_inactive_user_are_rejected(clean_db):
     now = [datetime(2026, 11, 22, 12, tzinfo=UTC)]
     accounts = AccountService(clean_db, clock=lambda: now[0])
     admin = accounts.create_user(name="A", email="a@example.pl", password=PASSWORD, role="admin")
-    user = accounts.create_user(name="U", email="u@example.pl", password=PASSWORD, role="moderator")
+    user = accounts.create_user(name="U", email="u@example.pl", password=PASSWORD, role="analyst")
     _, issued = accounts.login("u@example.pl", PASSWORD)
     assert accounts.authenticate(issued.token)
     now[0] += timedelta(hours=9)  # domyślna ważność: 8 h
@@ -128,7 +129,7 @@ def test_role_change_and_password_change_revoke_tokens(accounts):
     admin = accounts.create_user(name="A", email="a@example.pl", password=PASSWORD, role="admin")
     user = accounts.create_user(name="U", email="u@example.pl", password=PASSWORD, role="analyst")
     _, issued = accounts.login("u@example.pl", PASSWORD)
-    accounts.update_user(user.id, actor=admin.actor(), role="moderator")
+    accounts.update_user(user.id, actor=admin.actor(), role="admin")
     assert accounts.authenticate(issued.token) is None
 
     _, issued = accounts.login("u@example.pl", PASSWORD)
@@ -137,6 +138,24 @@ def test_role_change_and_password_change_revoke_tokens(accounts):
     )
     assert accounts.authenticate(issued.token) is None
     accounts.login("u@example.pl", "Nowe-haslo-testowe-2")
+
+
+def test_moderator_role_is_disabled(accounts, clean_db):
+    from accounts import AccountError
+
+    with pytest.raises(AccountError):
+        accounts.create_user(name="M", email="m@example.pl", password=PASSWORD, role="moderator")
+    # konto moderatora sprzed wyłączenia roli: migracja 0007 robi z niego analityka
+    clean_db.execute(
+        "INSERT INTO users (name, email, password_hash, role) VALUES (%s, %s, %s, 'moderator')",
+        ("Stary moderator", "old-mod@example.pl", "x"),
+    )
+    migration = (
+        Path(__file__).resolve().parents[1] / "migrations" / "0007_disable_moderator_role.sql"
+    )
+    clean_db.execute(migration.read_text(encoding="utf-8"))
+    row = clean_db.fetch_one("SELECT role FROM users WHERE email = %s", ("old-mod@example.pl",))
+    assert row["role"] == "analyst"
 
 
 def test_last_admin_is_protected(accounts):
@@ -247,8 +266,9 @@ def test_web_check_report_on_postgres(clean_db, tmp_path):
         PostgresAdminStore(clean_db), AdminSettings(), RuntimeConfigStore(tmp_path / "r.json")
     )
     query_id = "0123456789abcdef0123456789abcdef"
-    decision = monitor.screen(user_id="web:203.0.113.7", text="Czy prąd zdrożeje?", channel="web",
-                              query_id=query_id)
+    decision = monitor.screen(
+        user_id="web:203.0.113.7", text="Czy prąd zdrożeje?", channel="web", query_id=query_id
+    )
     assert decision.query_id == query_id
     monitor.complete(query_id, verdict="prawda", sources_count=1)
 
@@ -275,7 +295,7 @@ def api(clean_db, tmp_path, monkeypatch):
     monkeypatch.setenv("RUNTIME_CONFIG_FILE", str(tmp_path / "runtime.json"))
     accounts = AccountService(clean_db)
     accounts.create_user(name="Admin", email="admin@example.pl", password=PASSWORD, role="admin")
-    accounts.create_user(name="Moder", email="mod@example.pl", password=PASSWORD, role="moderator")
+    accounts.create_user(name="Analityk", email="analityk@example.pl", password=PASSWORD, role="analyst")
     accounts.create_user(name="Jan", email="jan@example.pl", password=PASSWORD, role="user")
     app = create_app(
         AdminSettings(api_token="awaryjny-token", db_path=tmp_path / "x.db"),
@@ -313,13 +333,14 @@ def test_api_login_me_logout(api):
 
 def test_api_permissions_by_role(api):
     admin = _login(api, "admin@example.pl")
-    mod = _login(api, "mod@example.pl")
-    assert api.get("/api/admin/dashboard", headers=mod).status_code == 200
-    assert api.get("/api/admin/config", headers=mod).status_code == 403
+    analyst = _login(api, "analityk@example.pl")
+    assert api.get("/api/admin/dashboard", headers=analyst).status_code == 200
+    assert api.get("/api/admin/config", headers=analyst).status_code == 200
     assert (
-        api.patch("/api/admin/config", headers=mod, json={"llm": {"model": "x"}}).status_code == 403
+        api.patch("/api/admin/config", headers=analyst, json={"llm": {"model": "x"}}).status_code
+        == 403
     )
-    assert api.get("/api/admin/accounts", headers=mod).status_code == 403
+    assert api.get("/api/admin/accounts", headers=analyst).status_code == 403
     assert api.get("/api/admin/accounts", headers=admin).status_code == 200
     # awaryjny token działa jak administrator
     token = {"Authorization": "Bearer awaryjny-token", "X-Admin-User": "ola"}

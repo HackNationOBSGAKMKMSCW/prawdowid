@@ -146,7 +146,7 @@ export default function GapsPage() {
                 icon="folder"
                 label={lifecycle ? 'Czekają na decyzję' : 'Luki bez sprawy'}
                 value={waiting.length}
-                hint={lifecycle ? 'nikt jeszcze nie uzupełnia źródeł' : 'wymagają decyzji moderatora'}
+                hint={lifecycle ? 'nikt jeszcze nie uzupełnia źródeł' : 'wymagają decyzji'}
               />
             </div>
 
