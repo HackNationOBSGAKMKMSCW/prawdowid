@@ -1,6 +1,6 @@
 # admin_panel — panel administracyjny Prawdowida
 
-Frontend panelu dla administratora, analityka i moderatora: logowanie, pulpit
+Frontend panelu dla administratora i analityka: logowanie, pulpit
 (co wymaga uwagi teraz), statystyki,
 alerty i ostrzeżenia, luki informacyjne, powtarzające się zapytania, sprawy
 moderatora, historia weryfikacji, katalog źródeł, wymienne modele, reguły
@@ -54,10 +54,9 @@ npm run dev        # http://localhost:5175
 - Po kilku nieudanych próbach backend czasowo blokuje logowanie (429).
 - Sesja wygasa po czasie z backendu albo przy odpowiedzi 401.
 
-**Role** panelu to administrator, analityk i moderator. Sprawdza je backend (`backend/accounts/permissions.py`), a panel tylko chowa niedostępne widoki.
+**Role** panelu to administrator i analityk (rola moderatora jest na razie wyłączona; migracja `0007` zmienia istniejące konta moderatorów na analityków). Sprawdza je backend (`backend/accounts/permissions.py`), a panel tylko chowa niedostępne widoki.
 - **Administrator** ma pełną kontrolę nad serwisem: modele, źródła, reguły, blokady, konta i hasła.
 - **Analityk** ma panel obserwacyjny: widzi pulpit, statystyki, alerty, luki, historię weryfikacji, logi, użytkowników serwisu i źródła, może eksportować dane, ale niczego nie zmienia.
-- **Moderator** obsługuje alerty i luki oraz blokuje użytkowników serwisu.
 
 Strona dla obywateli nie ma kont: sprawdzanie jest anonimowe. Konta zakłada wyłącznie administrator.
 
@@ -116,7 +115,6 @@ Konta przykładowe (hasło `demo1234`):
 |---|---|---|
 | `admin@prawdowid.demo` | administrator | wszystko, w tym modele, reguły, użytkowników |
 | `analityk@prawdowid.demo` | analityk | panel obserwacyjny: wszystko do odczytu, eksport |
-| `moderator@prawdowid.demo` | moderator | alerty, sprawy, historia, źródła (podgląd) |
 
 Zmiany wprowadzone w trybie demo są pamiętane w `localStorage` przez 6 godzin;
 „Kanały i prywatność → Przywróć dane demo” zaczyna od nowa.

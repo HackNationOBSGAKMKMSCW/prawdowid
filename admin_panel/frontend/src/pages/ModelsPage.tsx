@@ -14,7 +14,7 @@ import { Icon, type IconName } from '../components/icons.tsx';
 import { HEALTH, PIPELINE_ROLE, PROTOCOL, REGION } from '../components/labels.ts';
 import { Async, Badge, Field, Modal, PageHeader, Toggle, useAction } from '../components/ui.tsx';
 import { useAsync } from '../hooks/useAsync.ts';
-import { fmtDuration, fmtPct, fmtPln, fmtRelative } from '../utils/format.ts';
+import { fmtDuration, fmtPct, fmtRelative } from '../utils/format.ts';
 
 const LLM_ROLES: PipelineRole[] = ['claim_extraction', 'answer_generation'];
 
@@ -27,8 +27,6 @@ const STAGE_ICON: Record<PipelineRole, IconName> = {
   reverse_image: 'repeat',
 };
 
-/** Rough cost of 1000 checks: ~3,5k input and ~1k output tokens per check and stage. */
-const costPer1000 = (p: ModelProvider) => (p.costPer1kInputPln * 3.5 + p.costPer1kOutputPln) * 1000;
 
 const EMPTY_PROVIDER: ProviderInput = {
   name: '',
@@ -240,10 +238,9 @@ export default function ModelsPage() {
                         <span className="muted">Obecnie nieużywany</span>
                       )}
                     </p>
-                    <p className="small muted">
-                      ~{fmtPln(costPer1000(p))} / 1000 sprawdzeń
-                      {p.errorRate !== undefined && ` · błędy ${fmtPct(p.errorRate, 1)}`}
-                    </p>
+                    {p.errorRate !== undefined && (
+                      <p className="small muted">Błędy: {fmtPct(p.errorRate, 1)}</p>
+                    )}
                     {t && (
                       <div className={`notice ${t.ok ? 'notice-good' : 'notice-critical'} small`}>
                         <Icon name={t.ok ? 'check' : 'alert'} size={14} />
@@ -323,7 +320,6 @@ export default function ModelsPage() {
                       <span className="row gap-xs wrap">
                         <Badge tone={REGION[p.region].tone}>{REGION[p.region].label}</Badge>
                         <Badge tone={HEALTH[p.health].tone}>{HEALTH[p.health].label}</Badge>
-                        <span className="muted small">~{fmtPln(costPer1000(p))} / 1000 sprawdzeń</span>
                       </span>
                       {disabled && <span className="small text-critical">Brak klucza API — administrator musi go dodać na serwerze.</span>}
                     </span>

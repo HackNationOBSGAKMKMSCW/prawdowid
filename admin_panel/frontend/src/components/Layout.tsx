@@ -42,7 +42,7 @@ export const NAV: { section: string; items: NavItem[] }[] = [
   {
     section: 'Obsługa',
     items: [
-      { to: '/cases', label: 'Sprawy moderatora', icon: 'folder', permission: 'cases:read', counter: 'cases', feature: 'cases' },
+      { to: '/cases', label: 'Sprawy', icon: 'folder', permission: 'cases:read', counter: 'cases', feature: 'cases' },
       { to: '/checks', label: 'Historia weryfikacji', icon: 'history', permission: 'checks:read' },
     ],
   },

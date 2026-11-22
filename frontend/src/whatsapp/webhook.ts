@@ -104,13 +104,18 @@ type StreamEvent =
   | { type: 'messages'; messages: CloudApiMessage[] }
   | { type: 'error'; detail: string };
 
+// Same API base as the website (`VITE_API_BASE_URL`, by default `/api`): in production
+// the simulator talks to the backend directly, not through the host's proxy, whose
+// time limit is shorter than a full check.
+const API_BASE = (import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/$/, '');
+
 // Streaming variant: status lines arrive while the bot checks the message,
 // followed by the final Cloud API messages (NDJSON, one event per line).
 export async function postWebhookStream(
   payload: unknown,
   onStatus: (text: string) => void,
 ): Promise<WebhookResponse> {
-  const res = await fetch('/api/whatsapp/webhook?stream=true', {
+  const res = await fetch(`${API_BASE}/whatsapp/webhook?stream=true`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
@@ -136,7 +141,7 @@ export async function postWebhookStream(
 }
 
 export async function fetchHealth(): Promise<Health> {
-  const res = await fetch('/api/whatsapp/health');
+  const res = await fetch(`${API_BASE}/whatsapp/health`);
   if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
   return (await res.json()) as Health;
 }

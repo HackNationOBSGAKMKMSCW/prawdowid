@@ -59,7 +59,7 @@ export default function CaseDetailPage() {
         return (
           <>
             <div className="crumbs">
-              <Link to="/cases">Sprawy moderatora</Link> / <span className="mono">{c.id}</span>
+              <Link to="/cases">Sprawy</Link> / <span className="mono">{c.id}</span>
             </div>
             <PageHeader
               title={c.title}

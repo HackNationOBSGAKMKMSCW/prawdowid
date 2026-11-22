@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import sys
 from collections.abc import Awaitable, Callable
@@ -45,6 +46,25 @@ def _whatsapp_router(monitor: object | None = None):
     return create_router(monitor=monitor)
 
 
+def init_logging() -> None:
+    """Logi serwera: ``backend/logs/app.jsonl`` (``LOG_FILE``) i ostrzeżenia na konsoli.
+
+    ``LOG_CONSOLE=true`` wypisuje na konsolę wszystko (etapy, wywołania modeli, czasy).
+    Plik czyta też panel admina (Logi techniczne). Bez tego wywołania serwer nie zapisywał
+    żadnych logów, a zdarzenia poziomu INFO nigdzie się nie pojawiały.
+    """
+    import observability
+    from verification import _analysis
+
+    _analysis.add_paths()  # przed init(): etapy z analysis/ też dostają pomiar czasu
+    if observability.init():
+        logging.getLogger(__name__).info(
+            "server_logging log_file=%s console=%s",
+            os.getenv("LOG_FILE") or "backend/logs/app.jsonl",
+            os.getenv("LOG_CONSOLE") or "false",
+        )
+
+
 def _cors_origins() -> list[str]:
     return [origin.strip() for origin in os.getenv("CORS_ORIGINS", "").split(",") if origin.strip()]
 
@@ -63,22 +83,19 @@ def create_app(
     url_validator: UrlValidator | None = None,
     admin_panel: bool | None = None,
     monitor: object | None = None,
-    init_logging: bool = False,
 ) -> FastAPI:
     """API strony; ``admin_panel`` (domyślnie ``ADMIN_PANEL``, włączony): ``/api/admin``.
 
     Z panelem każde ``/api/check`` i zgłoszenie trafia do dziennika zapytań panelu
     (``admin.web.CheckJournal``). ``monitor``: gotowy monitor (testy).
-    ``init_logging``: logi observability do pliku (``LOG_FILE``) i instrumentacja potoku, w tym
-    wykrywanie prompt injection; z nich panel buduje raport zagrożeń (``/api/admin/threats``).
+    Prawdziwy serwer (bez ``store``) zapisuje logi (``init_logging``): z nich panel buduje raport
+    zagrożeń (``/api/admin/threats``), w tym próby prompt injection.
     """
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        if init_logging:
-            import observability
-
-            observability.init()
         owns_store = store is None
+        if owns_store:  # prawdziwy serwer (testy podają własny store i nie piszą logów)
+            init_logging()
         active_store = (
             await (store_factory or PostgresStore.connect_from_environment)()
             if owns_store
@@ -133,4 +150,4 @@ def create_app(
     return app
 
 
-app = create_app(init_logging=True)
+app = create_app()

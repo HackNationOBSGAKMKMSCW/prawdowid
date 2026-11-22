@@ -24,7 +24,6 @@ export type Tone = 'neutral' | 'info' | 'good' | 'warning' | 'serious' | 'critic
 
 export const ROLE_LABEL: Record<Role, string> = {
   admin: 'Administrator',
-  moderator: 'Moderator',
   analyst: 'Analityk',
   user: 'Użytkownik serwisu',
 };

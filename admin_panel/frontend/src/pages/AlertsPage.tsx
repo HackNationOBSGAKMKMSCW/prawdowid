@@ -50,7 +50,7 @@ export default function AlertsPage() {
     const ok = await run(async () => {
       const c = await api.escalateAlert(escalating.id, assignee || undefined);
       caseId = c.id;
-    }, 'Sprawa moderatora utworzona lub zaktualizowana.');
+    }, 'Sprawa utworzona lub zaktualizowana.');
     if (ok) {
       setEscalating(null);
       refreshCounts();
@@ -192,7 +192,7 @@ export default function AlertsPage() {
                     ) : (
                       <span>
                         <Icon name="info" size={14} /> <strong>Rekomendacja:</strong> powiadomić rolę „
-                        {ROLE_LABEL[a.recommendedRole ?? 'moderator'].toLowerCase()}” — nikt nie jest przypisany do tego typu
+                        {ROLE_LABEL[a.recommendedRole ?? 'admin'].toLowerCase()}” — nikt nie jest przypisany do tego typu
                         alertu, więc <em>nic nie zostało wysłane</em>.{' '}
                         {can('rules:write') && <Link to="/rules">Ustaw odbiorców</Link>}
                       </span>
@@ -258,7 +258,7 @@ export default function AlertsPage() {
       <Modal
         open={!!escalating}
         onClose={() => setEscalating(null)}
-        title="Utwórz sprawę moderatora"
+        title="Utwórz sprawę"
         footer={
           <>
             <button type="button" className="btn" onClick={() => setEscalating(null)}>

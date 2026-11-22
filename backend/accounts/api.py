@@ -35,7 +35,7 @@ from .service import (
 from .trusted import SourceError, TrustedSourceRepository
 
 # Konta zakłada administrator w panelu; tylko role panelu (konta „user” nie mają dostępu).
-Role = Literal["moderator", "analyst", "admin"]
+Role = Literal["analyst", "admin"]
 
 
 @dataclass(frozen=True)

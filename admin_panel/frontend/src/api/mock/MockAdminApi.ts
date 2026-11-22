@@ -74,8 +74,9 @@ import {
   TOPICS,
 } from './seed.ts';
 
-const STORAGE_KEY = 'prawdowid-admin-mock-v1';
-const ROLE_PL: Record<Role, string> = { admin: 'administrator', moderator: 'moderator', analyst: 'analityk', user: 'użytkownik serwisu' };
+// v2: without the moderator role (older saved demo data still had moderator accounts).
+const STORAGE_KEY = 'prawdowid-admin-mock-v2';
+const ROLE_PL: Record<Role, string> = { admin: 'administrator', analyst: 'analityk', user: 'użytkownik serwisu' };
 const STATUS_PL: Record<string, string> = {
   new: 'nowa',
   in_progress: 'w toku',

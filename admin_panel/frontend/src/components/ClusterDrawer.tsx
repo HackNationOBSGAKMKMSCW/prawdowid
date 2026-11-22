@@ -65,7 +65,7 @@ export function ClusterDrawer({
     let id = '';
     const ok = await run(async () => {
       id = (await api.escalateAlert(escalationTarget.id)).id;
-    }, 'Sprawa moderatora utworzona lub zaktualizowana.');
+    }, 'Sprawa utworzona lub zaktualizowana.');
     if (ok) {
       refreshCounts();
       navigate(`/cases/${id}`);
@@ -128,7 +128,7 @@ export function ClusterDrawer({
             can('cases:write') &&
             escalationTarget && (
               <button type="button" className="btn btn-primary" disabled={busy} onClick={createCase}>
-                <Icon name="folder" size={16} /> Utwórz sprawę moderatora
+                <Icon name="folder" size={16} /> Utwórz sprawę
               </button>
             )
           )}
