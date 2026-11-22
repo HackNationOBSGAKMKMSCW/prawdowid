@@ -41,14 +41,37 @@ i nie potrzebuje backendu. Pasek „DEMO” na górze pokazuje wszystkie
 scenariusze: wynik ze źródłami, analiza dat i manipulacji, link, opinia,
 „napisz więcej”, „poza zakresem” i awaria.
 
-Żeby lokalnie łączyć się z backendem, ustaw `VITE_API_MODE=live` w głównym pliku
-`.env` projektu (wzór w głównym `.env.example`):
+### Z prawdziwym backendem
 
-```
-VITE_API_MODE=live
+Dwa procesy backendu i frontend w trybie `live` (każde w osobnym terminalu, z
+katalogu głównego repo):
+
+```bash
+# 1. API strony: /api/check, /api/check/{id}/report, /api/health, /api/trusted-sources
+#    (DATABASE_URL i klucze modeli w backend/.env, zob. backend/API.md)
+PYTHONPATH=backend:analysis:analysis/src uvicorn server:app --port 8000
+
+# 2. symulator WhatsApp (widok /whatsapp): /api/whatsapp/*
+cd whatsapp_sim/backend && python -m whatsappAdapter --port 8001   # albo --demo
+
+# 3. frontend połączony z backendem
+cd frontend && npm run dev:live    # http://localhost:5173
 ```
 
-W dev Vite przekierowuje `/api` na `http://127.0.0.1:8000`.
+Zamiast `npm run dev:live` można ustawić `VITE_API_MODE=live` w głównym `.env` projektu.
+Vite przekazuje `/api/whatsapp` na port 8001, a resztę `/api` na port 8000
+(`API_PROXY_TARGET`, `WHATSAPP_PROXY_TARGET` w głównym `.env` projektu).
+`npm run build:live` buduje stronę w trybie `live`; na serwerze `/api` musi
+prowadzić do `server:app` (ta sama domena albo `VITE_API_BASE_URL` + `CORS_ORIGINS`).
+
+W trybie `live`:
+- strona startowa pyta `GET /api/health` i ostrzega, gdy serwer nie działa;
+- błędy z backendu (`invalid_url`, `unsafe_url`, `url_unavailable`,
+  `analysis_busy`, `analysis_timeout`, …) mają własne komunikaty, a przy
+  problemach z treścią „Popraw wiadomość” wraca do formularza z tekstem;
+- „Lista źródeł” pochodzi z `GET /api/trusted-sources` (te same źródła, które
+  przeszukuje weryfikacja); bez serwera zostaje lista z kodu;
+- „Zgłoś błąd” zapisuje zgłoszenie w bazie (`POST /api/check/{id}/report`).
 
 ## Ekrany
 
@@ -59,7 +82,7 @@ W dev Vite przekierowuje `/api` na `http://127.0.0.1:8000`.
 | Wynik                | karty zdań (werdykt, wyjaśnienie, źródła) i karty analizy (daty, manipulacja) |
 | Napisz trochę więcej | backend zwrócił `clarify`                                                     |
 | Tego nie sprawdzamy  | backend zwrócił `out_of_scope`                                                |
-| Coś poszło nie tak   | błąd sieci, błąd HTTP albo limit czasu (90 s)                                 |
+| Coś poszło nie tak   | błąd sieci, błąd HTTP albo limit czasu; komunikat zależy od kodu błędu API    |
 
 Podstrony: `/zrodla` (pełna lista źródeł), `/pomoc`, `/deklaracja-dostepnosci`.
 

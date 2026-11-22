@@ -1,5 +1,6 @@
-import type { FormEvent, KeyboardEvent } from 'react';
+import { type FormEvent, type KeyboardEvent, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { checkHealth } from '../api/client.ts';
 import { SOURCE_GROUPS, WHATSAPP_NUMBER } from '../content/sources.ts';
 import { VERDICT_ORDER, VERDICTS } from '../content/verdicts.ts';
 import { useChecker } from '../lib/checker.ts';
@@ -10,8 +11,20 @@ const STEPS = [
   { lead: 'Dostajesz wynik', rest: ' i źródła, które możesz sam przeczytać.' },
 ];
 
+/** `GET /api/health` przy wejściu na stronę (w trybie mock zawsze „działa”). */
+function useServerUp(): boolean | null {
+  const [up, setUp] = useState<boolean | null>(null);
+  useEffect(() => {
+    const ctrl = new AbortController();
+    checkHealth(ctrl.signal).then(setUp, () => {});
+    return () => ctrl.abort();
+  }, []);
+  return up;
+}
+
 export default function StartScreen() {
   const { input, setInput, error, run } = useChecker();
+  const serverUp = useServerUp();
 
   const onSubmit = (event: FormEvent) => {
     event.preventDefault();
@@ -34,6 +47,13 @@ export default function StartScreen() {
         </h1>
         <p className="lead">Wklej to, co dostałeś. Powiemy Ci, co mówią o tym wiarygodne źródła.</p>
       </div>
+
+      {serverUp === false && (
+        <p className="server-status" role="status">
+          Serwer sprawdzania jest teraz niedostępny. Możesz wpisać wiadomość, ale wynik może się nie
+          pojawić — spróbuj za kilka minut.
+        </p>
+      )}
 
       <form className="check-form" onSubmit={onSubmit} noValidate>
         <label htmlFor="pw-input" className="field-label">
