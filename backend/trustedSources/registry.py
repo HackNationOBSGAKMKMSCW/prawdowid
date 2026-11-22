@@ -200,5 +200,7 @@ def default_registry() -> SourceRegistry:
     global _default
     with _default_lock:
         if _default is None:
-            _default = SourceRegistry()
+            from .store import default_store
+
+            _default = SourceRegistry(store=default_store())
         return _default
