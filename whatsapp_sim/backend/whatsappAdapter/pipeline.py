@@ -1,7 +1,15 @@
-"""Fact-check pipelines used by the bot: the real packages or canned demo data."""
+"""Pipelines used by the bot.
+
+* ``VerificationPipeline`` (tryb ``live``, domyślny): dokładnie ta sama weryfikacja co
+  ``GET /api/check`` na stronie (``verification`` -> ``api_adapter.to_check_response``),
+* ``LivePipeline`` (tryb ``factcheck``): szybkie wyszukiwanie tylko w Google Fact Check,
+* ``DemoPipeline`` (tryb ``demo``): przykładowe dane bez sieci i kluczy.
+"""
 
 import asyncio
+import os
 import re
+import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -53,14 +61,77 @@ ReadFullText = Callable[[AnalysisDataContainer], Awaitable[ReadingResult]]
 SearchTrusted = Callable[[AnalysisDataContainer], Awaitable[Any]]
 
 
+@dataclass(frozen=True)
+class VerifiedReport:
+    """Result of the website's verification flow, rendered for WhatsApp."""
+
+    text: str
+    # api_models.CheckResponse: exactly what the website shows for the same input.
+    response: Any
+    statements: list[str]
+    demo: bool = False
+
+
+class VerificationPipeline:
+    """Run the same verification as the website (``GET /api/check``).
+
+    Claims, articles, trusted sites, manipulation and date checks, the model's verdict
+    per claim and the known-disinformation database: one result, two channels.
+    """
+
+    mode = "live"
+
+    def __init__(
+        self,
+        *,
+        start: Callable[[str], Any] | None = None,
+        validate_url: Callable[[str], Awaitable[str]] | None = None,
+        check_timeout: float | None = None,
+    ) -> None:
+        self._start = start
+        self._validate_url = validate_url
+        self.check_timeout = (
+            check_timeout
+            if check_timeout is not None
+            else float(os.getenv("CHECK_TIMEOUT_SECONDS", "360"))
+        )
+
+    async def check(self, text: str, progress: Progress | None = None) -> VerifiedReport:
+        from api_adapter import to_check_response
+        from api_routes import _is_bare_url
+
+        input_text, input_type = text, "text"
+        if _is_bare_url(text):
+            validate = self._validate_url
+            if validate is None:
+                from api_routes import _validate_public_url as validate
+            input_text, input_type = await validate(text.strip()), "url"
+
+        start = self._start
+        if start is None:
+            from verification import start
+        job = start(input_text)
+        try:
+            evidence = await job.evidence
+            statements = list((evidence.data or {}).get("statements") or [])
+            if evidence.status == "ok":
+                await _report(progress, "assessing", len(statements))
+            report = await job.report()
+        finally:
+            job.cancel()
+        response = to_check_response(report, result_id=uuid.uuid4().hex, input_type=input_type)
+        return VerifiedReport(text=input_text, response=response, statements=statements)
+
+
 class LivePipeline:
-    """Run ``textAnalysis`` and ``apiReading`` exactly as the main app does.
+    """Fast fact-check-only mode (``SPRAWDZTO_MODE=factcheck``): textAnalysis + apiReading.
 
     Extracted statements are searched one by one. A message with no factual
     statements (often a plain question) is searched as a whole instead.
     """
 
-    mode = "live"
+    mode = "factcheck"
+    check_timeout = 90.0
 
     def __init__(
         self,
@@ -258,6 +329,7 @@ class DemoPipeline:
     """
 
     mode = "demo"
+    check_timeout = 90.0
 
     def __init__(self, *, delay_seconds: float = 2.0) -> None:
         self.delay_seconds = delay_seconds

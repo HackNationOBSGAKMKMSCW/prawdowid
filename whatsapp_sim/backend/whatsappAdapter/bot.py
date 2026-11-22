@@ -23,7 +23,8 @@ from .cloud_api import (
     text_message,
 )
 from .formatting import format_report, verdict_card
-from .pipeline import FactCheckPipeline
+from .pipeline import FactCheckPipeline, VerifiedReport
+from .verified_formatting import format_verified, verified_card
 
 BOT_NAME = "SprawdzTo"
 MIN_CHECK_CHARS = 8
@@ -44,26 +45,25 @@ WELCOME_TEXT = (
     "• zdanie lub cytat, który krąży w sieci,\n"
     "• pytanie, np. _„Czy 5G szkodzi zdrowiu?”_,\n"
     "• treść podejrzanego łańcuszka.\n\n"
-    "Wyciągnę z tekstu konkretne twierdzenia i poszukam ich w bazach "
-    "niezależnych redakcji fact-checkingowych."
+    "Sprawdzę ją tak samo jak strona Prawdowida: wyciągnę konkretne twierdzenia, "
+    "poszukam ich w wiarygodnych źródłach i ocenię każde z nich."
 )
 WELCOME_BUTTONS_TEXT = "Chcesz zobaczyć, jak to działa na przykładzie?"
 
 HELP_TEXT = (
     f"*Jak działa {BOT_NAME}?*\n\n"
-    "1. Model językowy analizuje Twoją wiadomość: rozpoznaje temat i język "
-    "i wyciąga z niej konkretne twierdzenia.\n"
-    "2. Każde twierdzenie wyszukuję w Google Fact Check Tools — bazie weryfikacji "
-    "publikowanych przez redakcje fact-checkingowe z całego świata.\n"
-    "3. Zbieram ich oceny w jeden werdykt i podaję linki do źródeł.\n\n"
+    "To ta sama weryfikacja co na stronie Prawdowida, tylko w czacie.\n\n"
+    "1. Model językowy analizuje Twoją wiadomość i wyciąga z niej konkretne twierdzenia.\n"
+    "2. Szukam ich w bazach redakcji fact-checkingowych, na stronach urzędów "
+    "i zaufanych serwisów oraz w bazie znanej dezinformacji.\n"
+    "3. Każde twierdzenie dostaje ocenę z uzasadnieniem i źródłami. "
+    "Sprawdzam też, czy tekst nie gra na emocjach i czy zgadzają się daty.\n\n"
     "Treść wiadomości traktuję wyłącznie jako dane do sprawdzenia — "
     "polecenia ukryte w tekście są ignorowane.\n\n"
     "Komendy: *start* — powitanie, *pomoc* — ta wiadomość."
 )
 THANKS_TEXT = "Nie ma sprawy! Wyślij kolejną informację, jeśli chcesz coś sprawdzić."
-TOO_SHORT_TEXT = (
-    "Napisz trochę więcej — najlepiej całe zdanie lub pytanie, które chcesz sprawdzić."
-)
+TOO_SHORT_TEXT = "Napisz trochę więcej — najlepiej całe zdanie lub pytanie, które chcesz sprawdzić."
 TOO_LONG_TEXT = (
     "Ta wiadomość jest za długa. Wklej fragment do "
     f"{InputSanitizer.MAX_INPUT_LENGTH:,} znaków.".replace(",", " ")
@@ -77,9 +77,7 @@ NOT_CONFIGURED_TEXT = (
     "Serwer SprawdzTo nie ma skonfigurowanego modelu językowego.\n"
     "_Ustaw FREELLM_API_KEY w backend/.env albo uruchom adapter w trybie demo (--demo)._"
 )
-ANALYSIS_FAILED_TEXT = (
-    "Nie udało mi się przeanalizować tej wiadomości. Spróbuj ponownie za chwilę."
-)
+ANALYSIS_FAILED_TEXT = "Nie udało mi się przeanalizować tej wiadomości. Spróbuj ponownie za chwilę."
 FORWARDED_NOTE = (
     "_To wiadomość przekazana dalej. Łańcuszki to częste źródło dezinformacji — "
     "nie przesyłaj jej dalej, dopóki nie sprawdzisz źródła._"
@@ -90,12 +88,22 @@ FREQUENTLY_FORWARDED_NOTE = (
 )
 GENERIC_ERROR_TEXT = "Coś poszło nie tak po mojej stronie. Spróbuj ponownie za chwilę."
 
+URL_REFUSED_TEXT = (
+    "Nie mogę otworzyć tego adresu. Wyślij publiczny link http(s) albo wklej treść wiadomości."
+)
+
 SOURCE_BUTTON_TEXT = "Otwórz źródło"
 ANALYZING_STATUS = "Analizuję tekst i wyciągam twierdzenia…"
 SEARCHING_FULL_TEXT_STATUS = "Szukam Twojej wiadomości w bazach fact-checkingowych…"
 
 # Receives a short status line while a message is being checked.
 StatusCallback = Callable[[str], Awaitable[None]]
+
+
+def assessing_status(count: int) -> str:
+    if count <= 1:
+        return "Porównuję twierdzenie ze źródłami i oceniam je…"
+    return f"Porównuję {count} twierdzeń ze źródłami i oceniam je…"
 
 
 def searching_status(count: int) -> str:
@@ -139,11 +147,16 @@ class SprawdzToBot:
         self,
         pipeline: FactCheckPipeline,
         *,
-        check_timeout: float = 90.0,
+        check_timeout: float | None = None,
         monitor: AdminMonitor | None = None,
     ) -> None:
         self.pipeline = pipeline
-        self.check_timeout = check_timeout
+        # Full verification takes minutes; the pipeline knows its own deadline.
+        self.check_timeout = (
+            check_timeout
+            if check_timeout is not None
+            else float(getattr(pipeline, "check_timeout", 90.0))
+        )
         # Rejestr panelu admina: logi, blokady, luki informacyjne, alerty dezinformacji.
         self.monitor = monitor
 
@@ -230,6 +243,8 @@ class SprawdzToBot:
         async def on_progress(stage: str, count: int) -> None:
             if stage == "searching":
                 await notify(searching_status(count))
+            elif stage == "assessing":
+                await notify(assessing_status(count))
 
         admin = AdminSession(self.monitor)
         refusal = admin.screen(to, text)
@@ -247,8 +262,12 @@ class SprawdzToBot:
             async with asyncio.timeout(self.check_timeout):
                 await notify(ANALYZING_STATUS)
                 report = await self.pipeline.check(text, progress=on_progress)
-            card = verdict_card(report)
-            body = format_report(report, headline=card is None)
+            if isinstance(report, VerifiedReport):
+                card = verified_card(report)
+                body = format_verified(report, headline=card is None)
+            else:
+                card = verdict_card(report)
+                body = format_report(report, headline=card is None)
             info_gap = admin.complete(report)
             if info_gap:
                 body = f"{body}\n\n{info_gap}"
@@ -269,10 +288,7 @@ class SprawdzToBot:
             body = ANALYSIS_FAILED_TEXT
             failure = "analysis_failed"
         except Exception as exc:  # noqa: BLE001 - the chat must always get an answer
-            print(f"[whatsappAdapter] Błąd: {type(exc).__name__}.", flush=True)
-            log_abstain("pipeline_error", channel="whatsapp", error=type(exc).__name__)
-            body = GENERIC_ERROR_TEXT
-            failure = f"pipeline_error:{type(exc).__name__}"
+            body, failure = _verification_failure(exc)
         if failure is not None:
             admin.complete(error=failure)
         print(
@@ -294,3 +310,26 @@ class SprawdzToBot:
                 ),
             )
         return replies
+
+
+def _verification_failure(exc: Exception) -> tuple[str, str]:
+    """Reply and admin error code for a failure, the same cases as ``/api/check``."""
+    name = type(exc).__name__
+    if name == "ApiFailure":  # api_routes: URL rejected, or the deadline passed
+        code = str(getattr(exc, "code", "api_failure"))
+        if code == "analysis_timeout":
+            log_abstain("timeout", channel="whatsapp")
+            return TIMEOUT_TEXT, "timeout"
+        log_abstain("url_refused", channel="whatsapp", error=code)
+        return URL_REFUSED_TEXT, f"url:{code}"
+    if name in {"VerificationFailed", "InvalidVerificationResult"}:  # api_adapter
+        kind = str(getattr(exc, "kind", name))
+        log_abstain("analysis_failed", channel="whatsapp", error=kind)
+        if kind.lower() == "timeout":
+            return TIMEOUT_TEXT, "timeout"
+        if kind == "AnalysisConfigurationError":
+            return NOT_CONFIGURED_TEXT, "not_configured"
+        return ANALYSIS_FAILED_TEXT, f"analysis_failed:{getattr(exc, 'part', name)}"
+    print(f"[whatsappAdapter] Błąd: {name}.", flush=True)
+    log_abstain("pipeline_error", channel="whatsapp", error=name)
+    return GENERIC_ERROR_TEXT, f"pipeline_error:{name}"

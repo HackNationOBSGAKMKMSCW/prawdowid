@@ -175,3 +175,41 @@ def test_failed_stage_is_logged_without_the_text(caplog):
     logged = " ".join(record.getMessage() for record in caplog.records)
     assert "part=evidence kind=AnalysisConfigurationError" in logged
     assert "Tajna" not in logged
+
+
+def test_whatsapp_channel_is_served_by_the_same_backend(monkeypatch):
+    """Strona i symulator WhatsApp to jeden backend: /api/whatsapp/* w server:app."""
+    monkeypatch.setenv("SPRAWDZTO_MODE", "demo")
+    monkeypatch.setenv("ADMIN_MONITOR", "off")
+    app = create_app(store=FakeStore(), verification_runner=lambda text: report())
+    with TestClient(app) as test_client:
+        health = test_client.get("/api/whatsapp/health")
+        welcome = test_client.post(
+            "/api/whatsapp/webhook",
+            json={
+                "object": "whatsapp_business_account",
+                "entry": [
+                    {
+                        "changes": [
+                            {
+                                "field": "messages",
+                                "value": {
+                                    "messages": [
+                                        {"from": "48500", "id": "w1", "type": "request_welcome"}
+                                    ]
+                                },
+                            }
+                        ]
+                    }
+                ],
+            },
+        )
+    assert health.status_code == 200 and health.json()["mode"] == "demo"
+    assert welcome.status_code == 200 and welcome.json()["messages"]
+
+
+def test_whatsapp_channel_can_be_turned_off(monkeypatch):
+    monkeypatch.setenv("WHATSAPP_ENABLED", "false")
+    app = create_app(store=FakeStore())
+    with TestClient(app) as test_client:
+        assert test_client.get("/api/whatsapp/health").status_code == 404

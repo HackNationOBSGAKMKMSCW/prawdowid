@@ -10,7 +10,9 @@ from .server import MODE_ENV, create_app
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="SprawdzTo WhatsApp adapter (simulator backend)")
+    parser = argparse.ArgumentParser(
+        description="SprawdzTo WhatsApp adapter (simulator backend). Normally served by server:app; standalone mainly for --demo"
+    )
     parser.add_argument(
         "--demo",
         action="store_true",
