@@ -24,10 +24,6 @@ of exact browser origins. The deployment template is [`../render.yaml`](../rende
 | `GET` | `/api/health` | Readiness check, including PostgreSQL connectivity. |
 | `GET` | `/api/trusted-sources` | Enabled trusted sources, public fields only (`id`, `name`, `url`, `trust`, `topics`, `description`). |
 | `GET` | `/api/trusted-sources/{source_id}` | One enabled trusted source (404 for unknown or disabled). |
-| `POST` | `/api/auth/register` | Create a website account (role `user`) and sign in; `ACCOUNTS_REGISTRATION=closed` disables it. |
-| `POST` | `/api/auth/login`, `/api/auth/logout` | Sign in (returns a session token) and revoke the current token. |
-| `GET` | `/api/auth/me`, `/api/auth/me/queries` | The signed-in account and its own check history. |
-| `POST` | `/api/auth/me/password` | Change password (signs out every session). |
 | `*` | `/api/admin/...` | Admin panel API (sign-in required), see [Admin panel](#admin-panel-apiadmin). |
 | `GET` | `/docs` | Interactive OpenAPI documentation. |
 | `GET` | `/redoc` | ReDoc API documentation. |
@@ -165,13 +161,6 @@ panel and the website share one process and one database:
 - The panel itself (`admin_panel/frontend`) calls `/api/admin` on the same
   origin. The browser CORS policy above (`GET`/`POST`, no `Authorization`) is
   meant for the website, so serve the panel from the same domain or a proxy.
-
-Website accounts (`/api/auth`, PostgreSQL only) are optional. A check sent with
-`Authorization: Bearer <token>` is linked to the account (`account_id`), appears
-in `GET /api/auth/me/queries`, and a block in the panel applies to that account.
-A missing, invalid or expired token makes the check anonymous rather than
-failing it. Account errors use FastAPI's `{"detail": ...}` body with a Polish
-message; failed sign-ins are throttled (`429` after 5 attempts in 15 minutes).
 
 Journal failures never break a check: the entry is skipped and a warning is
 logged. `ADMIN_PANEL=off` disables the panel routes and the journal.

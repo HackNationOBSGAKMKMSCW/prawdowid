@@ -1,7 +1,4 @@
 import { useState, type KeyboardEvent, type MouseEvent } from 'react';
-import { Link, useLocation } from 'react-router-dom';
-import { ACCOUNTS_ENABLED } from '../api/client.ts';
-import { firstName, useAccount } from '../lib/account.ts';
 import { useGoHome } from '../lib/navigation.ts';
 import { useSpeech } from '../lib/speech.ts';
 
@@ -45,7 +42,6 @@ export default function Header({
           <span className="brand__flag" aria-hidden="true" />
           <span className="brand__name">Prawdowid</span>
         </button>
-        {ACCOUNTS_ENABLED && <AccountLink />}
         <div
           className="view-settings"
           role="group"
@@ -150,32 +146,5 @@ export default function Header({
         </div>
       </div>
     </header>
-  );
-}
-
-/** „Zaloguj się” albo imię zalogowanej osoby; prowadzi do strony konta. */
-function AccountLink() {
-  const { status, user } = useAccount();
-  const { pathname } = useLocation();
-  const label = status === 'signed_in' && user ? firstName(user) : 'Zaloguj się';
-  return (
-    <Link
-      to="/konto"
-      className="pill-toggle account-link"
-      aria-current={pathname === '/konto' ? 'page' : undefined}
-      aria-label={status === 'signed_in' && user ? `Moje konto: ${user.name}` : 'Zaloguj się'}
-    >
-      <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false">
-        <circle cx="12" cy="8" r="4" fill="none" stroke="currentColor" strokeWidth="2.2" />
-        <path
-          d="M4 20c1.4-3.6 4.4-5.5 8-5.5s6.6 1.9 8 5.5"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2.2"
-          strokeLinecap="round"
-        />
-      </svg>
-      <span className="account-link__label">{label}</span>
-    </Link>
   );
 }

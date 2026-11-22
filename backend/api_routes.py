@@ -23,8 +23,8 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["checks"])
 
 VerificationRunner = Callable[[str], Awaitable[object]]
-# Trasy z błędami w formacie FastAPI ({"detail": ...}): panel admina i konta (/api/auth).
-DETAIL_PREFIXES = ("/api/admin", "/api/auth")
+# Trasy panelu admina zamontowane w tej samej aplikacji (admin.api.mount_admin).
+PANEL_PREFIXES = ("/api/admin",)
 UrlValidator = Callable[[str], Awaitable[str]]
 
 
@@ -232,8 +232,8 @@ def install_error_handlers(app) -> None:
     async def handle_request_validation(
         request: Request, exc: RequestValidationError
     ) -> JSONResponse:
-        if request.url.path.startswith(DETAIL_PREFIXES):
-            # Panel i formularze kont pokazują komunikaty walidacji FastAPI ({"detail": [...]}).
+        if request.url.path.startswith(PANEL_PREFIXES):
+            # Panel admina pokazuje komunikaty walidacji FastAPI ({"detail": [...]}).
             from fastapi.exception_handlers import request_validation_exception_handler
 
             return await request_validation_exception_handler(request, exc)
