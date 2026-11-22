@@ -49,7 +49,14 @@ chmod 600 .env
 step "Pakiety: Caddy, Node.js, uv"
 command -v caddy >/dev/null || { apt-get update && apt-get install -y caddy; } \
   || die "nie udało się zainstalować Caddy z apt; instrukcja: https://caddyserver.com/docs/install#debian-ubuntu-raspbian"
-command -v node >/dev/null || die "brak Node.js 22: https://nodejs.org (np. NodeSource: setup_22.x)"
+NODE_HINT="curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash - && sudo apt-get install -y nodejs"
+command -v node >/dev/null || die "brak Node.js 22. Zainstaluj: $NODE_HINT"
+command -v npm >/dev/null || die "jest node, ale brak npm (pakiet z dystrybucji). Zainstaluj Node.js 22 z NodeSource: $NODE_HINT"
+[ "$(dirname "$(command -v node)")" = "$(dirname "$(command -v npm)")" ] \
+  || die "node ($(command -v node)) i npm ($(command -v npm)) są w różnych katalogach; zainstaluj Node.js 22 z NodeSource: $NODE_HINT"
+case "$(command -v node)" in
+  /root/*|/home/*) die "node jest w katalogu domowym ($(command -v node), np. nvm), niedostępnym dla użytkownika $APP_USER. Zainstaluj systemowo: $NODE_HINT" ;;
+esac
 node_major="$(node -p 'process.versions.node.split(".")[0]')"
 [ "$node_major" -ge 20 ] || die "Node.js $node_major jest za stary, potrzebny 22 LTS (albo 20.19+)"
 # uv w /usr/local/bin: ten z katalogu domowego roota jest niedostępny dla użytkownika aplikacji.
