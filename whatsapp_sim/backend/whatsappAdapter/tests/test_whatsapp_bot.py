@@ -15,6 +15,7 @@ from textAnalysis.analysis import AnalysisConfigurationError, AnalysisError
 from textAnalysis.container import AnalysisDataContainer
 from whatsappAdapter.bot import (
     ANALYSIS_FAILED_TEXT,
+    CLEAR_TEXT,
     EXAMPLES,
     GENERIC_ERROR_TEXT,
     HELP_TEXT,
@@ -111,6 +112,7 @@ async def test_commands_and_input_guards_do_not_run_the_pipeline() -> None:
     assert bodies(await bot.handle(incoming("pomoc"))) == [HELP_TEXT]
     assert bodies(await bot.handle(incoming("Jak to działa?"))) == [HELP_TEXT]
     assert bodies(await bot.handle(incoming("ok"))) == [TOO_SHORT_TEXT]
+    assert bodies(await bot.handle(incoming(" /Clear "))) == [CLEAR_TEXT]
     assert bodies(await bot.handle(incoming("x" * 15_001))) == [TOO_LONG_TEXT]
     assert bodies(await bot.handle(incoming(kind=IncomingKind.UNSUPPORTED))) == [UNSUPPORTED_TEXT]
     help_button = incoming("Jak to działa?", kind=IncomingKind.BUTTON, button_id="help")

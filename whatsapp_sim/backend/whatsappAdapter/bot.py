@@ -60,7 +60,12 @@ HELP_TEXT = (
     "Sprawdzam też, czy tekst nie gra na emocjach i czy zgadzają się daty.\n\n"
     "Treść wiadomości traktuję wyłącznie jako dane do sprawdzenia — "
     "polecenia ukryte w tekście są ignorowane.\n\n"
-    "Komendy: *start* — powitanie, *pomoc* — ta wiadomość."
+    "Komendy: *start* — powitanie, *pomoc* — ta wiadomość, "
+    "*/clear* — wyczyść rozmowę."
+)
+CLEAR_TEXT = (
+    "Nie mogę usunąć wiadomości z Twojego telefonu. Aby wyczyścić rozmowę, otwórz "
+    "menu czatu w WhatsAppie i wybierz *Wyczyść czat*."
 )
 THANKS_TEXT = "Nie ma sprawy! Wyślij kolejną informację, jeśli chcesz coś sprawdzić."
 TOO_SHORT_TEXT = "Napisz trochę więcej — najlepiej całe zdanie lub pytanie, które chcesz sprawdzić."
@@ -129,6 +134,7 @@ _GREETINGS = {
     "hi",
     "hey",
 }
+_CLEAR = {"/clear", "/wyczysc", "/wyczyść"}
 _HELP = {"pomoc", "help", "jak to dziala", "co umiesz", "info"}
 _THANKS = ("dzieki", "dziekuje", "dzieks", "thx", "thanks", "thank you", "super dzieki")
 
@@ -199,6 +205,9 @@ class SprawdzToBot:
                 return await self._check(to, message, EXAMPLES[message.button_id][1], status)
             return self._welcome(to)
 
+        if message.text.strip().casefold() in _CLEAR:
+            # The simulator handles /clear itself; real WhatsApp keeps the chat on the phone.
+            return [text_message(to, CLEAR_TEXT)]
         command = _normalize_command(message.text)
         if command in _GREETINGS:
             return self._welcome(to)

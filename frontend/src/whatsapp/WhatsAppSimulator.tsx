@@ -72,7 +72,10 @@ interface Activity {
   steps: string[];
 }
 
-const STORAGE_KEY = 'sprawdzto-whatsapp-chat-v1';
+// Older versions kept the chat in localStorage; every page load now starts a fresh chat.
+const LEGACY_STORAGE_KEY = 'sprawdzto-whatsapp-chat-v1';
+// Typed in the simulator, never sent to the bot: clears the conversation.
+const CLEAR_COMMANDS = new Set(['/clear', '/wyczysc', '/wyczyść']);
 const START_COMMAND =
   'PYTHONPATH=backend:analysis:analysis/src .venv/bin/uvicorn server:app --port 8000';
 
@@ -83,23 +86,11 @@ const SAMPLE_CHAIN =
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
-function loadItems(): ChatItem[] {
+function dropLegacyHistory() {
   try {
-    const parsed: unknown = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '[]');
-    if (!Array.isArray(parsed)) return [];
-    return (parsed as ChatItem[]).map((item) =>
-      item.kind === 'user' && item.status === 'pending' ? { ...item, status: 'failed' } : item,
-    );
+    localStorage.removeItem(LEGACY_STORAGE_KEY);
   } catch {
-    return [];
-  }
-}
-
-function saveItems(items: ChatItem[]) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(items.slice(-200)));
-  } catch {
-    // Storage can be unavailable (private mode); the chat still works in memory.
+    // Storage can be unavailable (private mode); nothing to remove then.
   }
 }
 
@@ -168,7 +159,7 @@ function StatusBar() {
 }
 
 export default function WhatsAppSimulator() {
-  const [items, setItems] = useState<ChatItem[]>(loadItems);
+  const [items, setItems] = useState<ChatItem[]>([]);
   // Link z Prawdowida (`?text=…`) wstawia wiadomość gotową do wysłania.
   const [draft, setDraft] = useState(
     () => new URLSearchParams(window.location.search).get('text') ?? '',
@@ -177,12 +168,13 @@ export default function WhatsAppSimulator() {
   const [attachOpen, setAttachOpen] = useState(false);
   const [activity, setActivity] = useState<Activity[]>([]);
   const [health, setHealth] = useState<Health | 'offline' | null>(null);
-  const initialItemCount = useRef(items.length);
   const welcomed = useRef(false);
+  // Bumped by /clear: replies to messages sent before it are dropped.
+  const generation = useRef(0);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
-  useEffect(() => saveItems(items), [items]);
+  useEffect(dropLegacyHistory, []);
 
   useLayoutEffect(() => {
     const el = scrollRef.current;
@@ -215,6 +207,8 @@ export default function WhatsAppSimulator() {
     async (part: IncomingPart, display: string | null) => {
       const id = newMessageId();
       const sentAt = Date.now();
+      const gen = generation.current;
+      const current = () => generation.current === gen;
       const payload = buildWebhook(part, id, sentAt);
       const fromUser = display !== null;
       if (fromUser) {
@@ -257,6 +251,7 @@ export default function WhatsAppSimulator() {
         const messages = toBotMessages(result.response.messages);
         for (const [index, message] of messages.entries()) {
           if (index > 0) await sleep(650);
+          if (!current()) return;
           if (index === 0) setActivity((prev) => prev.filter((entry) => entry.id !== id));
           append({
             kind: 'bot',
@@ -271,6 +266,7 @@ export default function WhatsAppSimulator() {
           });
         }
       } catch (error) {
+        if (!current()) return;
         if (fromUser) setStatus(id, 'failed');
         const detail = error instanceof Error ? error.message : String(error);
         setHealth('offline');
@@ -290,12 +286,20 @@ export default function WhatsAppSimulator() {
   useEffect(() => {
     if (welcomed.current) return;
     welcomed.current = true;
-    if (initialItemCount.current === 0) void deliver({ type: 'request_welcome' }, null);
+    void deliver({ type: 'request_welcome' }, null);
   }, [deliver]);
+
+  const clearChat = () => {
+    generation.current += 1;
+    setItems([]);
+    setActivity([]);
+    void deliver({ type: 'request_welcome' }, null);
+  };
 
   const sendDraft = () => {
     const body = draft.trim();
-    if (body) void deliver({ type: 'text', body, forwarded: forwardDraft }, body);
+    if (CLEAR_COMMANDS.has(body.toLowerCase())) clearChat();
+    else if (body) void deliver({ type: 'text', body, forwarded: forwardDraft }, body);
     setForwardDraft(false);
     setAttachOpen(false);
     setDraft('');
@@ -353,7 +357,7 @@ export default function WhatsAppSimulator() {
             <div className="wa-chip wa-chip--notice">
               <LockIcon width={12} height={12} />
               To symulator WhatsApp. Wiadomości sprawdza backend Prawdowida, tak samo jak na
-              stronie, i nie trafiają do serwerów WhatsApp.
+              stronie, i nie trafiają do serwerów WhatsApp. Wpisz /clear, żeby wyczyścić rozmowę.
             </div>
 
             {items.map((item, index) => {
