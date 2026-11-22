@@ -23,6 +23,8 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["checks"])
 
 VerificationRunner = Callable[[str], Awaitable[object]]
+# Trasy panelu admina zamontowane w tej samej aplikacji (admin.api.mount_admin).
+PANEL_PREFIXES = ("/api/admin",)
 UrlValidator = Callable[[str], Awaitable[str]]
 
 
@@ -90,6 +92,9 @@ async def check(
 ) -> CheckResponse:
     verifier: VerificationRunner = request.app.state.verification_runner
     semaphore: asyncio.Semaphore = request.app.state.check_semaphore
+    journal = getattr(request.app.state, "journal", None)
+    result_id = uuid4()
+    journal_id: str | None = None
     try:
         if semaphore.locked():
             raise ApiFailure(503, "analysis_busy", "The service is temporarily busy.") from None
@@ -106,8 +111,18 @@ async def check(
             elif input_text.strip().startswith(("http://", "https://")):
                 raise ApiFailure(422, "invalid_url", "Submit a URL by itself or provide plain text.")
 
+            if journal is not None:
+                # Dziennik panelu admina: blokady, treści niebezpieczne, luki, dezinformacja.
+                decision = await journal.screen(
+                    request, input_text, query_id=result_id.hex, request_id=current_request_id()
+                )
+                if decision is not None:
+                    journal_id = decision.query_id
+                    if not decision.allowed:
+                        journal_id = None  # odmowa jest już zapisana w dzienniku
+                        raise _refusal(decision.reason)
+
             report = await verifier(input_text)
-            result_id = uuid4()
             check_response = to_check_response(
                 report,
                 result_id=str(result_id),
@@ -123,12 +138,15 @@ async def check(
             exc.part,
             exc.kind,
         )
+        await _journal_failure(journal, journal_id, f"{exc.part}:{exc.kind}")
         if exc.kind.lower() == "timeout":
             raise ApiFailure(504, "analysis_timeout", "The analysis exceeded its time limit.") from None
         raise ApiFailure(502, "analysis_failed", "The analysis could not be completed.") from None
     except InvalidVerificationResult:
+        await _journal_failure(journal, journal_id, "invalid_analysis_result")
         raise ApiFailure(502, "invalid_analysis_result", "The analysis returned an invalid result.") from None
-    except ApiFailure:
+    except ApiFailure as exc:
+        await _journal_failure(journal, journal_id, exc.code)
         raise
     except Exception as exc:  # noqa: BLE001 - keep provider details out of public responses
         logger.error(
@@ -136,8 +154,11 @@ async def check(
             current_request_id(),
             type(exc).__name__,
         )
+        await _journal_failure(journal, journal_id, "analysis_failed")
         raise ApiFailure(502, "analysis_failed", "The analysis could not be completed.") from None
 
+    if journal is not None and journal_id is not None:
+        await journal.complete(journal_id, check_response)
     try:
         await request.app.state.store.record_result(result_id, input_type)
     except Exception as exc:  # noqa: BLE001 - a result is not reportable until persisted
@@ -150,6 +171,21 @@ async def check(
     http_response.headers["Cache-Control"] = "no-store"
     http_response.headers["Referrer-Policy"] = "no-referrer"
     return check_response
+
+
+def _refusal(reason: str | None) -> ApiFailure:
+    if reason == "uzytkownik_zablokowany":
+        return ApiFailure(
+            403, "user_blocked", "Checks from this client are temporarily suspended."
+        )
+    return ApiFailure(
+        422, "request_refused", "This request asks for harmful instructions and was not checked."
+    )
+
+
+async def _journal_failure(journal, journal_id: str | None, code: str) -> None:
+    if journal is not None and journal_id is not None:
+        await journal.fail(journal_id, code)
 
 
 @router.post("/check/{result_id}/report", status_code=204)
@@ -169,6 +205,11 @@ async def report_check(result_id: UUID, body: ReportRequest, request: Request) -
         raise ApiFailure(503, "storage_unavailable", "The report could not be stored.") from None
     if not saved:
         raise ApiFailure(404, "result_not_found", "The result was not found or has expired.")
+    journal = getattr(request.app.state, "journal", None)
+    if journal is not None:
+        from admin.web import query_id_for
+
+        await journal.report(query_id_for(result_id), body.reason, body.comment)
     return Response(status_code=204)
 
 
@@ -189,8 +230,13 @@ def install_error_handlers(app) -> None:
 
     @app.exception_handler(RequestValidationError)
     async def handle_request_validation(
-        _request: Request, _exc: RequestValidationError
+        request: Request, exc: RequestValidationError
     ) -> JSONResponse:
+        if request.url.path.startswith(PANEL_PREFIXES):
+            # Panel admina pokazuje komunikaty walidacji FastAPI ({"detail": [...]}).
+            from fastapi.exception_handlers import request_validation_exception_handler
+
+            return await request_validation_exception_handler(request, exc)
         body = ErrorResponse(
             error=ErrorDetail(code="invalid_request", message="The request is invalid."),
             request_id=current_request_id(),

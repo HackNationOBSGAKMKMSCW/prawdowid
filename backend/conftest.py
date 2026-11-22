@@ -8,3 +8,12 @@ import os
 
 os.environ["ADMIN_STORE"] = "sqlite"
 os.environ["TRUSTED_SOURCES_STORE"] = "static"
+
+# server.py montuje panel admina: rejestr i nadpisania konfiguracji testów w katalogu
+# tymczasowym, a nie w backend/admin/data (nadpisania zmieniałyby środowisko innych testów).
+import tempfile  # noqa: E402
+from pathlib import Path  # noqa: E402
+
+_ADMIN_TMP = Path(tempfile.mkdtemp(prefix="prawdowid-admin-tests-"))
+os.environ["ADMIN_DB_PATH"] = str(_ADMIN_TMP / "admin.db")
+os.environ["RUNTIME_CONFIG_FILE"] = str(_ADMIN_TMP / "runtime_config.json")

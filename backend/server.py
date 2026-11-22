@@ -34,13 +34,26 @@ def _cors_origins() -> list[str]:
     return [origin.strip() for origin in os.getenv("CORS_ORIGINS", "").split(",") if origin.strip()]
 
 
+def _admin_panel_enabled(flag: bool | None) -> bool:
+    if flag is not None:
+        return flag
+    return os.getenv("ADMIN_PANEL", "on").strip().lower() not in {"0", "off", "false", "no"}
+
+
 def create_app(
     *,
     store: object | None = None,
     store_factory: StoreFactory | None = None,
     verification_runner: Callable | None = None,
     url_validator: UrlValidator | None = None,
+    admin_panel: bool | None = None,
+    monitor: object | None = None,
 ) -> FastAPI:
+    """API strony; ``admin_panel`` (domyślnie ``ADMIN_PANEL``, włączony): ``/api/admin``.
+
+    Z panelem każde ``/api/check`` i zgłoszenie trafia do dziennika zapytań panelu
+    (``admin.web.CheckJournal``). ``monitor``: gotowy monitor (testy).
+    """
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         owns_store = store is None
@@ -69,6 +82,12 @@ def create_app(
     app.state.check_semaphore = asyncio.Semaphore(max_concurrent_checks)
     app.include_router(router)
     app.include_router(trusted_sources_router)
+    app.state.journal = None
+    if _admin_panel_enabled(admin_panel):
+        from admin.api import mount_admin
+        from admin.web import CheckJournal
+
+        app.state.journal = CheckJournal(mount_admin(app, monitor=monitor))
     app.add_middleware(RequestSizeLimitMiddleware, max_body_bytes=96 * 1024)
     app.add_middleware(
         CORSMiddleware,

@@ -97,7 +97,17 @@ def create_router(
 
     @router.get("/health")
     def health() -> dict[str, Any]:
-        return {"status": "ok", "enabled": guard.enabled}
+        """Bez logowania: czy panel działa, czy ma konta i gdzie zapisuje dziennik zapytań."""
+        database = getattr(monitor.store, "db", None)
+        status = {"status": "ok", "enabled": guard.enabled, "store": "sqlite"}
+        if database is not None:
+            status["store"] = "postgres"
+            try:
+                database.fetch_value("SELECT 1")
+                status["database"] = "ok"
+            except Exception:  # noqa: BLE001 - szczegóły błędu zostają w logach serwera
+                status["status"] = status["database"] = "error"
+        return status
 
     # --- przegląd ----------------------------------------------------------------------
 
@@ -348,6 +358,44 @@ def create_router(
 
     # --- retencja ----------------------------------------------------------------------
 
+    # --- strony zaufane: stan w rejestrze wyszukiwania ---------------------------------
+
+    @router.get("/sources/status", dependencies=[need("sources:read")])
+    def sources_status() -> list[dict[str, Any]]:
+        """Jak weryfikacja widzi listę: wykryty sposób przeszukiwania i ostatnie sprawdzenie."""
+        from trustedSources.registry import default_registry
+
+        return [_registry_view(source) for source in default_registry().list()]
+
+    @router.post("/sources/check")
+    async def check_source(
+        url: str = Query(..., min_length=8, max_length=2048),
+        principal: Principal = need("sources:write"),
+    ) -> dict[str, Any]:
+        """Wykryj ponownie, jak przeszukiwać stronę (pobiera ją; może użyć modelu)."""
+        from trustedSources.registry import RegistryError, default_registry
+        from trustedSources.service import ensure_detected, search_context
+
+        registry = default_registry()
+        try:
+            source = registry.find_by_url(url)
+        except RegistryError as exc:
+            raise HTTPException(400, str(exc)) from None
+        if source is None:
+            raise not_found(f"strona {url} w rejestrze")
+        async with search_context() as ctx:
+            [source] = await ensure_detected(registry, ctx, [source], force=True)
+        check = source.last_check
+        record(
+            principal,
+            "source.checked",
+            "trusted_source",
+            source.url,
+            ok=bool(check and check.ok),
+            adapter=source.adapter,
+        )
+        return _registry_view(source)
+
     @router.post("/maintenance/purge")
     def purge(body: PurgeRequest, principal: Principal = need("settings:write")) -> dict[str, Any]:
         days = body.older_than_days or monitor.config.retention_days
@@ -359,17 +407,23 @@ def create_router(
     return router
 
 
-def create_app(
+def mount_admin(
+    app: FastAPI,
     settings: AdminSettings | None = None,
     *,
     monitor: Monitor | None = None,
     runtime: RuntimeConfigStore | None = None,
     log_file: Path | None = None,
     database: Any = None,
-) -> FastAPI:
-    """Panel admina. Z bazą (``DATABASE_URL``): konta, logowanie, źródła i dziennik działań.
+) -> Monitor:
+    """Podepnij panel admina (``/api/admin``) pod aplikację; zwraca monitor zapytań.
 
-    Bez bazy działa jak dotąd: rejestr w SQLite i dostęp tylko ``ADMIN_API_TOKEN``.
+    Używa tego samodzielny backend panelu (``create_app``) i API strony (``server.py``):
+    wtedy ``/api/check`` zapisuje się w tym samym dzienniku, a zmiany modeli i źródeł z
+    panelu działają od razu w procesie, który sprawdza informacje.
+
+    Z bazą (``DATABASE_URL``): konta, logowanie, strony zaufane i dziennik działań.
+    Bez bazy: rejestr w SQLite i dostęp tylko ``ADMIN_API_TOKEN``.
     ``ADMIN_STORE=sqlite`` wymusza tryb bez bazy (testy, praca lokalna).
     """
     settings = settings or AdminSettings.from_environment()
@@ -384,14 +438,6 @@ def create_app(
         monitor = Monitor(store, settings, runtime)
     apply_config(runtime.load())
     monitor.purge_expired()
-
-    app = FastAPI(title="Prawdowid — panel admina", docs_url="/api/admin/docs")
-    try:
-        from observability import ObservabilityMiddleware
-
-        app.add_middleware(ObservabilityMiddleware, skip_paths=("/api/admin/health",))
-    except ImportError:  # pragma: no cover - observability jest częścią backendu
-        pass
 
     from accounts.api import Guard
 
@@ -419,7 +465,53 @@ def create_app(
     )
     app.state.monitor = monitor
     app.state.database = database
+    return monitor
+
+
+def create_app(
+    settings: AdminSettings | None = None,
+    *,
+    monitor: Monitor | None = None,
+    runtime: RuntimeConfigStore | None = None,
+    log_file: Path | None = None,
+    database: Any = None,
+) -> FastAPI:
+    """Samodzielny backend panelu (``uvicorn admin.api:create_app --factory --port 8100``).
+
+    Zwykle panel działa w API strony (``server.py``) — ten tryb jest dla pracy nad samym
+    panelem bez modeli i bez potoku weryfikacji.
+    """
+    app = FastAPI(title="Prawdowid — panel admina", docs_url="/api/admin/docs")
+    try:
+        from observability import ObservabilityMiddleware
+
+        app.add_middleware(ObservabilityMiddleware, skip_paths=("/api/admin/health",))
+    except ImportError:  # pragma: no cover - observability jest częścią backendu
+        pass
+    mount_admin(
+        app, settings, monitor=monitor, runtime=runtime, log_file=log_file, database=database
+    )
     return app
+
+
+def _registry_view(source: Any) -> dict[str, Any]:
+    check = source.last_check
+    return {
+        "id": source.id,
+        "url": source.url,
+        "name": source.name,
+        "adapter": source.adapter,
+        "trust": source.trust,
+        "enabled": source.enabled,
+        "domains": list(source.domains),
+        "last_check": None
+        if check is None
+        else {
+            "at": check.at.isoformat().replace("+00:00", "Z"),
+            "ok": check.ok,
+            "error": check.error,
+        },
+    }
 
 
 def _refresh_trusted_sources() -> None:
