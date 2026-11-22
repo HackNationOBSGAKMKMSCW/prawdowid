@@ -94,6 +94,11 @@ class SecretsConfig(_Section):
 
 
 class MonitoringConfig(_Section):
+    info_gap_count_by: Literal["zapytania", "osoby"] = Field(
+        default="zapytania",
+        description="Próg luki: liczba zapytań bez pokrycia albo liczba różnych osób",
+    )
+    info_gap_min_queries: int = Field(default=3, ge=1, le=100_000)
     info_gap_min_users: int = Field(default=3, ge=1, le=10_000)
     info_gap_window_hours: int = Field(default=168, ge=1, le=24 * 365)
     disinfo_min_users: int = Field(default=5, ge=2, le=100_000)

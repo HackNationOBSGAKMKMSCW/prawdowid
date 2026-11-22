@@ -7,4 +7,6 @@ tymczasowego schematu (``backend/database/tests``).
 import os
 
 os.environ["ADMIN_STORE"] = "sqlite"
+# /api/check nie zapisuje do rejestru panelu (admin/data/admin.db); testy wstrzykują atrapę.
+os.environ["ADMIN_MONITOR"] = "off"
 os.environ["TRUSTED_SOURCES_STORE"] = "static"

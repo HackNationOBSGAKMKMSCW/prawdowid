@@ -34,12 +34,20 @@ def _cors_origins() -> list[str]:
     return [origin.strip() for origin in os.getenv("CORS_ORIGINS", "").split(",") if origin.strip()]
 
 
+def _default_query_recorder() -> Callable | None:
+    """Rejestr panelu admina (luki informacyjne); ``ADMIN_MONITOR=off`` go wyłącza."""
+    from admin.checks import monitor_enabled, record_check
+
+    return record_check if monitor_enabled() else None
+
+
 def create_app(
     *,
     store: object | None = None,
     store_factory: StoreFactory | None = None,
     verification_runner: Callable | None = None,
     url_validator: UrlValidator | None = None,
+    query_recorder: Callable | None = None,
 ) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -63,6 +71,7 @@ def create_app(
     )
     app.state.verification_runner = verification_runner or _run_verification
     app.state.url_validator = url_validator or _validate_public_url
+    app.state.query_recorder = query_recorder or _default_query_recorder()
     max_concurrent_checks = int(os.getenv("MAX_CONCURRENT_CHECKS", "4"))
     if max_concurrent_checks < 1:
         raise ValueError("MAX_CONCURRENT_CHECKS must be at least 1")

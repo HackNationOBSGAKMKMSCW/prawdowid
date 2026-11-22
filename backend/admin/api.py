@@ -268,7 +268,30 @@ def create_router(
         unknown = sorted(set(status) - set(GAP_FILTERS))
         if unknown:
             raise HTTPException(422, f"nieznany status luki: {', '.join(unknown)}")
-        return {"items": monitor.store.list_gaps(status, limit=limit, offset=offset)}
+        items = monitor.store.list_gaps(
+            status, limit=limit, offset=offset, sort_by=monitor.config.info_gap_count_by
+        )
+        return {"items": items}
+
+    @router.get("/info-gaps/summary", dependencies=[need("clusters:read")])
+    def info_gaps_summary(
+        hours: int = Query(168, ge=1, le=24 * 365),
+        top: int = Query(5, ge=0, le=50),
+    ) -> dict[str, Any]:
+        """Ile zapytań w oknie nie miało pokrycia w danych, stany luk i najczęstsze tematy."""
+        return monitor.uncovered_summary(hours, top=top)
+
+    @router.get("/info-gaps/ranking", dependencies=[need("clusters:read")])
+    def info_gaps_ranking(
+        hours: int = Query(168, ge=1, le=24 * 90),
+        min_queries: int = Query(1, ge=1, le=100_000),
+        limit: int = Query(50, ge=1, le=500),
+        offset: int = Query(0, ge=0),
+    ) -> dict[str, Any]:
+        """Tematy z największą liczbą zapytań bez pokrycia w oknie (także poniżej progu)."""
+        return monitor.uncovered_ranking(
+            hours, min_queries=min_queries, limit=limit, offset=offset
+        )
 
     @router.get("/topics/{topic_id}", dependencies=[need("clusters:read")])
     def topic(topic_id: str) -> dict[str, Any]:

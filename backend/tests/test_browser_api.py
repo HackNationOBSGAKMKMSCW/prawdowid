@@ -175,3 +175,59 @@ def test_failed_stage_is_logged_without_the_text(caplog):
     logged = " ".join(record.getMessage() for record in caplog.records)
     assert "part=evidence kind=AnalysisConfigurationError" in logged
     assert "Tajna" not in logged
+
+
+def _recording_app(runner, recorder):
+    async def validator(url: str) -> str:
+        return url
+
+    return create_app(
+        store=FakeStore(),
+        verification_runner=runner,
+        url_validator=validator,
+        query_recorder=recorder,
+    )
+
+
+def test_successful_check_is_recorded_for_admin_panel():
+    calls = []
+
+    async def runner(text: str) -> dict:
+        return report()
+
+    app = _recording_app(runner, lambda text, result: calls.append((text, result)))
+    with TestClient(app) as test_client:
+        response = test_client.get("/api/check", params={"text": "Szczepionki powodują autyzm."})
+    assert response.status_code == 200
+    assert calls == [("Szczepionki powodują autyzm.", report())]
+
+
+def test_recorder_failure_does_not_break_the_response(caplog):
+    async def runner(text: str) -> dict:
+        return report()
+
+    def broken(text: str, result: object) -> None:
+        raise RuntimeError("baza panelu leży: Tajna treść")
+
+    app = _recording_app(runner, broken)
+    with TestClient(app) as test_client, caplog.at_level("WARNING", logger="api_routes"):
+        response = test_client.get("/api/check", params={"text": "Tajna treść"})
+    assert response.status_code == 200
+    logged = " ".join(record.getMessage() for record in caplog.records)
+    assert "admin_record_failed" in logged and "error_type=RuntimeError" in logged
+    assert "Tajna" not in logged
+
+
+def test_failed_analysis_is_not_recorded():
+    calls = []
+
+    async def failing(text: str) -> dict:
+        data = report()
+        data["claims_verdict"] = {"status": "error", "error": {"kind": "Timeout"}}
+        return data
+
+    app = _recording_app(failing, lambda text, result: calls.append(text))
+    with TestClient(app) as test_client:
+        response = test_client.get("/api/check", params={"text": "Coś"})
+    assert response.status_code == 504
+    assert calls == []

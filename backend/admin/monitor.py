@@ -12,9 +12,11 @@ Przepływ dla jednego zapytania::
 Reguły (progi w ``RuntimeConfig.monitoring``, zmieniane przez admina):
 
 * **luka informacyjna** — twierdzenie bez rozstrzygnięcia (``brak_wystarczajacych_danych``,
-  ``nieweryfikowalny`` albo brak jakichkolwiek źródeł). Gdy o ten sam temat pyta co
-  najmniej ``info_gap_min_users`` różnych osób w oknie czasu, temat przechodzi w stan
-  ``aktywna`` i powstaje alert. Pierwsze rozstrzygnięcie ze źródłami zamyka lukę.
+  ``nieweryfikowalny`` albo brak jakichkolwiek źródeł). Gdy o ten sam temat padnie co
+  najmniej ``info_gap_min_queries`` zapytań (``info_gap_count_by="zapytania"``, domyślnie)
+  albo zapyta ``info_gap_min_users`` różnych osób (``"osoby"``) w oknie czasu, temat
+  przechodzi w stan ``aktywna`` i powstaje alert. Pierwsze rozstrzygnięcie ze źródłami
+  zamyka lukę.
 * **kampania dezinformacyjna** — co najmniej ``disinfo_min_users`` różnych osób pyta w
   krótkim oknie o twierdzenie ocenione jako fałsz.
 * **niebezpieczny użytkownik** — powtarzające się zapytania o terroryzm, broń, materiały
@@ -70,6 +72,30 @@ def persons(count: int) -> str:
     return f"{count} osób"
 
 
+def _iso_value(value: Any) -> Any:
+    """Czas z bazy: tekst ISO z SQLite albo ``datetime`` z PostgreSQL -> tekst ISO (UTC)."""
+    return iso(value) if isinstance(value, datetime) else value
+
+
+def _day(value: Any) -> str:
+    """Dzień (UTC, ``YYYY-MM-DD``) dla czasu z bazy."""
+    if isinstance(value, datetime):
+        return value.astimezone(UTC).date().isoformat()
+    return str(value)[:10]
+
+
+def times(count: int) -> str:
+    """1 raz, 2 razy, 5 razy."""
+    return "1 raz" if count == 1 else f"{count} razy"
+
+
+def gap_measure(cfg: MonitoringConfig, *, users: int, queries: int) -> tuple[int, int]:
+    """(wartość liczona, próg) według ``info_gap_count_by``."""
+    if cfg.info_gap_count_by == "osoby":
+        return users, cfg.info_gap_min_users
+    return queries, cfg.info_gap_min_queries
+
+
 def _log(event: str, level: str = "info", **fields: Any) -> None:
     with contextlib.suppress(Exception):
         from observability import log_event
@@ -123,6 +149,7 @@ class ClaimState:
     info_gap_status: str
     info_gap_users: int
     disinformation_alert: bool = False
+    info_gap_queries: int = 0
 
 
 @dataclass
@@ -167,8 +194,14 @@ class Monitor:
         channel: str = "api",
         request_id: str | None = None,
         account_id: int | None = None,
+        anonymous: bool = False,
     ) -> ScreenDecision:
-        """Zarejestruj zapytanie i zdecyduj, czy wolno je przetwarzać."""
+        """Zarejestruj zapytanie i zdecyduj, czy wolno je przetwarzać.
+
+        ``anonymous=True`` (np. strona bez logowania): wszyscy dzielą jeden pseudonim kanału,
+        więc nie ma rejestru użytkownika, blokad ani odmowy; flagi bezpieczeństwa zostają
+        tylko informacyjne. Zapytanie liczy się do luk informacyjnych jak każde inne.
+        """
         now, cfg = self.now(), self.config
         ts = iso(now)
         key = self.settings.user_key(user_id)
@@ -190,13 +223,17 @@ class Monitor:
             request_id=request_id or _request_id(),
             account_id=account_id,
         )
+        decision = ScreenDecision(query_id=query_id, allowed=True, safety=safety.as_dict())
+        if anonymous:
+            if safety.dangerous:
+                _log("admin_sensitive_query", "warning", user_key=key, **safety.as_dict())
+            return decision
         self.store.touch_user(key, user_label(user_id), ts, dangerous=safety.dangerous)
 
         blocked_until = self._blocked_until(key, ts)
         if blocked_until is None and safety.dangerous:
             blocked_until = self._watch_dangerous_user(key, now, cfg)
 
-        decision = ScreenDecision(query_id=query_id, allowed=True, safety=safety.as_dict())
         if blocked_until is not None:
             decision.allowed = False
             decision.reason = "uzytkownik_zablokowany"
@@ -303,14 +340,17 @@ class Monitor:
                 sources_count=claim.sources_count,
             )
             if kind == "luka":
-                status, users = self._update_gap(topic_id, now, cfg)
+                status, users, queries = self._update_gap(topic_id, now, cfg)
             else:
                 if kind in ("prawda", "falsz"):
                     self._close_gap_automatically(topic_id, now)
                 row = self.store.topic_row(topic_id) or {}
-                status, users = row.get("gap_status", "brak"), row.get("gap_users", 0)
+                status = row.get("gap_status", "brak")
+                users, queries = row.get("gap_users", 0), row.get("gap_queries", 0)
             disinfo = kind == "falsz" and self._watch_disinformation(topic_id, now, cfg)
-            states.append(ClaimState(claim.text, topic_id, kind, status, users, disinfo))
+            states.append(
+                ClaimState(claim.text, topic_id, kind, status, users, disinfo, queries)
+            )
 
         active_gaps = [s for s in states if s.info_gap_status in ("aktywna", "w_uzupelnianiu")]
         if any(s.kind == "luka" for s in states):
@@ -335,10 +375,14 @@ class Monitor:
         )
         message = None
         if active_gaps:
-            users = max(s.info_gap_users for s in active_gaps)
+            if cfg.info_gap_count_by == "osoby":
+                users = max(s.info_gap_users for s in active_gaps)
+                asked = f"pytało o niego już {persons(users)}"
+            else:
+                asked = f"pytano o niego już {times(max(s.info_gap_queries for s in active_gaps))}"
             message = (
                 "Ten temat jest oznaczony jako luka informacyjna: nie mamy wiarygodnych źródeł, "
-                f"a pytało o niego już {persons(users)}. Zgłosiliśmy go do uzupełnienia."
+                f"a {asked}. Zgłosiliśmy go do uzupełnienia."
             )
         return CompletionResult(
             query_id, states, sorted(set(flags)), bool(active_gaps), message=message
@@ -354,9 +398,10 @@ class Monitor:
         verdict: str | None = None,
         sources_count: int | None = None,
         error: str | None = None,
+        anonymous: bool = False,
     ) -> tuple[ScreenDecision, CompletionResult | None]:
         """Zapis po fakcie (gdy potok już się wykonał): screen + complete."""
-        decision = self.screen(user_id=user_id, text=text, channel=channel)
+        decision = self.screen(user_id=user_id, text=text, channel=channel, anonymous=anonymous)
         if not decision.allowed:
             return decision, None
         result = self.complete(
@@ -382,26 +427,34 @@ class Monitor:
             return best_id
         return self.store.create_topic(label=text.strip(), tokens=claim_tokens, ts=ts)
 
-    def _update_gap(self, topic_id: str, now: datetime, cfg: MonitoringConfig) -> tuple[str, int]:
+    def _update_gap(
+        self, topic_id: str, now: datetime, cfg: MonitoringConfig
+    ) -> tuple[str, int, int]:
+        """Policz zapytania i osoby bez pokrycia w oknie; przy progu: luka aktywna + alert."""
         topic = self.store.topic_row(topic_id) or {}
         status = topic.get("gap_status", "brak")
         since = iso(now - timedelta(hours=cfg.info_gap_window_hours))
         if status in ("zamknieta", "odrzucona") and (topic.get("gap_updated_at") or "") > since:
             since = topic["gap_updated_at"]  # po decyzji admina liczymy od nowa
         users = self.store.distinct_users(topic_id, "luka", since)
+        queries = self.store.distinct_queries(topic_id, "luka", since)
+        counted, threshold = gap_measure(cfg, users=users, queries=queries)
         ts = iso(now)
+        counters = {"gap_users": users, "gap_queries": queries}
 
         if status in ("aktywna", "w_uzupelnianiu"):
-            self.store.set_gap(topic_id, gap_users=users)
-        elif users >= cfg.info_gap_min_users:
+            self.store.set_gap(topic_id, **counters)
+        elif counted >= threshold:
             status = "aktywna"
             self.store.set_gap(
-                topic_id, gap_status=status, gap_since=ts, gap_users=users, gap_updated_at=ts
+                topic_id, gap_status=status, gap_since=ts, gap_updated_at=ts, **counters
             )
-            _log("admin_info_gap", "warning", topic_id=topic_id, users=users)
+            _log("admin_info_gap", "warning", topic_id=topic_id, users=users, queries=queries)
         elif status != "odrzucona":
             status = "podejrzenie"
-            self.store.set_gap(topic_id, gap_status=status, gap_users=users, gap_updated_at=ts)
+            self.store.set_gap(topic_id, gap_status=status, gap_updated_at=ts, **counters)
+        else:
+            self.store.set_gap(topic_id, **counters)
 
         if status in ("aktywna", "w_uzupelnianiu"):
             self._upsert_alert(
@@ -409,12 +462,17 @@ class Monitor:
                 topic_id,
                 now,
                 title=f"Luka informacyjna: {topic.get('label', '')[:120]}",
-                severity="wysoka" if users >= 3 * cfg.info_gap_min_users else "srednia",
-                count=self.store.claim_count(topic_id, "luka", since),
+                severity="wysoka" if counted >= 3 * threshold else "srednia",
+                count=queries,
                 users=users,
-                details={"temat": topic.get("label"), "okno_h": cfg.info_gap_window_hours},
+                details={
+                    "temat": topic.get("label"),
+                    "okno_h": cfg.info_gap_window_hours,
+                    "liczone_po": cfg.info_gap_count_by,
+                    "prog": threshold,
+                },
             )
-        return status, users
+        return status, users, queries
 
     def _close_gap_automatically(self, topic_id: str, now: datetime) -> None:
         topic = self.store.topic_row(topic_id) or {}
@@ -491,6 +549,76 @@ class Monitor:
         )
         _log("admin_alert", "warning", alert_type=alert_type, alert_id=alert_id, users=users)
         return alert_id
+
+    # --- zapytania bez pokrycia w danych: widoki panelu ---------------------------------
+
+    def uncovered_ranking(
+        self, hours: int, *, min_queries: int = 1, limit: int = 50, offset: int = 0
+    ) -> dict[str, Any]:
+        """Tematy, o które najczęściej pytano bez pokrycia w danych, z trendem dziennym."""
+        now, cfg = self.now(), self.config
+        start = now - timedelta(hours=hours)
+        since = iso(start)
+        rows, total = self.store.uncovered_ranking(
+            since, min_queries=min_queries, limit=limit, offset=offset
+        )
+        days = [
+            (start + timedelta(days=offset_days)).date().isoformat()
+            for offset_days in range((now.date() - start.date()).days + 1)
+        ]
+        per_topic: dict[str, dict[str, int]] = {}
+        for topic_id, ts in self.store.uncovered_timestamps([r["topic_id"] for r in rows], since):
+            day = _day(ts)
+            bucket = per_topic.setdefault(topic_id, {})
+            bucket[day] = bucket.get(day, 0) + 1
+        threshold = gap_measure(cfg, users=0, queries=0)[1]
+        items = []
+        for row in rows:
+            counted = row["users"] if cfg.info_gap_count_by == "osoby" else row["queries"]
+            bucket = per_topic.get(row["topic_id"], {})
+            items.append(
+                {
+                    **row,
+                    "last_seen": _iso_value(row["last_seen"]),
+                    "gap_since": _iso_value(row.get("gap_since")),
+                    "over_threshold": counted >= threshold,
+                    "trend": [{"date": day, "queries": bucket.get(day, 0)} for day in days],
+                }
+            )
+        return {
+            "generated_at": iso(now),
+            "window_hours": hours,
+            "count_by": cfg.info_gap_count_by,
+            "threshold": threshold,
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+            "items": items,
+        }
+
+    def uncovered_summary(self, hours: int, *, top: int = 5) -> dict[str, Any]:
+        """Kafelki panelu: ile zapytań bez pokrycia, ile tematów w każdym stanie, top N."""
+        since = iso(self.now() - timedelta(hours=hours))
+        totals = self.store.uncovered_totals(since)
+        ranking = self.uncovered_ranking(hours, limit=top)
+        counts = self.store.gap_status_counts()
+        share = (
+            round(totals["uncovered_queries"] / totals["total_queries"], 4)
+            if totals["total_queries"]
+            else 0.0
+        )
+        return {
+            "generated_at": ranking["generated_at"],
+            "window_hours": hours,
+            "count_by": ranking["count_by"],
+            "threshold": ranking["threshold"],
+            "window_threshold_hours": self.config.info_gap_window_hours,
+            **totals,
+            "uncovered_share": share,
+            "uncovered_topics": ranking["total"],
+            "by_status": {status: counts.get(status, 0) for status in GAP_STATUSES[1:]},
+            "top": ranking["items"],
+        }
 
     # --- działania admina --------------------------------------------------------------
 

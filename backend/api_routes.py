@@ -76,6 +76,21 @@ async def _run_verification(text: str) -> object:
         raise
 
 
+async def _record_for_admin(request: Request, text: str, report: object) -> None:
+    """Rejestr panelu admina (luki informacyjne). Awaria nigdy nie psuje odpowiedzi."""
+    recorder = getattr(request.app.state, "query_recorder", None)
+    if recorder is None:
+        return
+    try:
+        await asyncio.to_thread(recorder, text, report)
+    except Exception as exc:  # noqa: BLE001 - only the error type, never the text
+        logger.warning(
+            "admin_record_failed request_id=%s error_type=%s",
+            current_request_id(),
+            type(exc).__name__,
+        )
+
+
 @router.get("/health", include_in_schema=False)
 async def health(request: Request) -> dict[str, str]:
     await request.app.state.store.health_check()
@@ -113,6 +128,7 @@ async def check(
                 result_id=str(result_id),
                 input_type=input_type,
             )
+            await _record_for_admin(request, input_text, report)
         finally:
             semaphore.release()
     except VerificationFailed as exc:

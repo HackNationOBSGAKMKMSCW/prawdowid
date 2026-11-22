@@ -56,6 +56,13 @@ if result.message:  # stan luki informacyjnej: dołącz do odpowiedzi
 
 `monitor.record(...)` robi oba kroki naraz, gdy potok już się wykonał.
 
+Strona (`GET /api/check`, `server.py`) zapisuje każde udane sprawdzenie przez `admin.checks.record_check`, w kanale `web`. Zapis jest anonimowy (`anonymous=True`), bo strona nie ma logowania:
+- wszyscy dzielą jeden pseudonim;
+- nie ma blokad ani alertu `niebezpieczny_uzytkownik`;
+- flagi bezpieczeństwa zostają, ale tylko informacyjnie.
+
+Awaria rejestru nie zmienia odpowiedzi strony. Nieudane analizy nie są zapisywane. `ADMIN_MONITOR=off` wyłącza zapis.
+
 Bot WhatsApp (`whatsapp_sim/backend/whatsappAdapter/admin_bridge.py`) jest już wpięty.
 Rejestruje każdą wiadomość do sprawdzenia, odrzuca zablokowanych i treści wysokiego ryzyka,
 a do odpowiedzi dołącza komunikat o luce informacyjnej. Bot i panel muszą mieć to samo
@@ -67,10 +74,14 @@ Progi ustawia się w sekcji `monitoring` konfiguracji (`PATCH /api/admin/config`
 
 - **Luka informacyjna.** Twierdzenie jest jej kandydatem, gdy nie ma rozstrzygnięcia: werdykt `brak_wystarczajacych_danych` albo `nieweryfikowalny`, albo brak jakichkolwiek źródeł.
   - Podobne twierdzenia są grupowane w tematy.
-  - Gdy o ten sam temat zapyta `info_gap_min_users` różnych osób (domyślnie 3 w ciągu 7 dni), temat dostaje stan `aktywna`, powstaje alert, a użytkownik dostaje komunikat o luce.
+  - Próg zależy od `info_gap_count_by`:
+    - `zapytania` (domyślnie): `info_gap_min_queries` zapytań bez pokrycia, domyślnie 3 w ciągu 7 dni. Dwa twierdzenia z jednego zapytania liczą się raz.
+    - `osoby`: `info_gap_min_users` różnych osób.
+  - Po przekroczeniu progu temat dostaje stan `aktywna`, powstaje alert, a użytkownik bota dostaje komunikat o luce.
+  - W tematach są liczniki `gap_queries` i `gap_users`.
   - Stany: `podejrzenie` → `aktywna` → `w_uzupelnianiu` → `zamknieta` albo `odrzucona`.
   - Pierwsze rozstrzygnięcie oparte na źródłach (prawda/fałsz) zamyka lukę automatycznie.
-- **Możliwy atak dezinformacyjny.** Alert `kampania_dezinformacyjna` powstaje, gdy `disinfo_min_users` różnych osób (domyślnie 5 w ciągu 24 h) pyta o temat oceniony jako fałsz. Przy co najmniej dwukrotności progu alert ma ważność `wysoka`.
+- **Możliwy atak dezinformacyjny.** Alert `kampania_dezinformacyjna` powstaje, gdy `disinfo_min_users` różnych osób (domyślnie 5 w ciągu 24 h) pyta o temat oceniony jako fałsz. Przy co najmniej dwukrotności progu alert ma ważność `wysoka`. Strona liczy się jako jedna osoba, więc sam ruch ze strony tego alertu nie wywoła.
 - **Treści niebezpieczne:** terroryzm, materiały wybuchowe, broń, broń masowego rażenia, przemoc masowa.
   - Pytanie o fakt, np. „czy zamach w X był…”, dostaje poziom `sredni`: jest przetwarzane i oznaczane.
   - Prośba o instrukcję, przepis lub zdobycie dostaje poziom `wysoki` i jest odrzucana.
@@ -109,8 +120,12 @@ Klucze są tylko do zapisu. API i audyt pokazują wyłącznie maskę (`****abcd`
 | `POST /users/{key}/block`, `POST /users/{key}/unblock` | Blokada i odblokowanie (`hours: null` blokuje bezterminowo) |
 | `GET /alerts`, `GET /alerts/{id}`, `POST /alerts/{id}` | Alerty i zmiana ich statusu |
 | `GET /info-gaps`, `POST /info-gaps/{topic_id}`, `GET /topics/{id}` | Luki informacyjne |
+| `GET /info-gaps/summary` | Ile zapytań w oknie nie miało pokrycia w danych, liczba tematów w każdym stanie, najczęstsze tematy |
+| `GET /info-gaps/ranking` | Tematy z największą liczbą zapytań bez pokrycia (także poniżej progu), z trendem dziennym |
 | `GET /config`, `PATCH /config` | Konfiguracja modeli, API i progów |
 | `GET /config/audit`, `GET /config/models` | Historia zmian konfiguracji i dostępne modele |
 | `POST /maintenance/purge` | Ręczne usunięcie starych danych |
 
 Identyfikatory użytkowników są pseudonimizowane (HMAC). Panel pokazuje tylko maskę, np. `***456`.
+
+Opis endpointów luk informacyjnych dla frontu (parametry, przykładowe odpowiedzi, sugerowany widok): [INFO_GAPS_FRONTEND.md](INFO_GAPS_FRONTEND.md).

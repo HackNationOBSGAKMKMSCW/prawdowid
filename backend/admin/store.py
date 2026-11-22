@@ -60,6 +60,7 @@ CREATE TABLE IF NOT EXISTS query_topics (
     gap_status TEXT NOT NULL DEFAULT 'brak',
     gap_since TEXT,
     gap_users INTEGER NOT NULL DEFAULT 0,
+    gap_queries INTEGER NOT NULL DEFAULT 0,
     gap_note TEXT,
     gap_updated_at TEXT
 );
@@ -103,7 +104,11 @@ CREATE TABLE IF NOT EXISTS config_audit (
 );
 """
 
+# Kolumny dodane po pierwszej wersji schematu: starsze pliki SQLite dostają je przy otwarciu.
+LATER_COLUMNS = {"query_topics": {"gap_queries": "INTEGER NOT NULL DEFAULT 0"}}
+
 OPEN_ALERT_STATUSES = ("otwarty", "w_analizie")
+GAP_SORTS = {"zapytania": "gap_queries", "osoby": "gap_users"}
 
 
 def new_id() -> str:
@@ -138,6 +143,11 @@ class AdminStore:
             if str(path) != ":memory:":
                 self._db.execute("PRAGMA journal_mode=WAL")
             self._db.executescript(SCHEMA)
+            for table, columns in LATER_COLUMNS.items():
+                present = {row["name"] for row in self._db.execute(f"PRAGMA table_info({table})")}
+                for name, definition in columns.items():
+                    if name not in present:
+                        self._db.execute(f"ALTER TABLE {table} ADD COLUMN {name} {definition}")
             self._db.commit()
 
     def close(self) -> None:
@@ -293,17 +303,89 @@ class AdminStore:
         self._execute(f"UPDATE query_topics SET {assignments} WHERE id = ?", [*fields.values(), topic_id])
 
     def list_gaps(
-        self, statuses: Iterable[str], limit: int = 100, offset: int = 0
+        self,
+        statuses: Iterable[str],
+        limit: int = 100,
+        offset: int = 0,
+        *,
+        sort_by: str = "zapytania",
     ) -> list[dict[str, Any]]:
         statuses = list(statuses)
         marks = ", ".join("?" for _ in statuses)
+        primary = GAP_SORTS.get(sort_by, "gap_queries")
+        secondary = "gap_users" if primary == "gap_queries" else "gap_queries"
         rows = self._all(
-            f"SELECT id, label, created_at, last_seen, gap_status, gap_since, gap_users, gap_note, "
-            f"gap_updated_at FROM query_topics WHERE gap_status IN ({marks}) "
-            f"ORDER BY gap_users DESC, last_seen DESC LIMIT ? OFFSET ?",
+            f"SELECT id, label, created_at, last_seen, gap_status, gap_since, gap_users, "
+            f"gap_queries, gap_note, gap_updated_at FROM query_topics "
+            f"WHERE gap_status IN ({marks}) "
+            f"ORDER BY {primary} DESC, {secondary} DESC, last_seen DESC LIMIT ? OFFSET ?",
             [*statuses, limit, offset],
         )
         return [dict(row) for row in rows]
+
+    def gap_status_counts(self) -> dict[str, int]:
+        return {
+            row["gap_status"]: int(row["n"])
+            for row in self._all(
+                "SELECT gap_status, COUNT(*) AS n FROM query_topics GROUP BY gap_status"
+            )
+        }
+
+    def distinct_queries(self, topic_id: str, kind: str, since: str) -> int:
+        """Zapytania (nie twierdzenia): dwa twierdzenia z jednego zapytania liczą się raz."""
+        row = self._one(
+            "SELECT COUNT(DISTINCT query_id) FROM query_claims WHERE topic_id = ? AND kind = ? "
+            "AND ts >= ?",
+            [topic_id, kind, since],
+        )
+        return int(row[0])
+
+    # --- zapytania bez pokrycia w danych (ranking dla panelu) ---------------------------
+
+    def uncovered_ranking(
+        self, since: str, *, min_queries: int = 1, limit: int = 50, offset: int = 0
+    ) -> tuple[list[dict[str, Any]], int]:
+        """Tematy z największą liczbą zapytań bez pokrycia (``kind='luka'``) od ``since``."""
+        grouped = (
+            "SELECT topic_id, COUNT(DISTINCT query_id) AS queries, "
+            "COUNT(DISTINCT user_key) AS users, MAX(ts) AS last_seen "
+            "FROM query_claims WHERE kind = 'luka' AND ts >= ? GROUP BY topic_id "
+            "HAVING COUNT(DISTINCT query_id) >= ?"
+        )
+        total = int(self._one(f"SELECT COUNT(*) FROM ({grouped}) AS g", [since, min_queries])[0])
+        rows = self._all(
+            f"SELECT g.topic_id, t.label, t.gap_status, t.gap_note, t.gap_since, g.queries, "
+            f"g.users, g.last_seen FROM ({grouped}) AS g "
+            f"JOIN query_topics AS t ON t.id = g.topic_id "
+            f"ORDER BY g.queries DESC, g.last_seen DESC LIMIT ? OFFSET ?",
+            [since, min_queries, limit, offset],
+        )
+        return [dict(row) for row in rows], total
+
+    def uncovered_timestamps(self, topic_ids: Iterable[str], since: str) -> list[tuple[str, Any]]:
+        """(topic_id, ts) zapytań bez pokrycia — do trendu dziennego liczonego w Pythonie."""
+        topic_ids = list(topic_ids)
+        if not topic_ids:
+            return []
+        marks = ", ".join("?" for _ in topic_ids)
+        rows = self._all(
+            f"SELECT topic_id, query_id, MIN(ts) AS ts FROM query_claims "
+            f"WHERE kind = 'luka' AND ts >= ? AND topic_id IN ({marks}) "
+            f"GROUP BY topic_id, query_id",
+            [since, *topic_ids],
+        )
+        return [(row["topic_id"], row["ts"]) for row in rows]
+
+    def uncovered_totals(self, since: str) -> dict[str, int]:
+        """Zakończone zapytania w oknie i te z co najmniej jednym twierdzeniem bez pokrycia."""
+        uncovered = self._one(
+            "SELECT COUNT(DISTINCT query_id) FROM query_claims WHERE kind = 'luka' AND ts >= ?",
+            [since],
+        )[0]
+        completed = self._one(
+            "SELECT COUNT(*) FROM user_queries WHERE ts >= ? AND status = 'zakonczone'", [since]
+        )[0]
+        return {"uncovered_queries": int(uncovered), "total_queries": int(completed)}
 
     def distinct_users(self, topic_id: str, kind: str, since: str) -> int:
         row = self._one(
@@ -472,6 +554,10 @@ class AdminStore:
             "open_alerts": open_alerts,
             "active_info_gaps": scalar(
                 "SELECT COUNT(*) FROM query_topics WHERE gap_status IN ('aktywna', 'w_uzupelnianiu')"
+            ),
+            "uncovered_queries": scalar(
+                "SELECT COUNT(DISTINCT query_id) FROM query_claims WHERE kind = 'luka' AND ts >= ?",
+                [since],
             ),
             "blocked_users": scalar("SELECT COUNT(*) FROM end_users WHERE blocked_until > ?", [now]),
         }
