@@ -26,6 +26,7 @@ export const ROLE_LABEL: Record<Role, string> = {
   admin: 'Administrator',
   moderator: 'Moderator',
   analyst: 'Analityk',
+  user: 'Użytkownik serwisu',
 };
 
 export const VERDICT: Record<Verdict, { label: string; tone: Tone }> = {

@@ -7,6 +7,13 @@
  */
 export const DEFAULT_ENDPOINTS = {
   health: '/health',
+  login: '/auth/login',
+  logout: '/auth/logout',
+  me: '/auth/me',
+  ownPassword: '/auth/me/password',
+  accounts: '/accounts',
+  account: '/accounts/:id',
+  accountPassword: '/accounts/:id/password',
   dashboard: '/dashboard',
   queries: '/queries',
   query: '/queries/:id',
@@ -23,6 +30,7 @@ export const DEFAULT_ENDPOINTS = {
   topic: '/topics/:id',
   config: '/config',
   configAudit: '/config/audit',
+  activity: '/activity',
   configModels: '/config/models',
   purge: '/maintenance/purge',
 } as const;

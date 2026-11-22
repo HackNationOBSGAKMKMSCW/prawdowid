@@ -7,6 +7,7 @@ import type { Permission } from '../auth/permissions.ts';
 import { getConfig } from '../config.ts';
 import { Icon, type IconName, Logo } from './icons.tsx';
 import { ROLE_LABEL } from './labels.ts';
+import { Field, Modal, useAction } from './ui.tsx';
 
 interface NavItem {
   to: string;
@@ -51,7 +52,7 @@ export const NAV: { section: string; items: NavItem[] }[] = [
       { to: '/models', label: 'Modele AI', icon: 'cpu', permission: 'models:read', feature: 'providers' },
       { to: '/runtime', label: 'Modele i źródła danych', icon: 'cpu', permission: 'models:read', feature: 'runtimeConfig' },
       { to: '/rules', label: 'Reguły alertów', icon: 'sliders', permission: 'rules:read', feature: 'alertRules' },
-      { to: '/thresholds', label: 'Reguły i progi', icon: 'sliders', permission: 'rules:read', feature: 'runtimeConfig' },
+      { to: '/thresholds', label: 'Reguły i progi', icon: 'sliders', permission: 'settings:read', feature: 'runtimeConfig' },
       { to: '/settings', label: 'Kanały i prywatność', icon: 'settings', permission: 'settings:read', feature: 'channels' },
       { to: '/users', label: 'Użytkownicy', icon: 'users', permission: 'users:read', feature: 'staffUsers' },
       { to: '/audit', label: 'Dziennik audytu', icon: 'audit', permission: 'audit:read' },
@@ -108,6 +109,7 @@ export default function Layout() {
   const api = getApi();
   const config = getConfig();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [changingPassword, setChangingPassword] = useState(false);
   const [counts, setCounts] = useState<Counts | null>(null);
   const [, toggleTheme] = useTheme();
 
@@ -224,12 +226,23 @@ export default function Layout() {
                   <span className="user-role">{ROLE_LABEL[user.role]}</span>
                 </span>
               </div>
+              {supports('passwords') && (
+                <button type="button" className="icon-btn" onClick={() => setChangingPassword(true)} aria-label="Zmień hasło" title="Zmień hasło">
+                  <Icon name="lock" />
+                </button>
+              )}
               <button type="button" className="btn btn-ghost btn-sm" onClick={() => logout()}>
                 <Icon name="logout" size={16} />
                 <span className="hide-sm">Wyloguj</span>
               </button>
             </div>
           </header>
+          {changingPassword && (
+            <ChangePasswordModal
+              onClose={() => setChangingPassword(false)}
+              onChanged={() => logout('Hasło zmienione. Zaloguj się nowym hasłem.')}
+            />
+          )}
           {api.mode === 'mock' && (
             <div className="demo-banner" role="note">
               <Icon name="info" size={16} />
@@ -246,5 +259,51 @@ export default function Layout() {
         </div>
       </div>
     </CountsContext.Provider>
+  );
+}
+
+/** Own password change; the backend ends every session of the account, so the panel signs out. */
+function ChangePasswordModal({ onClose, onChanged }: { onClose: () => void; onChanged: () => void }) {
+  const api = getApi();
+  const { run, busy } = useAction();
+  const [current, setCurrent] = useState('');
+  const [next, setNext] = useState('');
+  const [repeat, setRepeat] = useState('');
+  const mismatch = repeat.length > 0 && next !== repeat;
+  const valid = current.length > 0 && next.length >= 10 && next === repeat;
+
+  const submit = async () => {
+    if (await run(() => api.changeOwnPassword(current, next), 'Hasło zmienione.')) onChanged();
+  };
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title="Zmień hasło"
+      footer={
+        <>
+          <button type="button" className="btn" onClick={onClose}>
+            Anuluj
+          </button>
+          <button type="button" className="btn btn-primary" disabled={busy || !valid} onClick={submit}>
+            Zmień hasło
+          </button>
+        </>
+      }
+    >
+      <div className="stack">
+      <Field label="Obecne hasło">
+        <input type="password" autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} />
+      </Field>
+      <Field label="Nowe hasło" hint="Co najmniej 10 znaków.">
+        <input type="password" autoComplete="new-password" value={next} onChange={(e) => setNext(e.target.value)} />
+      </Field>
+      <Field label="Powtórz nowe hasło" error={mismatch ? 'Hasła nie są takie same.' : null}>
+        <input type="password" autoComplete="new-password" value={repeat} onChange={(e) => setRepeat(e.target.value)} />
+      </Field>
+      <p className="muted small">Po zmianie wszystkie Twoje sesje zostaną zakończone — zalogujesz się ponownie.</p>
+      </div>
+    </Modal>
   );
 }

@@ -23,9 +23,10 @@ import type {
   SecretName,
   Severity,
   TechEvent,
+  User,
   Verdict,
 } from '../types.ts';
-import type { RawAlert, RawAudit, RawClaim, RawConfig, RawEvent, RawGap, RawQuery, RawTopic, RawUser } from './raw.ts';
+import type { RawAccount, RawActivity, RawAlert, RawAudit, RawClaim, RawConfig, RawEvent, RawGap, RawQuery, RawTopic, RawUser } from './raw.ts';
 
 const HOUR = 3_600_000;
 
@@ -431,6 +432,13 @@ const FIELD_LABEL: Record<string, string> = {
 };
 
 export function fieldLabel(field: string): string {
+  if (field.startsWith('konta.')) {
+    const rest = field.slice('konta.'.length);
+    for (const [suffix, label] of [['.rola', 'rola'], ['.aktywne', 'aktywne'], ['.nazwa', 'nazwa'], ['.haslo', 'hasło']]) {
+      if (rest.endsWith(suffix)) return `Konto ${rest.slice(0, -suffix.length)}: ${label}`;
+    }
+    return `Nowe konto ${rest}`;
+  }
   const [section, name] = field.split('.');
   if (FIELD_LABEL[field]) return FIELD_LABEL[field];
   if (section === 'secrets' && name in SECRET_LABEL) return SECRET_LABEL[name as SecretName];
@@ -449,7 +457,11 @@ export function mapAudit(row: RawAudit): AuditEntry {
     id: String(row.id),
     at: row.ts,
     actor: row.actor,
-    action: row.field.startsWith('secrets.') ? 'Zmiana klucza API' : 'Zmiana konfiguracji',
+    action: row.field.startsWith('secrets.')
+      ? 'Zmiana klucza API'
+      : row.field.startsWith('konta.')
+        ? 'Konta panelu'
+        : 'Zmiana konfiguracji',
     target: `${fieldLabel(row.field)} (${row.field})`,
     detail: `${formatValue(row.old)} → ${formatValue(row.new)}`,
   };
@@ -466,5 +478,85 @@ export function mapEvent(raw: RawEvent, index: number): TechEvent {
     event: event ?? 'log',
     requestId: request_id,
     fields,
+  };
+}
+
+// ── panel accounts ──────────────────────────────────────────────────────────
+
+export function mapAccount(a: RawAccount): User {
+  return {
+    id: String(a.id),
+    email: a.email,
+    name: a.name,
+    role: a.role,
+    active: a.active,
+    createdAt: a.createdAt,
+    lastLoginAt: a.lastLoginAt ?? undefined,
+  };
+}
+
+// ── activity log (activity_logs) ────────────────────────────────────────────
+
+const ACTION_LABEL: Record<string, string> = {
+  'auth.login': 'Logowanie',
+  'auth.login_failed': 'Nieudane logowanie',
+  'auth.logout': 'Wylogowanie',
+  'auth.password_changed': 'Zmiana własnego hasła',
+  'auth.password_reset': 'Ustawienie hasła przez administratora',
+  'auth.token_created': 'Nowy token dostępu',
+  'auth.token_revoked': 'Unieważnienie tokenu',
+  'user.created': 'Nowe konto',
+  'user.updated': 'Zmiana konta',
+  'user.deleted': 'Usunięcie konta',
+  'config.updated': 'Zmiana konfiguracji',
+  'alert.status_changed': 'Zmiana statusu alertu',
+  'info_gap.status_changed': 'Zmiana stanu luki informacyjnej',
+  'enduser.blocked': 'Blokada użytkownika serwisu',
+  'enduser.unblocked': 'Odblokowanie użytkownika serwisu',
+  'maintenance.purged': 'Usunięcie starych danych',
+  'source.created': 'Nowe źródło zaufane',
+  'source.updated': 'Zmiana źródła zaufanego',
+  'source.deleted': 'Usunięcie źródła zaufanego',
+  'source.seeded': 'Wgranie listy źródeł',
+};
+
+const SUBJECT_LABEL: Record<string, string> = {
+  user: 'konto',
+  alert: 'alert',
+  topic: 'temat',
+  end_user: 'użytkownik serwisu',
+  enduser: 'użytkownik serwisu',
+  config: 'konfiguracja',
+  source: 'źródło',
+  token: 'token',
+};
+
+function activityDetail(details: Record<string, unknown> | null): string {
+  if (!details) return '';
+  const changes = details.changes;
+  if (Array.isArray(changes)) {
+    return changes
+      .map((c) => {
+        const change = c as { field?: string; old?: unknown; new?: unknown };
+        return `${fieldLabel(change.field ?? '')}: ${formatValue(change.old)} → ${formatValue(change.new)}`;
+      })
+      .join('; ');
+  }
+  return Object.entries(details)
+    .filter(([, v]) => v !== null && v !== undefined && v !== '')
+    .map(([k, v]) => `${k}: ${typeof v === 'object' ? JSON.stringify(v) : String(v)}`)
+    .join(', ');
+}
+
+export function mapActivity(row: RawActivity): AuditEntry {
+  const subject = row.subject_type ? `${SUBJECT_LABEL[row.subject_type] ?? row.subject_type} ${row.subject_id ?? ''}`.trim() : '—';
+  const detail = activityDetail(row.details);
+  return {
+    id: String(row.id),
+    at: row.occurred_at,
+    actor: row.actor,
+    action: ACTION_LABEL[row.action] ?? row.action,
+    target: subject,
+    detail: [detail, row.ip_address ? `IP ${row.ip_address}` : ''].filter(Boolean).join(' · '),
   };
 }

@@ -65,6 +65,8 @@ export const ROLE_PERMISSIONS: Record<Role, ReadonlySet<Permission>> = {
   ]),
   analyst: new Set<Permission>([...COMMON, 'sources:write', 'models:read', 'settings:read']),
   moderator: new Set<Permission>([...COMMON, 'endusers:write']),
+  // Accounts of the public service cannot use the panel (the backend refuses them too).
+  user: new Set<Permission>(),
 };
 
 export function can(user: Pick<User, 'role'> | null | undefined, permission: Permission): boolean {

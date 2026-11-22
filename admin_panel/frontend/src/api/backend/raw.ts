@@ -147,3 +147,28 @@ export interface RawEvent {
   request_id?: string;
   [key: string]: unknown;
 }
+
+/** `User.public()` from backend/accounts — already in the panel's shape. */
+export interface RawAccount {
+  id: string | number;
+  email: string;
+  name: string;
+  role: 'admin' | 'analyst' | 'moderator' | 'user';
+  active: boolean;
+  createdAt: string;
+  lastLoginAt: string | null;
+}
+
+/** A row of `activity_logs` (`GET /activity`). */
+export interface RawActivity {
+  id: number;
+  occurred_at: string;
+  user_id: number | null;
+  actor: string;
+  action: string;
+  subject_type: string | null;
+  subject_id: string | null;
+  details: Record<string, unknown> | null;
+  ip_address: string | null;
+  user_agent: string | null;
+}
