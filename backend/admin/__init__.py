@@ -24,11 +24,12 @@ import threading
 from .monitor import ClaimInput, ClaimState, CompletionResult, Monitor, ScreenDecision
 from .runtime import RuntimeConfig, RuntimeConfigStore, apply_runtime_overrides
 from .settings import AdminSettings
-from .store import AdminStore
+from .store import AdminStore, PostgresAdminStore, open_store
 
 __all__ = [
     "AdminSettings",
     "AdminStore",
+    "PostgresAdminStore",
     "ClaimInput",
     "ClaimState",
     "CompletionResult",
@@ -45,10 +46,10 @@ _lock = threading.Lock()
 
 
 def get_monitor() -> Monitor:
-    """Wspólny monitor procesu (baza z ``ADMIN_DB_PATH``)."""
+    """Wspólny monitor procesu (PostgreSQL z ``DATABASE_URL`` albo SQLite ``ADMIN_DB_PATH``)."""
     global _monitor
     with _lock:
         if _monitor is None:
             settings = AdminSettings.from_environment()
-            _monitor = Monitor(AdminStore(settings.db_path), settings, RuntimeConfigStore())
+            _monitor = Monitor(open_store(settings), settings, RuntimeConfigStore())
         return _monitor

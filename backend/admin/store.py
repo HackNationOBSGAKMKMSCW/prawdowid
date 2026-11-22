@@ -16,11 +16,12 @@ from pathlib import Path
 from typing import Any
 
 SCHEMA = """
-CREATE TABLE IF NOT EXISTS queries (
+CREATE TABLE IF NOT EXISTS user_queries (
     id TEXT PRIMARY KEY,
     ts TEXT NOT NULL,
     user_key TEXT NOT NULL,
     user_label TEXT,
+    account_id INTEGER,
     channel TEXT,
     text TEXT,
     text_sha TEXT,
@@ -33,10 +34,10 @@ CREATE TABLE IF NOT EXISTS queries (
     completed_at TEXT,
     error TEXT
 );
-CREATE INDEX IF NOT EXISTS ix_queries_ts ON queries(ts);
-CREATE INDEX IF NOT EXISTS ix_queries_user ON queries(user_key, ts);
+CREATE INDEX IF NOT EXISTS ix_user_queries_ts ON user_queries(ts);
+CREATE INDEX IF NOT EXISTS ix_user_queries_user ON user_queries(user_key, ts);
 
-CREATE TABLE IF NOT EXISTS claims (
+CREATE TABLE IF NOT EXISTS query_claims (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     query_id TEXT NOT NULL,
     ts TEXT NOT NULL,
@@ -47,10 +48,10 @@ CREATE TABLE IF NOT EXISTS claims (
     kind TEXT NOT NULL,
     sources_count INTEGER
 );
-CREATE INDEX IF NOT EXISTS ix_claims_topic ON claims(topic_id, kind, ts);
-CREATE INDEX IF NOT EXISTS ix_claims_query ON claims(query_id);
+CREATE INDEX IF NOT EXISTS ix_query_claims_topic ON query_claims(topic_id, kind, ts);
+CREATE INDEX IF NOT EXISTS ix_query_claims_query ON query_claims(query_id);
 
-CREATE TABLE IF NOT EXISTS topics (
+CREATE TABLE IF NOT EXISTS query_topics (
     id TEXT PRIMARY KEY,
     label TEXT NOT NULL,
     tokens TEXT NOT NULL,
@@ -62,9 +63,9 @@ CREATE TABLE IF NOT EXISTS topics (
     gap_note TEXT,
     gap_updated_at TEXT
 );
-CREATE INDEX IF NOT EXISTS ix_topics_seen ON topics(last_seen);
+CREATE INDEX IF NOT EXISTS ix_query_topics_seen ON query_topics(last_seen);
 
-CREATE TABLE IF NOT EXISTS users (
+CREATE TABLE IF NOT EXISTS end_users (
     user_key TEXT PRIMARY KEY,
     label TEXT,
     first_seen TEXT NOT NULL,
@@ -75,7 +76,7 @@ CREATE TABLE IF NOT EXISTS users (
     block_reason TEXT
 );
 
-CREATE TABLE IF NOT EXISTS alerts (
+CREATE TABLE IF NOT EXISTS monitor_alerts (
     id TEXT PRIMARY KEY,
     type TEXT NOT NULL,
     subject TEXT NOT NULL,
@@ -90,7 +91,7 @@ CREATE TABLE IF NOT EXISTS alerts (
     note TEXT,
     updated_at TEXT NOT NULL
 );
-CREATE INDEX IF NOT EXISTS ix_alerts_open ON alerts(type, subject, status);
+CREATE INDEX IF NOT EXISTS ix_monitor_alerts_open ON monitor_alerts(type, subject, status);
 
 CREATE TABLE IF NOT EXISTS config_audit (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -120,6 +121,12 @@ def _row(row: sqlite3.Row | None, json_fields: Iterable[str] = ()) -> dict[str, 
 
 
 class AdminStore:
+    """Rejestr w SQLite (lokalnie i w testach). ``PostgresAdminStore`` — wersja serwerowa."""
+
+    # Fragmenty SQL zależne od dialektu (nadpisywane w PostgresAdminStore).
+    _FLAG_MATCH = "EXISTS (SELECT 1 FROM json_each(user_queries.flags) WHERE value LIKE ?)"
+    _SEVERITY = "json_extract(safety, '$.severity')"
+
     def __init__(self, path: Path | str) -> None:
         self.path = Path(path)
         if str(path) != ":memory:":
@@ -159,25 +166,25 @@ class AdminStore:
                 fields[name] = json.dumps(fields[name], ensure_ascii=False)
         names = ", ".join(fields)
         marks = ", ".join("?" for _ in fields)
-        self._execute(f"INSERT INTO queries ({names}) VALUES ({marks})", fields.values())
+        self._execute(f"INSERT INTO user_queries ({names}) VALUES ({marks})", fields.values())
 
     def update_query(self, query_id: str, **fields: Any) -> None:
         if "flags" in fields:
             fields["flags"] = json.dumps(sorted(set(fields["flags"])), ensure_ascii=False)
         assignments = ", ".join(f"{name} = ?" for name in fields)
         self._execute(
-            f"UPDATE queries SET {assignments} WHERE id = ?", [*fields.values(), query_id]
+            f"UPDATE user_queries SET {assignments} WHERE id = ?", [*fields.values(), query_id]
         )
 
     def get_query(self, query_id: str) -> dict[str, Any] | None:
         query = _row(
-            self._one("SELECT * FROM queries WHERE id = ?", [query_id]), ("flags", "safety")
+            self._one("SELECT * FROM user_queries WHERE id = ?", [query_id]), ("flags", "safety")
         )
         if query is not None:
             query["claims"] = [
                 dict(row)
                 for row in self._all(
-                    "SELECT id, topic_id, text, verdict, kind, sources_count FROM claims "
+                    "SELECT id, topic_id, text, verdict, kind, sources_count FROM query_claims "
                     "WHERE query_id = ? ORDER BY id",
                     [query_id],
                 )
@@ -188,6 +195,7 @@ class AdminStore:
         self,
         *,
         user_key: str | None = None,
+        account_id: int | None = None,
         flag: str | None = None,
         verdict: str | None = None,
         status: str | None = None,
@@ -201,8 +209,11 @@ class AdminStore:
         if user_key:
             where.append("user_key = ?")
             params.append(user_key)
+        if account_id is not None:
+            where.append("account_id = ?")
+            params.append(account_id)
         if flag:
-            where.append("EXISTS (SELECT 1 FROM json_each(queries.flags) WHERE value LIKE ?)")
+            where.append(self._FLAG_MATCH)
             params.append(f"{flag}%")
         if verdict:
             where.append("verdict = ?")
@@ -221,9 +232,9 @@ class AdminStore:
             escaped = search.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
             params.append(f"%{escaped}%")
         clause = f"WHERE {' AND '.join(where)}" if where else ""
-        total = self._one(f"SELECT COUNT(*) FROM queries {clause}", params)[0]
+        total = self._one(f"SELECT COUNT(*) FROM user_queries {clause}", params)[0]
         rows = self._all(
-            f"SELECT * FROM queries {clause} ORDER BY ts DESC LIMIT ? OFFSET ?",
+            f"SELECT * FROM user_queries {clause} ORDER BY ts DESC LIMIT ? OFFSET ?",
             [*params, limit, offset],
         )
         return [_row(row, ("flags", "safety")) for row in rows], total
@@ -233,37 +244,37 @@ class AdminStore:
     def insert_claim(self, **fields: Any) -> None:
         names = ", ".join(fields)
         marks = ", ".join("?" for _ in fields)
-        self._execute(f"INSERT INTO claims ({names}) VALUES ({marks})", fields.values())
+        self._execute(f"INSERT INTO query_claims ({names}) VALUES ({marks})", fields.values())
 
     def recent_topics(self, since: str, limit: int = 5000) -> list[tuple[str, frozenset[str]]]:
         rows = self._all(
-            "SELECT id, tokens FROM topics WHERE last_seen >= ? ORDER BY last_seen DESC LIMIT ?",
+            "SELECT id, tokens FROM query_topics WHERE last_seen >= ? ORDER BY last_seen DESC LIMIT ?",
             [since, limit],
         )
-        return [(row["id"], frozenset(json.loads(row["tokens"]))) for row in rows]
+        return [(row["id"], frozenset(_row(row, ("tokens",))["tokens"])) for row in rows]
 
     def create_topic(self, *, label: str, tokens: frozenset[str], ts: str) -> str:
         topic_id = new_id()
         self._execute(
-            "INSERT INTO topics (id, label, tokens, created_at, last_seen) VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO query_topics (id, label, tokens, created_at, last_seen) VALUES (?, ?, ?, ?, ?)",
             [topic_id, label[:300], json.dumps(sorted(tokens)), ts, ts],
         )
         return topic_id
 
     def touch_topic(self, topic_id: str, ts: str) -> None:
-        self._execute("UPDATE topics SET last_seen = ? WHERE id = ?", [ts, topic_id])
+        self._execute("UPDATE query_topics SET last_seen = ? WHERE id = ?", [ts, topic_id])
 
     def topic_row(self, topic_id: str) -> dict[str, Any] | None:
-        return _row(self._one("SELECT * FROM topics WHERE id = ?", [topic_id]), ("tokens",))
+        return _row(self._one("SELECT * FROM query_topics WHERE id = ?", [topic_id]), ("tokens",))
 
     def get_topic(self, topic_id: str) -> dict[str, Any] | None:
-        topic = _row(self._one("SELECT * FROM topics WHERE id = ?", [topic_id]), ("tokens",))
+        topic = _row(self._one("SELECT * FROM query_topics WHERE id = ?", [topic_id]), ("tokens",))
         if topic is not None:
             topic["claims"] = [
                 dict(row)
                 for row in self._all(
                     "SELECT query_id, ts, user_key, text, verdict, kind, sources_count "
-                    "FROM claims WHERE topic_id = ? ORDER BY ts DESC LIMIT 200",
+                    "FROM query_claims WHERE topic_id = ? ORDER BY ts DESC LIMIT 200",
                     [topic_id],
                 )
             ]
@@ -271,7 +282,7 @@ class AdminStore:
                 row["kind"]: {"claims": row["n"], "users": row["users"]}
                 for row in self._all(
                     "SELECT kind, COUNT(*) AS n, COUNT(DISTINCT user_key) AS users "
-                    "FROM claims WHERE topic_id = ? GROUP BY kind",
+                    "FROM query_claims WHERE topic_id = ? GROUP BY kind",
                     [topic_id],
                 )
             }
@@ -279,7 +290,7 @@ class AdminStore:
 
     def set_gap(self, topic_id: str, **fields: Any) -> None:
         assignments = ", ".join(f"{name} = ?" for name in fields)
-        self._execute(f"UPDATE topics SET {assignments} WHERE id = ?", [*fields.values(), topic_id])
+        self._execute(f"UPDATE query_topics SET {assignments} WHERE id = ?", [*fields.values(), topic_id])
 
     def list_gaps(
         self, statuses: Iterable[str], limit: int = 100, offset: int = 0
@@ -288,7 +299,7 @@ class AdminStore:
         marks = ", ".join("?" for _ in statuses)
         rows = self._all(
             f"SELECT id, label, created_at, last_seen, gap_status, gap_since, gap_users, gap_note, "
-            f"gap_updated_at FROM topics WHERE gap_status IN ({marks}) "
+            f"gap_updated_at FROM query_topics WHERE gap_status IN ({marks}) "
             f"ORDER BY gap_users DESC, last_seen DESC LIMIT ? OFFSET ?",
             [*statuses, limit, offset],
         )
@@ -296,7 +307,7 @@ class AdminStore:
 
     def distinct_users(self, topic_id: str, kind: str, since: str) -> int:
         row = self._one(
-            "SELECT COUNT(DISTINCT user_key) FROM claims WHERE topic_id = ? AND kind = ? "
+            "SELECT COUNT(DISTINCT user_key) FROM query_claims WHERE topic_id = ? AND kind = ? "
             "AND ts >= ?",
             [topic_id, kind, since],
         )
@@ -304,7 +315,7 @@ class AdminStore:
 
     def claim_count(self, topic_id: str, kind: str, since: str) -> int:
         row = self._one(
-            "SELECT COUNT(*) FROM claims WHERE topic_id = ? AND kind = ? AND ts >= ?",
+            "SELECT COUNT(*) FROM query_claims WHERE topic_id = ? AND kind = ? AND ts >= ?",
             [topic_id, kind, since],
         )
         return int(row[0])
@@ -313,15 +324,15 @@ class AdminStore:
 
     def touch_user(self, user_key: str, label: str, ts: str, *, dangerous: bool) -> None:
         self._execute(
-            "INSERT INTO users (user_key, label, first_seen, last_seen, queries, dangerous) "
+            "INSERT INTO end_users (user_key, label, first_seen, last_seen, queries, dangerous) "
             "VALUES (?, ?, ?, ?, 1, ?) ON CONFLICT(user_key) DO UPDATE SET "
-            "last_seen = excluded.last_seen, queries = queries + 1, "
-            "dangerous = dangerous + excluded.dangerous",
+            "last_seen = excluded.last_seen, queries = end_users.queries + 1, "
+            "dangerous = end_users.dangerous + excluded.dangerous",
             [user_key, label, ts, ts, int(dangerous)],
         )
 
     def get_user(self, user_key: str) -> dict[str, Any] | None:
-        return _row(self._one("SELECT * FROM users WHERE user_key = ?", [user_key]))
+        return _row(self._one("SELECT * FROM end_users WHERE user_key = ?", [user_key]))
 
     def list_users(
         self, *, flagged: bool = False, blocked_at: str | None = None, limit: int = 100
@@ -335,26 +346,23 @@ class AdminStore:
             params.append(blocked_at)
         clause = f"WHERE {' AND '.join(where)}" if where else ""
         rows = self._all(
-            f"SELECT * FROM users {clause} ORDER BY dangerous DESC, last_seen DESC LIMIT ?",
+            f"SELECT * FROM end_users {clause} ORDER BY dangerous DESC, last_seen DESC LIMIT ?",
             [*params, limit],
         )
         return [dict(row) for row in rows]
 
     def set_block(self, user_key: str, until: str | None, reason: str | None) -> None:
         self._execute(
-            "UPDATE users SET blocked_until = ?, block_reason = ? WHERE user_key = ?",
+            "UPDATE end_users SET blocked_until = ?, block_reason = ? WHERE user_key = ?",
             [until, reason, user_key],
         )
 
     def dangerous_count(self, user_key: str, since: str, *, severity: str | None = None) -> int:
-        sql = (
-            "SELECT COUNT(*) FROM queries WHERE user_key = ? AND ts >= ? "
-            "AND json_extract(safety, '$.severity') {op}"
-        )
+        sql = f"SELECT COUNT(*) FROM user_queries WHERE user_key = ? AND ts >= ? AND {self._SEVERITY} "
         if severity:
-            row = self._one(sql.format(op="= ?"), [user_key, since, severity])
+            row = self._one(sql + "= ?", [user_key, since, severity])
         else:
-            row = self._one(sql.format(op="IN ('sredni', 'wysoki')"), [user_key, since])
+            row = self._one(sql + "IN ('sredni', 'wysoki')", [user_key, since])
         return int(row[0])
 
     # --- alerty ------------------------------------------------------------------------
@@ -362,7 +370,7 @@ class AdminStore:
     def open_alert(self, alert_type: str, subject: str) -> dict[str, Any] | None:
         return _row(
             self._one(
-                "SELECT * FROM alerts WHERE type = ? AND subject = ? AND status IN (?, ?) "
+                "SELECT * FROM monitor_alerts WHERE type = ? AND subject = ? AND status IN (?, ?) "
                 "ORDER BY first_seen DESC LIMIT 1",
                 [alert_type, subject, *OPEN_ALERT_STATUSES],
             ),
@@ -374,17 +382,17 @@ class AdminStore:
         fields["details"] = json.dumps(fields.get("details") or {}, ensure_ascii=False)
         names = ", ".join(fields)
         marks = ", ".join("?" for _ in fields)
-        self._execute(f"INSERT INTO alerts ({names}) VALUES ({marks})", fields.values())
+        self._execute(f"INSERT INTO monitor_alerts ({names}) VALUES ({marks})", fields.values())
         return fields["id"]
 
     def update_alert(self, alert_id: str, **fields: Any) -> None:
         if "details" in fields:
             fields["details"] = json.dumps(fields["details"], ensure_ascii=False)
         assignments = ", ".join(f"{name} = ?" for name in fields)
-        self._execute(f"UPDATE alerts SET {assignments} WHERE id = ?", [*fields.values(), alert_id])
+        self._execute(f"UPDATE monitor_alerts SET {assignments} WHERE id = ?", [*fields.values(), alert_id])
 
     def get_alert(self, alert_id: str) -> dict[str, Any] | None:
-        return _row(self._one("SELECT * FROM alerts WHERE id = ?", [alert_id]), ("details",))
+        return _row(self._one("SELECT * FROM monitor_alerts WHERE id = ?", [alert_id]), ("details",))
 
     def list_alerts(
         self,
@@ -403,7 +411,7 @@ class AdminStore:
             params.append(status)
         clause = f"WHERE {' AND '.join(where)}" if where else ""
         rows = self._all(
-            f"SELECT * FROM alerts {clause} ORDER BY last_seen DESC LIMIT ? OFFSET ?",
+            f"SELECT * FROM monitor_alerts {clause} ORDER BY last_seen DESC LIMIT ? OFFSET ?",
             [*params, limit, offset],
         )
         return [_row(row, ("details",)) for row in rows]
@@ -434,44 +442,109 @@ class AdminStore:
         verdicts = {
             row["verdict"] or "brak": row["n"]
             for row in self._all(
-                "SELECT verdict, COUNT(*) AS n FROM queries WHERE ts >= ? GROUP BY verdict",
+                "SELECT verdict, COUNT(*) AS n FROM user_queries WHERE ts >= ? GROUP BY verdict",
                 [since],
             )
         }
         statuses = {
             row["status"]: row["n"]
             for row in self._all(
-                "SELECT status, COUNT(*) AS n FROM queries WHERE ts >= ? GROUP BY status", [since]
+                "SELECT status, COUNT(*) AS n FROM user_queries WHERE ts >= ? GROUP BY status", [since]
             )
         }
         open_alerts = {
             row["type"]: row["n"]
             for row in self._all(
-                "SELECT type, COUNT(*) AS n FROM alerts WHERE status IN (?, ?) GROUP BY type",
+                "SELECT type, COUNT(*) AS n FROM monitor_alerts WHERE status IN (?, ?) GROUP BY type",
                 OPEN_ALERT_STATUSES,
             )
         }
         return {
-            "queries": scalar("SELECT COUNT(*) FROM queries WHERE ts >= ?", [since]),
-            "users": scalar("SELECT COUNT(DISTINCT user_key) FROM queries WHERE ts >= ?", [since]),
+            "queries": scalar("SELECT COUNT(*) FROM user_queries WHERE ts >= ?", [since]),
+            "users": scalar("SELECT COUNT(DISTINCT user_key) FROM user_queries WHERE ts >= ?", [since]),
             "dangerous_queries": scalar(
-                "SELECT COUNT(*) FROM queries WHERE ts >= ? "
-                "AND json_extract(safety, '$.severity') IN ('sredni', 'wysoki')",
+                "SELECT COUNT(*) FROM user_queries WHERE ts >= ? "
+                f"AND {self._SEVERITY} IN ('sredni', 'wysoki')",
                 [since],
             ),
             "verdicts": verdicts,
             "statuses": statuses,
             "open_alerts": open_alerts,
             "active_info_gaps": scalar(
-                "SELECT COUNT(*) FROM topics WHERE gap_status IN ('aktywna', 'w_uzupelnianiu')"
+                "SELECT COUNT(*) FROM query_topics WHERE gap_status IN ('aktywna', 'w_uzupelnianiu')"
             ),
-            "blocked_users": scalar("SELECT COUNT(*) FROM users WHERE blocked_until > ?", [now]),
+            "blocked_users": scalar("SELECT COUNT(*) FROM end_users WHERE blocked_until > ?", [now]),
         }
 
     def purge(self, before: str) -> dict[str, int]:
         """Usuń zapytania i twierdzenia starsze niż ``before`` (retencja danych)."""
-        with self._lock:
-            claims = self._db.execute("DELETE FROM claims WHERE ts < ?", [before]).rowcount
-            queries = self._db.execute("DELETE FROM queries WHERE ts < ?", [before]).rowcount
-            self._db.commit()
+        claims = self._execute("DELETE FROM query_claims WHERE ts < ?", [before]).rowcount
+        queries = self._execute("DELETE FROM user_queries WHERE ts < ?", [before]).rowcount
         return {"queries": queries, "claims": claims}
+
+
+def open_store(settings: Any) -> AdminStore:
+    """PostgreSQL, gdy jest ``DATABASE_URL`` (``ADMIN_STORE=sqlite`` wymusza plik lokalny)."""
+    import os
+
+    if os.getenv("ADMIN_STORE", "").strip().lower() != "sqlite":
+        from database import database_url, get_database
+
+        if database_url():
+            return PostgresAdminStore(get_database())
+    return AdminStore(settings.db_path)
+
+
+class _Result:
+    def __init__(self, rowcount: int) -> None:
+        self.rowcount = rowcount
+
+
+class PostgresAdminStore(AdminStore):
+    """Ten sam rejestr na wspólnej bazie PostgreSQL (tabele z migracji 0004)."""
+
+    _FLAG_MATCH = (
+        "EXISTS (SELECT 1 FROM jsonb_array_elements_text(user_queries.flags) AS f(value) "
+        "WHERE f.value LIKE ?)"
+    )
+    _SEVERITY = "(safety->>'severity')"
+
+    def __init__(self, db: Any) -> None:  # database.Database
+        self.db = db
+        self.path = None
+
+    def close(self) -> None:
+        """Pula jest współdzielona w procesie — zamyka ją właściciel ``Database``."""
+
+    def _execute(self, sql: str, params: Iterable[Any] = ()) -> Any:
+        from database import placeholders
+
+        return _Result(self.db.execute(placeholders(sql), list(params)))
+
+    def _all(self, sql: str, params: Iterable[Any] = ()) -> list[Any]:
+        from database import placeholders
+
+        return [_json_as_text(row) for row in self.db.fetch_all(placeholders(sql), list(params))]
+
+    def _one(self, sql: str, params: Iterable[Any] = ()) -> Any:
+        from database import placeholders
+
+        return _json_as_text(self.db.fetch_one(placeholders(sql), list(params)))
+
+
+# Kolumny jsonb wracają z psycopg zdekodowane; reszta kodu (wspólna z SQLite) dekoduje
+# je sama, więc oddajemy je jako tekst JSON — jak SQLite.
+_JSON_COLUMNS = frozenset({"flags", "safety", "tokens", "details", "old", "new"})
+
+
+def _json_as_text(row: Any) -> Any:
+    if row is None:
+        return None
+    from database import Row
+
+    columns = list(row.keys())
+    values = [
+        json.dumps(row[c], ensure_ascii=False) if c in _JSON_COLUMNS and row[c] is not None else row[c]
+        for c in columns
+    ]
+    return Row(columns, values)

@@ -166,6 +166,7 @@ class Monitor:
         text: str,
         channel: str = "api",
         request_id: str | None = None,
+        account_id: int | None = None,
     ) -> ScreenDecision:
         """Zarejestruj zapytanie i zdecyduj, czy wolno je przetwarzać."""
         now, cfg = self.now(), self.config
@@ -187,6 +188,7 @@ class Monitor:
             flags=flags,
             safety=safety.as_dict(),
             request_id=request_id or _request_id(),
+            account_id=account_id,
         )
         self.store.touch_user(key, user_label(user_id), ts, dangerous=safety.dangerous)
 
