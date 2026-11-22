@@ -6,3 +6,4 @@ openai>=1.68,<3
 python-dotenv>=1,<2
 trafilatura>=2,<3
 lxml>=5,<7
+asyncpg>=0.30,<1

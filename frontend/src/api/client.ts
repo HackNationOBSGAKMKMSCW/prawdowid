@@ -22,7 +22,11 @@ export class ApiError extends Error {
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     ...init,
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json', ...init?.headers },
+    headers: {
+      ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
+      Accept: 'application/json',
+      ...init?.headers,
+    },
   });
   if (!res.ok) throw new ApiError(res.status, `${res.status} ${res.statusText}`);
   if (res.status === 204) return undefined as T;
@@ -36,7 +40,10 @@ export interface CheckOptions {
 }
 
 /** Po tym czasie sprawdzenie kończy się ekranem „Coś poszło nie tak”. */
-const CHECK_TIMEOUT_MS = 90_000;
+const configuredTimeout = Number(import.meta.env.VITE_CHECK_TIMEOUT_MS || 360_000);
+const CHECK_TIMEOUT_MS = Number.isFinite(configuredTimeout) && configuredTimeout > 0
+  ? configuredTimeout
+  : 360_000;
 
 function withTimeout(signal: AbortSignal | undefined, ms: number): AbortSignal {
   const timeout = AbortSignal.timeout(ms);
@@ -48,9 +55,9 @@ export function checkMessage(text: string, options: CheckOptions = {}): Promise<
   if (options.scenario || API_MODE === 'mock') {
     return mockCheck(text, options.scenario, options.signal);
   }
-  return request<CheckResponse>('/check', {
-    method: 'POST',
-    body: JSON.stringify({ text }),
+  const query = new URLSearchParams({ text });
+  return request<CheckResponse>(`/check?${query.toString()}`, {
+    method: 'GET',
     signal: withTimeout(options.signal, CHECK_TIMEOUT_MS),
   });
 }

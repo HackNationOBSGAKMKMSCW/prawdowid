@@ -1,0 +1,177 @@
+# Browser API
+
+The production app is `server:app` and exposes the browser check and feedback
+routes. Run commands from the repository root:
+
+```bash
+python -m pip install -r backend/requirements.txt -r analysis/requirements.txt
+PYTHONPATH=backend:analysis:analysis/src uvicorn server:app --reload --port 8000 --no-access-log
+```
+
+The app requires `DATABASE_URL`, the LLM settings used by `textAnalysis` and
+`analysis/inputDataAnalysis`, and the settings required by the enabled source
+providers. `DATABASE_SSL_MODE` defaults to `verify-full`; use `disable` only for
+a local database. When both are present, `DATABASE_SSL_MODE` overrides the
+connection URL's `sslmode` parameter. `CORS_ORIGINS` is a comma-separated list
+of exact browser origins. The deployment template is [`../render.yaml`](../render.yaml).
+
+## HTTP endpoints
+
+| Method | Path | Description |
+| --- | --- | --- |
+| `GET` | `/api/check?text=...` | Run a full synchronous analysis for text or a bare website URL. |
+| `POST` | `/api/check/{id}/report` | Store feedback for a returned result ID. |
+| `GET` | `/api/health` | Readiness check, including PostgreSQL connectivity. |
+| `GET` | `/docs` | Interactive OpenAPI documentation. |
+| `GET` | `/redoc` | ReDoc API documentation. |
+| `GET` | `/openapi.json` | OpenAPI schema. |
+| `GET` | `/docs/oauth2-redirect` | Swagger UI's OAuth redirect helper. |
+
+The cleanup job is a Render cron task, not an HTTP endpoint.
+
+## `GET /api/check?text=...`
+
+Request:
+
+```http
+GET /api/check?text=A%20claim%20to%20check.
+```
+
+```bash
+curl --get --data-urlencode 'text=A claim to check.' http://localhost:8000/api/check
+```
+
+Use URL encoding for the `text` query parameter. The same parameter accepts a
+single bare HTTP(S) URL. URL input is validated before
+analysis, and the verification flow fetches it using the article scraper's
+SSRF-safe fetcher. Text limits are enforced by query validation. The endpoint
+waits for the full verification result and returns the frontend `result` shape.
+Responses set `Cache-Control: no-store` and `Referrer-Policy: no-referrer`.
+
+Because GET places input in the URL, don't submit secrets or highly sensitive
+text; browsers, proxies, or platform logs may record request URLs. The app and
+Uvicorn access logger avoid logging the query itself.
+Each request runs a fresh analysis and creates a new result ID; results are not
+cached.
+
+```json
+{
+  "status": "result",
+  "id": "opaque-uuid",
+  "input_type": "text",
+  "claims": [
+    {
+      "verdict": "false",
+      "text": "A claim to check.",
+      "explanation": "Explanation.",
+      "sources": [
+        {
+          "quote": "A verified excerpt.",
+          "publisher": "Example Publisher",
+          "url": "https://example.org/source",
+          "year": "2025"
+        }
+      ]
+    }
+  ]
+}
+```
+
+Only completed results are returned as `status: "result"` in the initial API.
+`clarify` and `out_of_scope` are not generated until product rules are defined.
+Partial analysis failures return errors instead of being presented as a complete
+result. Query strings and feedback request bodies are limited to 96 KiB. Checks
+are limited to four concurrent requests per process by default, and
+`CHECK_TIMEOUT_SECONDS` defaults to 360 seconds; align the frontend's
+`VITE_CHECK_TIMEOUT_MS` with it.
+
+## `POST /api/check/{id}/report`
+
+Request:
+
+```json
+{ "reason": "bad_source", "comment": "The link is broken." }
+```
+
+Allowed reasons are `wrong_verdict`, `bad_source`, `misunderstood`, and `other`.
+`comment` is optional and limited to 1000 characters. A successful request
+returns `204`. The first report for a result ID is stored; retries are
+idempotent. Unknown or expired IDs return `404`.
+
+The app creates `api_check_results` and `api_check_reports` from
+[`migrations/0001_api_feedback.sql`](migrations/0001_api_feedback.sql) at startup.
+It stores result IDs, input type, report reason, and optional comment—not the
+submitted text or full analysis. `REPORT_RETENTION_DAYS` defaults to 180 and is
+configurable up to 3650 days. A submitted report extends its result ID's expiry
+so the report is retained for at least the configured interval after submission.
+The Render cron service deletes expired result rows daily; foreign-key cascade
+removes their reports.
+
+## Other implemented routers
+
+These routes exist in the repository but are not mounted by the browser API's
+`server:app`:
+
+| Method | Path | Description / usage |
+| --- | --- | --- |
+| `GET` | `/api/trusted-sources?enabled_only=false` | List trusted sources; `enabled_only=true` filters disabled entries. |
+| `GET` | `/api/trusted-sources/{source_id}` | Fetch one trusted-source record. |
+| `POST` | `/api/trusted-sources/{source_id}/check` | Re-detect a trusted source's type. |
+| `POST` | `/api/trusted-sources/search` | Search using `{"text":"..."}` or `{"queries":["..."]}`. |
+
+The trusted-source router is mounted by the separate WhatsApp simulator app.
+That app also implements:
+
+| Method | Path | Description / usage |
+| --- | --- | --- |
+| `GET` | `/api/whatsapp/health` | Return simulator status and mode. |
+| `POST` | `/api/whatsapp/webhook` | Accept a WhatsApp-shaped JSON webhook payload and return handled messages. |
+| `POST` | `/api/whatsapp/webhook?stream=true` | Same payload, returned as NDJSON progress events. |
+| `GET` | `/api/whatsapp/docs` | Interactive simulator API docs. |
+
+These simulator routes are not served by `server:app` or the Render browser API.
+
+## Error responses
+
+Errors use a sanitized body and never include request bodies or provider
+exceptions:
+
+```json
+{
+  "error": { "code": "analysis_timeout", "message": "The analysis exceeded its time limit." },
+  "request_id": "..."
+}
+```
+
+The server rejects query strings and request bodies larger than 96 KiB before
+validation.
+Concurrent checks are bounded per API process; configure a gateway/per-client
+rate limit before exposing the unauthenticated, provider-backed check endpoint
+to public launch traffic.
+
+| Status | Codes |
+| --- | --- |
+| `404` | `result_not_found` |
+| `413` | `request_too_large` |
+| `422` | `invalid_request`, `invalid_url`, `unsafe_url`, `url_unavailable` |
+| `502` | `analysis_failed`, `invalid_analysis_result` |
+| `503` | `analysis_busy`, `storage_unavailable` |
+| `504` | `analysis_timeout` |
+
+`X-Request-ID` is returned for correlation. Submitted text, comments, full URLs,
+credentials, and raw analysis results are not written to standard request logs.
+Provider output logs counts and timings rather than claim text or search terms.
+
+## Local tests
+
+The API contract and store tests use fake analysis stages and an in-memory store;
+they do not connect to PostgreSQL or external providers:
+
+```bash
+python -m pytest backend/tests/test_api.py backend/tests/test_api_store.py
+```
+
+To exercise a live local request, configure the existing database connection
+and provider environment variables, then start the server as shown above. The
+app applies the feedback schema at startup; it does not create a database
+instance.

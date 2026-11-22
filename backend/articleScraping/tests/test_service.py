@@ -287,7 +287,8 @@ async def test_default_diffbot_factory_uses_safe_report_and_negative_cache(
     assert token not in caplog.text
     assert "news.example" in output
     assert "/cached" not in output
-    assert "Znaleziono kandydatów: 1; wybrano: 1; zapas: 0." in output
+    assert "Znaleziono kandydatów: 1; wybrano: 1; zapas: 0" in output
+    assert "(fact_check: 1, user_text: 0)." in output
     assert "Link 1/1 (news.example): błąd: ApiResponseError" in output
     assert "Zakończono: artykułów 0 z 0 stron, błędów 1" in output
 

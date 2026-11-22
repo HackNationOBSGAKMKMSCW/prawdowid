@@ -30,6 +30,9 @@ class RawArticle:
     date: str | None = None
     page_url: str | None = None
     resolved_page_url: str | None = None
+    site_name: str | None = None
+    description: str | None = None
+    language: str | None = None
 
 
 class LinkSource(Protocol):
