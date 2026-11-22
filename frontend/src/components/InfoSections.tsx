@@ -184,8 +184,12 @@ export function AccessibilityContent({ level }: { level: Level }) {
               tle, podkreślone linki.
             </li>
             <li>
-              <strong>Przeczytaj na głos</strong> – wynik może przeczytać syntezator mowy Twojej
-              przeglądarki.
+              <strong>Czytaj stronę na głos</strong> – ikona głośnika w nagłówku. Syntezator mowy
+              Twojej przeglądarki czyta treść strony, a potem sam czyta każdą kolejną, także wynik
+              sprawdzania. Klawisz Esc przerywa czytanie, ponowne kliknięcie ikony je wyłącza.
+            </li>
+            <li>
+              <strong>Przeczytaj na głos</strong> – przycisk pod wynikiem czyta sam wynik.
             </li>
             <li>
               Całą stronę obsłużysz klawiaturą. Na początku strony jest link „Przejdź do treści”.

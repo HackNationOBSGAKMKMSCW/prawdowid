@@ -5,12 +5,19 @@ export type Theme = 'light' | 'dark';
 export interface Preferences {
   bigText: boolean;
   highContrast: boolean;
+  /** Czytanie każdej strony na głos (syntezator mowy przeglądarki). */
+  readAloud: boolean;
   /** Wybrany motyw; `null` = jak w systemie. */
   theme: Theme | null;
 }
 
 const STORAGE_KEY = 'prawdowid:preferences';
-const DEFAULTS: Preferences = { bigText: false, highContrast: false, theme: null };
+const DEFAULTS: Preferences = {
+  bigText: false,
+  highContrast: false,
+  readAloud: false,
+  theme: null,
+};
 const DARK_QUERY = '(prefers-color-scheme: dark)';
 
 function load(): Preferences {
@@ -21,6 +28,7 @@ function load(): Preferences {
     return {
       bigText: parsed.bigText === true,
       highContrast: parsed.highContrast === true,
+      readAloud: parsed.readAloud === true,
       theme: parsed.theme === 'dark' || parsed.theme === 'light' ? parsed.theme : null,
     };
   } catch {
@@ -35,7 +43,7 @@ function systemTheme(): Theme {
 }
 
 /**
- * Ustawienia wyglądu (większy tekst, wysoki kontrast, motyw) zapamiętane w
+ * Ustawienia wyglądu (większy tekst, wysoki kontrast, motyw) i czytania na głos zapamiętane w
  * przeglądarce. Motyw trafia do `<html data-theme>`, więc obejmuje też okna
  * modalne i widok WhatsApp.
  */
@@ -73,11 +81,15 @@ export function usePreferences() {
     () => setPrefs((p) => ({ ...p, highContrast: !p.highContrast })),
     [],
   );
+  const toggleReadAloud = useCallback(
+    () => setPrefs((p) => ({ ...p, readAloud: !p.readAloud })),
+    [],
+  );
   const toggleTheme = useCallback(
     () =>
       setPrefs((p) => ({ ...p, theme: (p.theme ?? systemTheme()) === 'dark' ? 'light' : 'dark' })),
     [],
   );
 
-  return { ...prefs, theme, toggleBigText, toggleHighContrast, toggleTheme };
+  return { ...prefs, theme, toggleBigText, toggleHighContrast, toggleReadAloud, toggleTheme };
 }

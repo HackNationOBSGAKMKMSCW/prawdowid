@@ -7,6 +7,7 @@ import Header from './components/Header.tsx';
 import ViewSwitch from './components/ViewSwitch.tsx';
 import { AnnouncerProvider } from './lib/announcer.tsx';
 import { CheckerContext, useChecker, useCheckerState } from './lib/checker.ts';
+import { SpeechProvider } from './lib/SpeechProvider.tsx';
 import { usePreferences } from './lib/usePreferences.ts';
 import AccessibilityPage from './pages/AccessibilityPage.tsx';
 import HelpPage from './pages/HelpPage.tsx';
@@ -50,34 +51,36 @@ function WebApp({ prefs }: { prefs: ReturnType<typeof usePreferences> }) {
 
   return (
     <AnnouncerProvider>
-      <div className="app" lang="pl" data-hc={prefs.highContrast}>
-        <a href="#tresc" className="skip-link">
-          Przejdź do treści
-        </a>
-        {SHOW_DEMO_BAR && <DemoBar />}
-        <div className="shell" data-big={prefs.bigText} aria-busy={checking}>
-          <Header
-            bigText={prefs.bigText}
-            highContrast={prefs.highContrast}
-            onToggleBigText={prefs.toggleBigText}
-            onToggleHighContrast={prefs.toggleHighContrast}
-            dark={prefs.theme === 'dark'}
-            onToggleTheme={prefs.toggleTheme}
-          />
-          <main id="tresc" className="main" tabIndex={-1}>
-            <Routes>
-              <Route path="/" element={<CheckPage />} />
-              <Route path="/zrodla" element={<SourcesPage />} />
-              <Route path="/pomoc" element={<HelpPage />} />
-              <Route path="/deklaracja-dostepnosci" element={<AccessibilityPage />} />
-              <Route path="*" element={<NotFound />} />
-            </Routes>
-          </main>
-          <Footer />
+      <SpeechProvider autoRead={prefs.readAloud} onToggleAutoRead={prefs.toggleReadAloud}>
+        <div className="app" lang="pl" data-hc={prefs.highContrast}>
+          <a href="#tresc" className="skip-link">
+            Przejdź do treści
+          </a>
+          {SHOW_DEMO_BAR && <DemoBar />}
+          <div className="shell" data-big={prefs.bigText} aria-busy={checking}>
+            <Header
+              bigText={prefs.bigText}
+              highContrast={prefs.highContrast}
+              onToggleBigText={prefs.toggleBigText}
+              onToggleHighContrast={prefs.toggleHighContrast}
+              dark={prefs.theme === 'dark'}
+              onToggleTheme={prefs.toggleTheme}
+            />
+            <main id="tresc" className="main" tabIndex={-1}>
+              <Routes>
+                <Route path="/" element={<CheckPage />} />
+                <Route path="/zrodla" element={<SourcesPage />} />
+                <Route path="/pomoc" element={<HelpPage />} />
+                <Route path="/deklaracja-dostepnosci" element={<AccessibilityPage />} />
+                <Route path="*" element={<NotFound />} />
+              </Routes>
+            </main>
+            <Footer />
+          </div>
+          {/* Na końcu kolejności Tab, zgodnie z położeniem w prawym dolnym rogu. */}
+          <ViewSwitch />
         </div>
-        {/* Na końcu kolejności Tab, zgodnie z położeniem w prawym dolnym rogu. */}
-        <ViewSwitch />
-      </div>
+      </SpeechProvider>
     </AnnouncerProvider>
   );
 }
