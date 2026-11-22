@@ -1,0 +1,207 @@
+{
+  "analysis": {
+    "source_text": "Szczepionki przeciw COVID-19 zawierają mikroczipy. Rysy leżą w Tatrach.",
+    "source_url": null,
+    "category": "Zdrowie i Medycyna",
+    "language_code": "pl",
+    "confidence": 0.9,
+    "context_reasoning": "Tekst o szczepionkach i górach.",
+    "keywords": [
+      {
+        "term": "szczepionka",
+        "context_note": "przedmiot twierdzenia"
+      }
+    ],
+    "statements": [
+      "Szczepionki przeciw COVID-19 zawierają mikroczipy.",
+      "Rysy leżą w Tatrach."
+    ],
+    "total_sentences": 2,
+    "security_warnings": [],
+    "original_text": "",
+    "started_at": null
+  },
+  "reading_results": [
+    {
+      "request": {
+        "query": "Szczepionki przeciw COVID-19 zawierają mikroczipy.",
+        "categories": [
+          "fact_check"
+        ],
+        "language_code": "pl",
+        "max_age_days": null,
+        "page_size": 10,
+        "metadata": {}
+      },
+      "results": [
+        {
+          "source": "google_fact_check",
+          "result": {
+            "source": "google_fact_check",
+            "items": [
+              {
+                "id": "gfc-1",
+                "source": "google_fact_check",
+                "payload": {
+                  "text": "Szczepionki zawierają mikroczipy",
+                  "claimant": "Post w mediach społecznościowych",
+                  "claimDate": "2021-03-01T00:00:00Z",
+                  "claimReview": [
+                    {
+                      "publisher": {
+                        "name": "Demagog",
+                        "site": "demagog.org.pl"
+                      },
+                      "url": "https://demagog.org.pl/fake_news/mikroczipy",
+                      "title": "Szczepionki nie zawierają mikroczipów",
+                      "reviewDate": "2021-03-05T10:00:00Z",
+                      "textualRating": "Fałsz",
+                      "languageCode": "pl"
+                    }
+                  ]
+                }
+              }
+            ],
+            "fetched_at": "2026-11-21T00:00:00Z",
+            "total": null,
+            "next_cursor": null
+          },
+          "error": null
+        }
+      ],
+      "items": [
+        {
+          "id": "gfc-1",
+          "source": "google_fact_check",
+          "payload": {
+            "text": "Szczepionki zawierają mikroczipy",
+            "claimant": "Post w mediach społecznościowych",
+            "claimDate": "2021-03-01T00:00:00Z",
+            "claimReview": [
+              {
+                "publisher": {
+                  "name": "Demagog",
+                  "site": "demagog.org.pl"
+                },
+                "url": "https://demagog.org.pl/fake_news/mikroczipy",
+                "title": "Szczepionki nie zawierają mikroczipów",
+                "reviewDate": "2021-03-05T10:00:00Z",
+                "textualRating": "Fałsz",
+                "languageCode": "pl"
+              }
+            ]
+          }
+        }
+      ],
+      "categories_without_source": [],
+      "fetched_at": "2026-11-21T00:00:00Z",
+      "duration_ms": 10
+    },
+    {
+      "request": {
+        "query": "Rysy leżą w Tatrach.",
+        "categories": [
+          "fact_check"
+        ],
+        "language_code": "pl",
+        "max_age_days": null,
+        "page_size": 10,
+        "metadata": {}
+      },
+      "results": [
+        {
+          "source": "google_fact_check",
+          "result": null,
+          "error": {
+            "type": "ApiAuthError",
+            "source": "google_fact_check",
+            "message": "google_fact_check: API key is required",
+            "status_code": 401
+          }
+        }
+      ],
+      "items": [],
+      "categories_without_source": [],
+      "fetched_at": "2026-11-21T00:00:00Z",
+      "duration_ms": 1
+    },
+    {
+      "request": {
+        "query": "Szczepionki przeciw COVID-19 zawierają mikroczipy. Rysy leżą w Tatrach.",
+        "categories": [
+          "fact_check"
+        ],
+        "language_code": "pl",
+        "max_age_days": null,
+        "page_size": 10,
+        "metadata": {
+          "analysis_category": "Zdrowie i Medycyna",
+          "truncated": true
+        }
+      },
+      "results": [
+        {
+          "source": "google_fact_check",
+          "result": {
+            "source": "google_fact_check",
+            "items": [
+              {
+                "id": "gfc-1",
+                "source": "google_fact_check",
+                "payload": {
+                  "text": "Szczepionki zawierają mikroczipy",
+                  "claimant": "Post w mediach społecznościowych",
+                  "claimDate": "2021-03-01T00:00:00Z",
+                  "claimReview": [
+                    {
+                      "publisher": {
+                        "name": "Demagog",
+                        "site": "demagog.org.pl"
+                      },
+                      "url": "https://demagog.org.pl/fake_news/mikroczipy",
+                      "title": "Szczepionki nie zawierają mikroczipów",
+                      "reviewDate": "2021-03-05T10:00:00Z",
+                      "textualRating": "Fałsz",
+                      "languageCode": "pl"
+                    }
+                  ]
+                }
+              }
+            ],
+            "fetched_at": "2026-11-21T00:00:00Z",
+            "total": null,
+            "next_cursor": null
+          },
+          "error": null
+        }
+      ],
+      "items": [
+        {
+          "id": "gfc-1",
+          "source": "google_fact_check",
+          "payload": {
+            "text": "Szczepionki zawierają mikroczipy",
+            "claimant": "Post w mediach społecznościowych",
+            "claimDate": "2021-03-01T00:00:00Z",
+            "claimReview": [
+              {
+                "publisher": {
+                  "name": "Demagog",
+                  "site": "demagog.org.pl"
+                },
+                "url": "https://demagog.org.pl/fake_news/mikroczipy",
+                "title": "Szczepionki nie zawierają mikroczipów",
+                "reviewDate": "2021-03-05T10:00:00Z",
+                "textualRating": "Fałsz",
+                "languageCode": "pl"
+              }
+            ]
+          }
+        }
+      ],
+      "categories_without_source": [],
+      "fetched_at": "2026-11-21T00:00:00Z",
+      "duration_ms": 12
+    }
+  ]
+}

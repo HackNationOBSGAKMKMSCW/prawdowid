@@ -23,8 +23,8 @@ async def read(
 ) -> ReadingResult:
     """Fetch from all registered APIs matching ``request.categories``.
 
-    API keys are supplied by the caller and keyed by client name. A client
-    without a configured key contributes an authentication error outcome while
+    API keys are supplied by the caller and keyed by client name. Clients that
+    require a missing key contribute an authentication error outcome while
     other selected clients continue normally.
     """
 
@@ -45,7 +45,7 @@ async def read(
     configured_classes: list[type[BaseApiClient]] = []
     for client_class in client_classes:
         api_key = keys.get(client_class.name)
-        if not isinstance(api_key, str) or not api_key.strip():
+        if client_class.requires_api_key and (not isinstance(api_key, str) or not api_key.strip()):
             outcomes_by_class[client_class] = FetchOutcome(
                 source=client_class.name,
                 error=ApiAuthError(
@@ -62,7 +62,7 @@ async def read(
         for client_class in configured_classes:
             client = client_class(
                 client=shared_client,
-                api_key=keys[client_class.name],
+                api_key=keys.get(client_class.name),
             )
             try:
                 client_filters = client.filters_from_request(validated_request)

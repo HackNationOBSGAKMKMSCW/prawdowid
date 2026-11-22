@@ -8,6 +8,15 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
+def _apply_admin_overrides() -> None:
+    """Nałóż na os.environ zmiany wprowadzone w panelu admina (modele, kluczowe API)."""
+    try:
+        from admin.runtime import apply_runtime_overrides
+    except ImportError:  # backend uruchomiony bez pakietu admin
+        return
+    apply_runtime_overrides()
+
+
 @dataclass(frozen=True)
 class Settings:
     """Runtime configuration; API clients never read or log secrets themselves."""
@@ -28,10 +37,12 @@ class Settings:
 
     @classmethod
     def from_environment(cls) -> "Settings":
+        _apply_admin_overrides()
         return cls(
             freellm_api_key=os.getenv("FREELLM_API_KEY"),
             freellm_base_url=os.getenv("FREELLM_BASE_URL"),
-            freellm_model=os.getenv("FREELLM_MODEL", "gpt-4o-mini"),
+            freellm_model=os.getenv("TEXT_ANALYSIS_MODEL")
+            or os.getenv("FREELLM_MODEL", "gpt-4o-mini"),
             google_fact_check_api_key=os.getenv("GOOGLE_FACT_CHECK_API_KEY"),
             llm_timeout=float(os.getenv("FREELLM_TIMEOUT", "30")),
             llm_max_retries=int(os.getenv("FREELLM_MAX_RETRIES", "2")),

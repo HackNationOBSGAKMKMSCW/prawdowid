@@ -13,7 +13,7 @@ from datetime import UTC, datetime
 from html.parser import HTMLParser
 
 from openai import AsyncOpenAI, OpenAIError
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from textAnalysis.container import AnalysisDataContainer, KeywordItem
 from textAnalysis.settings import Settings
@@ -21,18 +21,46 @@ from textAnalysis.settings import Settings
 
 class _ApiKeywordSchema(BaseModel):
     term: str = Field(max_length=120)
-    context_note: str = Field(max_length=400)
+    # Opis pomocniczy: model czasem go pomija, a jego brak nie unieważnia analizy.
+    context_note: str = Field(default="", max_length=400)
+
+
+_MAX_KEYWORDS = 25
+_MAX_STATEMENTS = 40
 
 
 class _ApiAnalysisSchema(BaseModel):
-    """Wewnętrzny schemat walidacji odpowiedzi z API nastawiony na gęste konkrety."""
+    """Wewnętrzny schemat walidacji odpowiedzi z API nastawiony na gęste konkrety.
+
+    Pola kluczowe (kategoria, pewność, stwierdzenia) są wymagane. Pola pomocnicze mają
+    wartości domyślne, a za długie listy są przycinane zamiast odrzucać całą odpowiedź,
+    bo jedna drobna niezgodność modelu przerywałaby cały potok.
+    """
 
     category: str = Field(max_length=100)
     language_code: str | None = Field(default=None, max_length=35)
     confidence: float = Field(ge=0.0, le=1.0)
-    context_reasoning: str = Field(max_length=800)
-    keywords: list[_ApiKeywordSchema] = Field(max_length=25)
-    statements: list[str] = Field(max_length=40)
+    context_reasoning: str = Field(default="", max_length=800)
+    keywords: list[_ApiKeywordSchema] = Field(default_factory=list, max_length=_MAX_KEYWORDS)
+    statements: list[str] = Field(max_length=_MAX_STATEMENTS)
+
+    @field_validator("keywords", mode="before")
+    @classmethod
+    def _usable_keywords(cls, value: object) -> object:
+        if not isinstance(value, list):
+            return value
+        usable = [k for k in value if not isinstance(k, dict) or str(k.get("term") or "").strip()]
+        return usable[:_MAX_KEYWORDS]
+
+    @field_validator("statements", mode="before")
+    @classmethod
+    def _limit_statements(cls, value: object) -> object:
+        return value[:_MAX_STATEMENTS] if isinstance(value, list) else value
+
+    @field_validator("context_reasoning", mode="before")
+    @classmethod
+    def _limit_reasoning(cls, value: object) -> object:
+        return value[:800] if isinstance(value, str) else value
 
 
 class _VisibleTextExtractor(HTMLParser):
@@ -194,7 +222,9 @@ class UrlContentFetcher:
 
                 return extracted
         except urllib.error.HTTPError as exc:
-            raise ValueError(f"Błąd HTTP podczas pobierania URL ({exc.code}): {exc.reason}") from exc
+            raise ValueError(
+                f"Błąd HTTP podczas pobierania URL ({exc.code}): {exc.reason}"
+            ) from exc
         except urllib.error.URLError as exc:
             raise ValueError(f"Błąd sieci podczas pobierania URL: {exc.reason}") from exc
 
@@ -501,18 +531,20 @@ class ProxyContextAnalyzer(BaseTextAnalyzer):
         extracted_text = await self.url_fetcher.fetch_text(url)
         return await self.analyze(extracted_text, top_keywords=top_keywords, source_url=url)
 
-        submitted_at = submitted_at.astimezone(UTC)
-    else:
-        submitted_at = submitted_at.replace(tzinfo=UTC)
-    if submitted_at.tzinfo is None:
-    submitted_at = started_at or datetime.now(UTC)
-    """Analyze text and return its structured category, keywords, and statements."""
-) -> AnalysisDataContainer:
-    started_at: datetime | None = None,
-    *,
-    text: str,
+
 async def run(
-    started_at = time.perf_counter()
+    text: str,
+    top_keywords: int = 8,
+    *,
+    started_at: datetime | None = None,
+) -> AnalysisDataContainer:
+    """Analyze text (or URL starting with http/https) and return structured analysis."""
+    submitted_at = started_at or datetime.now(UTC)
+    if submitted_at.tzinfo is None:
+        submitted_at = submitted_at.replace(tzinfo=UTC)
+    else:
+        submitted_at = submitted_at.astimezone(UTC)
+    run_started_at = time.perf_counter()
     print("[textAnalysis] Wczytuję konfigurację...", flush=True)
     settings = Settings.from_environment()
     if not settings.freellm_api_key:
@@ -532,22 +564,22 @@ async def run(
         max_retries=settings.llm_max_retries,
     )
     try:
-        result = await analyzer.analyze(text)
+        candidate = text.strip()
+        if candidate.startswith(("http://", "https://")):
+            result = await analyzer.analyze_url(candidate, top_keywords=top_keywords)
+        else:
+            # Tekst trafia do analizatora bez zmian (sanityzację robi InputSanitizer).
+            result = await analyzer.analyze(text, top_keywords=top_keywords)
         result.original_text = text
         result.started_at = submitted_at
-        candidate = text.strip()
-            result = await analyzer.analyze_url(candidate, top_keywords=top_keywords)
-        if candidate.startswith(("http://", "https://")):
-        else:
-            result = await analyzer.analyze(candidate, top_keywords=top_keywords)
         print(
-            f"[textAnalysis] Pakiet zakończył pracę po {time.perf_counter() - started_at:.1f}s.",
+            f"[textAnalysis] Pakiet zakończył pracę po {time.perf_counter() - run_started_at:.1f}s.",
             flush=True,
         )
         return result
     except Exception as exc:
         print(
-            f"[textAnalysis] Przerwano po {time.perf_counter() - started_at:.1f}s "
+            f"[textAnalysis] Przerwano po {time.perf_counter() - run_started_at:.1f}s "
             f"({type(exc).__name__}).",
             flush=True,
         )
@@ -623,4 +655,10 @@ async def _run_cli() -> None:
 
 
 if __name__ == "__main__":
-    asyncio.run(_run_cli())
+    from observability import init as init_logging
+
+    init_logging()
+    # Run via the imported module: logging instruments ``textAnalysis.analysis``, not __main__.
+    from textAnalysis.analysis import _run_cli as instrumented_cli
+
+    asyncio.run(instrumented_cli())
