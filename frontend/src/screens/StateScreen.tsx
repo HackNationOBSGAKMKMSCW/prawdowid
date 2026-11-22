@@ -55,6 +55,22 @@ const FAILURES: Partial<Record<ApiErrorCode, StateContent>> = {
     action: LINK_ACTION,
     then: 'edit',
   },
+  request_refused: {
+    icon: '!',
+    tone: 'warning',
+    title: 'Nie pomożemy w tej sprawie',
+    body: 'Sprawdzamy prawdziwość informacji. Nie odpowiadamy na prośby o instrukcje dotyczące broni, materiałów wybuchowych ani przemocy.',
+    action: 'Sprawdź coś innego',
+    then: 'edit',
+  },
+  user_blocked: {
+    icon: '!',
+    tone: 'warning',
+    title: 'Sprawdzanie jest czasowo wstrzymane',
+    body: 'Z tego połączenia przychodziły powtarzające się pytania o treści niebezpieczne. Jeśli to pomyłka, skontaktuj się z administratorem serwisu.',
+    action: 'Wróć na start',
+    then: 'edit',
+  },
   analysis_busy: {
     icon: '…',
     tone: 'neutral',

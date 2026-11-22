@@ -23,6 +23,9 @@ export type ApiErrorCode =
   | 'analysis_failed'
   | 'invalid_analysis_result'
   | 'analysis_busy'
+  // odmowa monitora panelu admina (backend/admin/web.py)
+  | 'request_refused'
+  | 'user_blocked'
   | 'storage_unavailable'
   | 'analysis_timeout'
   | 'internal_error'
