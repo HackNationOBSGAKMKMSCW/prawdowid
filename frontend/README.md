@@ -71,7 +71,12 @@ W trybie `live`:
   problemach z treścią „Popraw wiadomość” wraca do formularza z tekstem;
 - „Lista źródeł” pochodzi z `GET /api/trusted-sources` (te same źródła, które
   przeszukuje weryfikacja); bez serwera zostaje lista z kodu;
-- „Zgłoś błąd” zapisuje zgłoszenie w bazie (`POST /api/check/{id}/report`).
+- „Zgłoś błąd” zapisuje zgłoszenie w bazie (`POST /api/check/{id}/report`);
+- „Zaloguj się” w nagłówku prowadzi do `/konto`: logowanie, zakładanie konta,
+  historia własnych sprawdzeń, zmiana hasła i wylogowanie (`/api/auth`). Token
+  sesji jest w `localStorage` i trafia do każdego zapytania, więc sprawdzenia
+  zalogowanej osoby zapisują się na jej koncie. Bez konta strona działa jak dotąd.
+  W trybie demo (bez backendu) przycisk konta jest ukryty.
 
 ## Ekrany
 
