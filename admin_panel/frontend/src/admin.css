@@ -1580,6 +1580,35 @@ input[type='checkbox'] {
   margin-bottom: 6px;
 }
 
+.ip-block {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin: 8px 0;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm, 8px);
+  background: var(--surface-2, rgba(127, 127, 127, 0.08));
+  font-size: 0.85rem;
+}
+.ip-block > span:first-of-type {
+  flex: 1 1 260px;
+}
+.ip-block.is-blocked {
+  background: color-mix(in srgb, var(--status-critical, #c0392b) 10%, transparent);
+}
+
+.alert-occurrences {
+  margin: 8px 0;
+}
+.alert-occurrences summary {
+  cursor: pointer;
+  color: var(--text-2);
+}
+.alert-occurrences .threat-list {
+  margin-top: 6px;
+}
+
 .alert-rule,
 .alert-notify {
   display: flex;

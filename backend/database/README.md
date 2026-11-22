@@ -92,8 +92,8 @@ Table activity_logs {
 Table user_queries {
   id varchar(32) [pk]
   ts timestamptz [not null]
-  user_key varchar(64) [not null, ref: > end_users.user_key, note: 'pseudonim (HMAC)']
-  user_label varchar(32)
+  user_key varchar(64) [not null, note: 'zawsze anonim: bez danych o osobie pytającej']
+  user_label varchar(32) [note: 'zawsze NULL']
   account_id integer [ref: > users.id, note: 'gdy pyta zalogowane konto']
   channel varchar(32)
   text text
@@ -107,15 +107,12 @@ Table user_queries {
   error text
 }
 
-Table end_users {
-  user_key varchar(64) [pk]
-  label varchar(32)
-  first_seen timestamptz
-  last_seen timestamptz
-  queries integer
-  dangerous integer
-  blocked_until timestamptz
-  block_reason text
+Table ip_blocks {
+  ip_key varchar(64) [pk, note: 'HMAC adresu IP (IPv6: sieci /64), nigdy adres']
+  label varchar(64) [note: 'maska, np. 203.0.113.x']
+  attempts integer [note: 'próby prompt injection w oknie']
+  blocked_until timestamptz [note: 'NULL = brak blokady']
+  blocked_by varchar(255) [note: 'auto albo admin']
 }
 
 Table query_topics {
@@ -123,7 +120,7 @@ Table query_topics {
   label text
   tokens jsonb
   gap_status varchar(32) [note: 'luka informacyjna: brak/podejrzenie/aktywna/…']
-  gap_users integer
+  gap_queries integer
 }
 
 Table query_claims {
@@ -137,7 +134,7 @@ Table query_claims {
 
 Table monitor_alerts {
   id varchar(32) [pk]
-  type varchar(64) [note: 'luka_informacyjna, kampania_dezinformacyjna, niebezpieczny_uzytkownik']
+  type varchar(64) [note: 'luka_informacyjna, kampania_dezinformacyjna, tresci_niebezpieczne, prompt_injection, rosyjska_dezinformacja, sql_injection']
   subject varchar(64)
   severity varchar(16)
   status varchar(32)

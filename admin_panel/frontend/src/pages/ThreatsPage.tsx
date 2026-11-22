@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { getApi, supports } from '../api/index.ts';
-import type { CriticalQueryEvent, InjectionEvent, ThreatReport, ThreatSubject } from '../api/types.ts';
+import type { CriticalQueryEvent, InjectionEvent, IpBlock, ThreatReport, ThreatSubject } from '../api/types.ts';
 import { useAuth } from '../auth/AuthContext.tsx';
 import { BarList, TimeSeriesChart } from '../components/charts.tsx';
 import { Icon } from '../components/icons.tsx';
 import { channelLabel, safetyLabel } from '../components/labels.ts';
-import { Async, Badge, Card, EmptyState, Kpi, PageHeader, Tabs } from '../components/ui.tsx';
+import { Async, Badge, Card, EmptyState, Kpi, PageHeader, Tabs, useAction } from '../components/ui.tsx';
 import { useAsync } from '../hooks/useAsync.ts';
 import { exportJson } from '../utils/export.ts';
 import { fmtDateTime, fmtInt, fmtRelative, fmtTime, plural, truncate } from '../utils/format.ts';
@@ -56,7 +56,7 @@ const SEVERITY_LABEL: Record<string, { label: string; tone: 'critical' | 'seriou
 
 const REFUSAL: Record<string, string> = {
   niebezpieczna_tresc: 'prośba o instrukcje — odrzucona',
-  uzytkownik_zablokowany: 'użytkownik zablokowany',
+  ip_zablokowany: 'adres zablokowany (prompt injection)',
 };
 
 export default function ThreatsPage() {
@@ -121,30 +121,28 @@ function ThreatView({ report: r }: { report: ThreatReport }) {
           label="Próby prompt injection"
           value={fmtInt(s.promptInjection)}
           tone={s.promptInjection ? 'critical' : undefined}
-          hint={`${s.promptInjectionUsers} ${plural(s.promptInjectionUsers, ['osoba', 'osoby', 'osób'])}${
-            r.injection.repeatedTexts ? ` · ${r.injection.repeatedTexts} powtarzanych tekstów` : ''
-          }`}
+          hint={r.injection.repeatedTexts ? `${r.injection.repeatedTexts} powtarzanych tekstów` : 'w tym okresie'}
         />
         <Kpi
           icon="repeat"
           label="Ataki manipulacyjne"
           value={fmtInt(s.manipulationCampaigns)}
           tone={s.manipulationCampaigns ? 'serious' : undefined}
-          hint="wiele osób sprawdza ten sam fałsz w krótkim czasie"
+          hint="wiele zapytań o ten sam fałsz w krótkim czasie"
         />
         <Kpi
           icon="alert"
           label="Informacje krytyczne"
           value={fmtInt(s.criticalQueries)}
           tone={s.criticalQueries ? 'warning' : undefined}
-          hint={`${s.criticalUsers} ${plural(s.criticalUsers, ['osoba', 'osoby', 'osób'])} · ${s.refused} odrzuconych`}
+          hint="terroryzm, broń, materiały wybuchowe, przemoc"
         />
         <Kpi
           icon="lock"
-          label="Zablokowani użytkownicy"
-          value={fmtInt(s.blockedUsers)}
-          tone={s.blockedUsers ? 'warning' : undefined}
-          hint="blokady w tym okresie"
+          label="Odrzucone prośby"
+          value={fmtInt(s.refused)}
+          tone={s.refused ? 'warning' : undefined}
+          hint="instrukcje lub zdobycie broni i materiałów wybuchowych"
         />
       </div>
 
@@ -170,28 +168,16 @@ function ThreatView({ report: r }: { report: ThreatReport }) {
       )}
 
       <InjectionSection report={r} />
+      {supports('ipBlocks') && <BlockedAddresses />}
       <ManipulationSection report={r} />
       <CriticalSection report={r} />
     </>
   );
 }
 
-/** Who sent it: masked pseudonym, channel, links to the person and to the check. */
+/** Where it came from: only the channel; the panel keeps no data about the person. */
 function Who({ item }: { item: ThreatSubject }) {
-  return (
-    <div className="small">
-      {item.userLabel ? (
-        supports('endUsers') && item.userKey ? (
-          <Link to={`/end-users?focus=${encodeURIComponent(item.userKey)}`}>{item.userLabel}</Link>
-        ) : (
-          item.userLabel
-        )
-      ) : (
-        <span className="muted">nieznany</span>
-      )}
-      {item.channel && <span className="muted"> · {channelLabel(item.channel)}</span>}
-    </div>
-  );
+  return <div className="small">{item.channel ? channelLabel(item.channel) : <span className="muted">—</span>}</div>;
 }
 
 function Links({ item }: { item: ThreatSubject & { requestId: string | null } }) {
@@ -217,6 +203,70 @@ function countItems(counts: Record<string, number>, label: (key: string) => stri
     .map(([key, value]) => ({ key, label: label(key), value }));
 }
 
+/** Addresses blocked after prompt injection (masked; the backend never stores the address). */
+function BlockedAddresses() {
+  const api = getApi();
+  const { can } = useAuth();
+  const { run, busy } = useAction();
+  const blocks = useAsync<IpBlock[]>(() => api.listIpBlocks(true), []);
+  const unblock = async (key: string) => {
+    if (await run(() => api.unblockIp(key), 'Adres odblokowany.')) blocks.reload();
+  };
+  return (
+    <Card
+      title="Zablokowane adresy"
+      subtitle="Adresy IP zablokowane po próbach prompt injection. Panel pokazuje tylko maskę; w bazie jest skrót (HMAC), nie adres."
+      padded={false}
+    >
+      <Async state={blocks}>
+        {(list) =>
+          list.length === 0 ? (
+            <EmptyState title="Żaden adres nie jest zablokowany" icon="lock" />
+          ) : (
+            <div className="table-wrap">
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>Adres</th>
+                    <th>Do kiedy</th>
+                    <th className="num">Próby</th>
+                    <th>Kto</th>
+                    <th />
+                  </tr>
+                </thead>
+                <tbody>
+                  {list.map((b) => (
+                    <tr key={b.key}>
+                      <td className="mono">{b.label}</td>
+                      <td className="small nowrap">{b.permanent ? 'bez terminu' : fmtDateTime(b.blockedUntil ?? '')}</td>
+                      <td className="num">{b.attempts}</td>
+                      <td className="small">{b.blockedBy === 'auto' ? 'automatycznie' : b.blockedBy}</td>
+                      <td>
+                        <div className="row gap-xs">
+                          {b.alertId && (
+                            <Link className="btn btn-xs" to={`/alerts?focus=${encodeURIComponent(b.alertId)}&status=any&type=prompt_injection`}>
+                              Alert
+                            </Link>
+                          )}
+                          {can('security:write') && (
+                            <button type="button" className="btn btn-xs" disabled={busy} onClick={() => unblock(b.key)}>
+                              Odblokuj
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )
+        }
+      </Async>
+    </Card>
+  );
+}
+
 function InjectionSection({ report: r }: { report: ThreatReport }) {
   const items = r.injection.recent;
   return (
@@ -236,7 +286,7 @@ function InjectionSection({ report: r }: { report: ThreatReport }) {
                   <th>Czas</th>
                   <th>Fragment</th>
                   <th>Skąd</th>
-                  <th>Kto</th>
+                  <th>Kanał</th>
                   <th />
                 </tr>
               </thead>
@@ -303,7 +353,7 @@ function ManipulationSection({ report: r }: { report: ThreatReport }) {
   return (
     <Card
       title="Ataki manipulacyjne"
-      subtitle="Wiele różnych osób w krótkim czasie sprawdza to samo twierdzenie ocenione jako fałsz — możliwa skoordynowana kampania dezinformacyjna."
+      subtitle="W krótkim czasie wiele zapytań o to samo twierdzenie ocenione jako fałsz — możliwa skoordynowana kampania dezinformacyjna."
     >
       {r.campaigns.length === 0 ? (
         <EmptyState title="Brak podejrzanych kampanii w tym okresie" icon="repeat" />
@@ -320,8 +370,7 @@ function ManipulationSection({ report: r }: { report: ThreatReport }) {
                   <strong>{c.claim ?? c.title}</strong>
                 </div>
                 <div className="small muted">
-                  {c.users} {plural(c.users, ['osoba', 'osoby', 'osób'])}
-                  {c.count !== null && ` · ${c.count} ${plural(c.count, ['sprawdzenie', 'sprawdzenia', 'sprawdzeń'])} fałszu`}
+                  {c.count !== null && `${c.count} ${plural(c.count, ['sprawdzenie', 'sprawdzenia', 'sprawdzeń'])} fałszu`}
                   {` · od ${fmtDateTime(c.firstSignal)} do ${fmtDateTime(c.lastSignal)}`}
                   {` · ${c.signals} ${plural(c.signals, ['sygnał', 'sygnały', 'sygnałów'])} w logach`}
                 </div>
@@ -363,7 +412,7 @@ function CriticalSection({ report: r }: { report: ThreatReport }) {
                   <th>Czas</th>
                   <th>Zapytanie</th>
                   <th>Kategorie</th>
-                  <th>Kto</th>
+                  <th>Kanał</th>
                   <th />
                 </tr>
               </thead>
@@ -381,26 +430,6 @@ function CriticalSection({ report: r }: { report: ThreatReport }) {
           <p className="muted small">Brak danych.</p>
         ) : (
           <BarList items={countItems(r.critical.byCategory, safetyLabel)} />
-        )}
-        {r.critical.blocked.length > 0 && (
-          <>
-            <h4 className="small muted" style={{ margin: '16px 0 8px' }}>
-              Blokady
-            </h4>
-            <ul className="threat-list">
-              {r.critical.blocked.map((b) => (
-                <li key={`${b.at}-${b.userKey}`} className="small">
-                  {supports('endUsers') && b.userKey ? (
-                    <Link to={`/end-users?focus=${encodeURIComponent(b.userKey)}`}>{b.userLabel ?? 'użytkownik'}</Link>
-                  ) : (
-                    (b.userLabel ?? 'użytkownik')
-                  )}{' '}
-                  <span className="muted">· {fmtRelative(b.at)}</span>{' '}
-                  {b.stillBlocked ? <Badge tone="warning">nadal zablokowany</Badge> : <Badge tone="muted">blokada minęła</Badge>}
-                </li>
-              ))}
-            </ul>
-          </>
         )}
       </Card>
     </div>

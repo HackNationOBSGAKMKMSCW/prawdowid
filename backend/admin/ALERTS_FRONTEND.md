@@ -1,19 +1,27 @@
-# Powiadomienia admina: rosyjska dezinformacja i SQL injection
+# Powiadomienia admina: rosyjska dezinformacja, SQL injection i prompt injection
 
-Oba zdarzenia trafiają do tej samej tabeli powiadomień co pozostałe alerty panelu (`monitor_alerts`). Front czyta je istniejącymi endpointami `/api/admin/alerts`. Schemat bazy się nie zmienił: kolumna `type` przyjmuje nowe wartości bez migracji.
+Zdarzenia trafiają do tej samej tabeli powiadomień co pozostałe alerty panelu (`monitor_alerts`). Front czyta je istniejącymi endpointami `/api/admin/alerts`. Schemat bazy się nie zmienił: kolumna `type` przyjmuje nowe wartości bez migracji.
 
 | `type` | Kiedy powstaje | `subject` | Ważność |
 |---|---|---|---|
 | `rosyjska_dezinformacja` | twierdzenie z zapytania na stronie jest w bazie EUvsDisinfo (sprawdzenie przez MCP i potwierdzenie przez LLM) | skrót linku do przypadku: jeden alert na przypadek | `wysoka` |
 | `sql_injection` | w parametrach URL, treści JSON lub formularza albo w wiadomości bota wykryto składnię SQL injection | `kanal:web`, `kanal:panel` albo `kanal:whatsapp` | `wysoka` |
+| `prompt_injection` | w treści zapytania są polecenia dla modelu (np. „zignoruj poprzednie instrukcje”); zapytanie ma flagę `prompt_injection` | `ip:<klucz>` (strona WWW: jeden alert na adres) albo `kanal:<kanał>` (bez adresu, np. WhatsApp) | `wysoka`, gdy adres jest zablokowany, inaczej `srednia` |
+
+### Prompt injection i blokada adresu
+
+- `details`: `kanal`, a dla strony także `adres` (maska, np. `203.0.113.x` albo `2001:db8:1:…/64`), `ip_key` (HMAC adresu) i `proby` (próby z adresu w oknie `dangerous_window_hours`).
+- `details.wystapienia[]`: `ts`, `request_id`, `query_id`, `kanal`, `fragment` (fragment tekstu wokół polecenia), `wzorzec`, `zablokowany`.
+- `details.blokada` dokłada API przy każdym odczycie (`GET /alerts`, `GET /alerts/{id}`, pulpit): bieżący stan z `ip_blocks` — `active`, `blocked_until`, `permanent`, `blocked_by` (`auto` albo admin), `attempts`.
+- Od `monitoring.injection_block_after` prób (domyślnie 1) adres jest blokowany na `injection_block_hours` (domyślnie 24 h), gdy `injection_block_ip`. To zapytanie i kolejne z adresu dostają `403 user_blocked`, a w dzienniku status `odrzucone` i flagę `odrzucone:ip_zablokowany`.
+- `GET /ip-blocks?active=true` — lista adresów (maska, klucz, próby, do kiedy); `POST /ip-blocks/{ip_key}/block` z `{"hours": 24}` albo `{"permanent": true}` (pusty = `injection_block_hours`); `POST /ip-blocks/{ip_key}/unblock`. Zmiany wymagają uprawnienia `security:write` (administrator) i trafiają do dziennika działań (`ip.blocked`, `ip.unblocked`).
+- Pełny adres nie jest nigdzie zapisywany. Adres klienta: `CLIENT_IP_HEADER` (domyślnie `cf-connecting-ip`), potem `X-Forwarded-For` z `TRUSTED_PROXY_HOPS` zaufanymi proxy, potem adres połączenia.
 
 ## Jak liczone są wystąpienia
 
 - Dopóki alert jest otwarty (`otwarty` albo `w_analizie`), każde kolejne wykrycie zwiększa `count`, aktualizuje `last_seen` i dopisuje wpis na początek `details.wystapienia` (maks. 20 ostatnich).
 - Gdy admin zmieni stan na `rozwiazany` albo `falszywy_alarm`, następne wykrycie otwiera **nowy** alert.
-- `users` to liczba różnych źródeł w `details.zrodla` (lista ma maks. 500 pozycji):
-  - przy dezinformacji źródłem jest użytkownik: numer z WhatsApp albo klient strony (pseudonim adresu IP). Każdy liczy się raz;
-  - przy SQL injection źródłem jest pseudonim adresu IP (HMAC) pobranego z pierwszego adresu w `X-Forwarded-For` (aplikacja stoi za proxy), a przy WhatsApp pseudonim numeru.
+- Alerty nie zawierają danych o osobach: nie ma numeru, adresu IP ani pseudonimu. `users` jest zawsze 0, `details.zrodla` jest puste, a `count` liczy każde zapytanie lub żądanie osobno.
 - Jedno żądanie to jedno wystąpienie, nawet gdy składnię wykryją oba mechanizmy: middleware HTTP (pola żądania) i monitor treści (`tresc_wiadomosci`). Wystąpienia łączą się po `request_id`, a `pola` zawierają wtedy oba miejsca.
 - SQL injection **niczego nie blokuje**. Zapytania do bazy są parametryzowane, więc to tylko powiadomienie.
 - Skan i zapis alertu odbywają się w tle, po przyjęciu żądania, więc alert pojawia się w panelu z opóźnieniem rzędu milisekund. Przy zalewie prób (np. skaner podatności) nadmiarowe zgłoszenia są pomijane, zamiast przeciążać bazę.
@@ -90,10 +98,9 @@ Zapytanie powiązane z alertem ma flagę `rosyjska_dezinformacja`, więc da się
       "pola": ["body.password"],          // query.<nazwa>, body.<ścieżka>, form.<nazwa>, sciezka, tresc_wiadomosci
       "metoda": "POST",
       "sciezka": "/api/admin/auth/login",
-      "zrodlo": "***ent",                 // maska pseudonimu źródła
       "query_id": null                    // ustawione dla wiadomości z bota
     }],
-    "zrodla": ["d4de1644ddf12ded"]
+    "zrodla": []                          // zawsze puste: bez danych o nadawcy
   }
 }
 ```

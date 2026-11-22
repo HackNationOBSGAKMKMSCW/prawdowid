@@ -112,7 +112,7 @@ async def check(
                 raise ApiFailure(422, "invalid_url", "Submit a URL by itself or provide plain text.")
 
             if journal is not None:
-                # Dziennik panelu admina: blokady, treści niebezpieczne, luki, dezinformacja.
+                # Dziennik panelu admina: blokady IP, treści niebezpieczne, luki, dezinformacja.
                 decision = await journal.screen(
                     request, input_text, query_id=result_id.hex, request_id=current_request_id()
                 )
@@ -174,7 +174,7 @@ async def check(
 
 
 def _refusal(reason: str | None) -> ApiFailure:
-    if reason == "uzytkownik_zablokowany":
+    if reason == "ip_zablokowany":  # adres zablokowany po próbie prompt injection
         return ApiFailure(
             403, "user_blocked", "Checks from this client are temporarily suspended."
         )

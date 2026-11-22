@@ -188,10 +188,13 @@ def test_whatsapp_message_with_sql_injection_is_registered(monitor):
     assert "sql_injection" in monitor.store.get_query(decision.query_id)["flags"]
 
 
-def test_anonymous_screen_flags_but_leaves_alert_to_middleware(monitor):
-    decision = monitor.screen(user_id="web", text="' OR '1'='1", anonymous=True)
+def test_screen_reports_sql_injection_without_source(monitor):
+    """Treść z SQL injection: flaga i alert, ale bez źródła (bez danych o osobie)."""
+    decision = monitor.screen(user_id="203.0.113.7", text="' OR '1'='1")
     assert "sql_injection" in monitor.store.get_query(decision.query_id)["flags"]
-    assert monitor.store.list_alerts(alert_type="sql_injection") == []
+    alert = monitor.store.list_alerts(alert_type="sql_injection")[0]
+    assert alert["users"] == 0 and not alert["details"].get("zrodla")
+    assert "203.0.113.7" not in str(alert)
 
 
 class Login(BaseModel):
@@ -226,7 +229,8 @@ def test_middleware_reports_and_never_changes_the_response():
     attack = client.get(
         "/api/check",
         params={"text": "1 UNION SELECT password FROM users"},
-        headers={"X-Forwarded-For": "203.0.113.7, 10.0.0.1"},
+        # klient wpisał „198.51.100.9”, nasze proxy dopisało jego prawdziwy adres
+        headers={"X-Forwarded-For": "198.51.100.9, 203.0.113.7"},
     )
     assert attack.status_code == 200 and attack.json() == {"text_length": 34}
     assert worker.flush()
@@ -309,11 +313,13 @@ def test_concurrent_detections_keep_one_alert_and_every_count(monitor):
     assert len(alerts) == 1 and alerts[0]["count"] == 40 and alerts[0]["users"] == 5
 
 
-def test_disinformation_counts_each_client_once(monitor):
+def test_disinformation_counts_each_query(monitor):
+    """Bez danych o osobach każde zapytanie liczy się osobno (adres IP nie jest zapisywany)."""
     for client in ("203.0.113.7", "203.0.113.7", "198.51.100.2"):
         record_check(CASE["statement"], report([CASE]), monitor=monitor, client=client)
     alert = monitor.store.list_alerts(alert_type="rosyjska_dezinformacja")[0]
-    assert alert["count"] == 3 and alert["users"] == 2
+    assert alert["count"] == 3 and alert["users"] == 3
+    assert "203.0.113" not in str(alert) and "198.51" not in str(alert)
 
 
 def test_same_request_reported_twice_is_one_occurrence(monitor):
@@ -352,7 +358,8 @@ def test_admin_panel_registers_sql_injection_in_alerts(tmp_path):
     assert len(alerts) == 1 and alerts[0]["count"] == 2
     entry = alerts[0]["details"]["wystapienia"][0]
     assert entry["sciezka"] == "/api/admin/queries" and entry["pola"] == ["query.q"]
-    assert entry["zrodlo"] and entry["request_id"] and alerts[0]["users"] == 1
+    # adres IP nie trafia do alertu (ani wprost, ani jako pseudonim)
+    assert entry.get("zrodlo") is None and entry["request_id"] and alerts[0]["users"] == 0
 
 
 def test_browser_api_installs_the_middleware_inside_the_size_limit():

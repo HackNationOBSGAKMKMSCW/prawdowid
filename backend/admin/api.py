@@ -39,13 +39,16 @@ class GapUpdate(BaseModel):
     note: str | None = Field(default=None, max_length=1000)
 
 
-class BlockRequest(BaseModel):
-    hours: int | None = Field(default=24, ge=1, le=24 * 3650, description="None = bezterminowo")
-    reason: str | None = Field(default=None, max_length=500)
-
-
 class PurgeRequest(BaseModel):
     older_than_days: int | None = Field(default=None, ge=1, le=3650)
+
+
+class IpBlockRequest(BaseModel):
+    hours: int | None = Field(
+        default=None, ge=1, le=24 * 365 * 10, description="Brak: injection_block_hours"
+    )
+    permanent: bool = False
+    reason: str | None = Field(default=None, max_length=500)
 
 
 def known_api_clients() -> list[str]:
@@ -119,14 +122,15 @@ def create_router(
             "generated_at": iso(now),
             "window_hours": hours,
             **monitor.store.stats(since, iso(now)),
-            "latest_alerts": monitor.store.list_alerts(status="otwarty", limit=10),
+            "latest_alerts": monitor.with_block_state(
+                monitor.store.list_alerts(status="otwarty", limit=10)
+            ),
         }
 
-    # --- logi użytkowników -------------------------------------------------------------
+    # --- dziennik zapytań (anonimowy) --------------------------------------------------
 
     @router.get("/queries", dependencies=[need("checks:read")])
     def queries(
-        user: str | None = None,
         flag: str | None = Query(None, description="np. niebezpieczne, luka_informacyjna, falsz"),
         verdict: str | None = None,
         status: str | None = None,
@@ -137,7 +141,6 @@ def create_router(
         offset: int = Query(0, ge=0),
     ) -> dict[str, Any]:
         items, total = monitor.store.list_queries(
-            user_key=user,
             flag=flag,
             verdict=verdict,
             status=status,
@@ -196,52 +199,6 @@ def create_router(
         report = threat_report(iter_events(path), monitor.store, hours=hours, now=monitor.now())
         return {"file": str(path), "log_available": path.is_file(), **report}
 
-    # --- użytkownicy -------------------------------------------------------------------
-
-    @router.get("/users", dependencies=[need("endusers:read")])
-    def users(
-        flagged: bool = False, blocked: bool = False, limit: int = Query(100, ge=1, le=1000)
-    ) -> dict[str, Any]:
-        items = monitor.store.list_users(
-            flagged=flagged, blocked_at=iso(monitor.now()) if blocked else None, limit=limit
-        )
-        return {"items": items}
-
-    @router.get("/users/{user_key}", dependencies=[need("endusers:read")])
-    def user(user_key: str) -> dict[str, Any]:
-        item = monitor.store.get_user(user_key)
-        if item is None:
-            raise not_found(f"użytkownik {user_key}")
-        recent, total = monitor.store.list_queries(user_key=user_key, limit=50)
-        alerts = [
-            alert
-            for alert in monitor.store.list_alerts(alert_type="niebezpieczny_uzytkownik")
-            if alert["subject"] == user_key
-        ]
-        return {**item, "total_queries": total, "recent_queries": recent, "alerts": alerts}
-
-    @router.post("/users/{user_key}/block")
-    def block(
-        user_key: str, body: BlockRequest, principal: Principal = need("endusers:write")
-    ) -> dict[str, Any]:
-        try:
-            result = monitor.block_user(user_key, body.hours, body.reason)
-        except KeyError:
-            raise not_found(f"użytkownik {user_key}") from None
-        record(
-            principal, "enduser.blocked", "end_user", user_key, hours=body.hours, reason=body.reason
-        )
-        return result
-
-    @router.post("/users/{user_key}/unblock")
-    def unblock(user_key: str, principal: Principal = need("endusers:write")) -> dict[str, Any]:
-        try:
-            result = monitor.unblock_user(user_key)
-        except KeyError:
-            raise not_found(f"użytkownik {user_key}") from None
-        record(principal, "enduser.unblocked", "end_user", user_key)
-        return result
-
     # --- alerty ------------------------------------------------------------------------
 
     @router.get("/alerts", dependencies=[need("alerts:read")])
@@ -254,7 +211,7 @@ def create_router(
         items = monitor.store.list_alerts(
             alert_type=type, status=status, limit=limit, offset=offset
         )
-        return {"items": items}
+        return {"items": monitor.with_block_state(items)}
 
     @router.get("/alerts/{alert_id}", dependencies=[need("alerts:read")])
     def alert(alert_id: str) -> dict[str, Any]:
@@ -263,7 +220,38 @@ def create_router(
             raise not_found(f"alert {alert_id}")
         if item["type"] in ("luka_informacyjna", "kampania_dezinformacyjna"):
             item["topic"] = monitor.store.get_topic(item["subject"])
-        return item
+        return monitor.with_block_state([item])[0]
+
+    # --- blokady adresów IP (prompt injection) -----------------------------------------
+
+    @router.get("/ip-blocks", dependencies=[need("security:read")])
+    def ip_blocks(active: bool = False) -> dict[str, Any]:
+        """Adresy z próbami prompt injection (maska + klucz HMAC), ``active``: tylko blokady."""
+        return {"items": monitor.ip_blocks(active_only=active)}
+
+    @router.post("/ip-blocks/{ip_key}/block")
+    def block_ip(
+        ip_key: str, body: IpBlockRequest, principal: Principal = need("security:write")
+    ) -> dict[str, Any]:
+        hours = None if body.permanent else body.hours or monitor.config.injection_block_hours
+        try:
+            result = monitor.block_ip(
+                ip_key, hours=hours, actor=principal.label, reason=body.reason
+            )
+        except KeyError:
+            raise not_found(f"adres {ip_key}") from None
+        until = result["blocked_until"]
+        record(principal, "ip.blocked", "ip", result["label"], until=until, reason=body.reason)
+        return result
+
+    @router.post("/ip-blocks/{ip_key}/unblock")
+    def unblock_ip(ip_key: str, principal: Principal = need("security:write")) -> dict[str, Any]:
+        try:
+            result = monitor.unblock_ip(ip_key, actor=principal.label)
+        except KeyError:
+            raise not_found(f"adres {ip_key}") from None
+        record(principal, "ip.unblocked", "ip", result["label"])
+        return result
 
     @router.post("/alerts/{alert_id}")
     def update_alert(

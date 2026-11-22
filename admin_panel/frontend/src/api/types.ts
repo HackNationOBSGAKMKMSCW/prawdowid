@@ -116,9 +116,6 @@ export interface CheckRecord {
   tokens: number;
   costPln: number;
   errorMessage?: string;
-  /** Pseudonymised end user (HMAC) and their masked id, e.g. `***456`. */
-  userKey?: string;
-  userLabel?: string;
   sourcesCount?: number | null;
   requestId?: string | null;
   /** Mistake reported by the person who asked (website "Zgłoś błąd"). */
@@ -205,10 +202,14 @@ export type AlertType =
   | 'incident_match'
   | 'source_status'
   | 'system'
-  /** Many different people ask about a claim rated false (backend/admin). */
+  /** Many queries about a claim rated false (backend/admin). */
   | 'disinformation'
-  /** One user repeatedly asks for dangerous content (backend/admin). */
-  | 'dangerous_user';
+  /** Many queries about terrorism, weapons, explosives… — aggregate, no user data (backend/admin). */
+  | 'dangerous_content'
+  /** A claim found in the EUvsDisinfo database (backend/admin). */
+  | 'known_disinformation'
+  /** SQL injection syntax in requests (backend/admin). */
+  | 'sql_injection';
 
 export type Severity = 'critical' | 'high' | 'medium' | 'low';
 
@@ -247,10 +248,41 @@ export interface Alert {
   recommendedRole?: Role;
   /** Number of related queries when the backend reports a count instead of ids. */
   queryCount?: number;
-  /** End user the alert is about (`dangerous_user`). */
-  userKey?: string;
+  /** Latest occurrences of event alerts (SQL injection, EUvsDisinfo), newest first. */
+  occurrences?: AlertOccurrence[];
+  /** External reference, e.g. the EUvsDisinfo case. */
+  link?: { label: string; url: string };
+  /** Prompt injection from a website client: masked address and its current block. */
+  ipBlock?: IpBlock;
   /** Admin's note from the last status change. */
   note?: string;
+}
+
+/**
+ * Address that sent a prompt injection (backend `ip_blocks`). The backend stores only an
+ * HMAC key and a mask, never the address itself.
+ */
+export interface IpBlock {
+  key: string;
+  /** Masked address, e.g. `203.0.113.x` or `2001:db8:1:…/64`. */
+  label: string;
+  attempts: number;
+  firstSeen: ISODate | null;
+  lastSeen: ISODate | null;
+  blockedUntil: ISODate | null;
+  blockedBy: string | null;
+  reason: string | null;
+  active: boolean;
+  permanent: boolean;
+  alertId: string | null;
+}
+
+export interface AlertOccurrence {
+  at: ISODate;
+  text: string;
+  detail?: string;
+  /** Entry in the verification log, when the alert came from a check. */
+  queryId?: string;
 }
 
 export interface AlertQuery {
@@ -586,11 +618,9 @@ export interface DashboardStats {
   informationGaps: number;
   quality: QualityMetric[];
   qualityEvaluatedAt?: ISODate;
-  /** Only from backend/admin: distinct end users, refused and dangerous queries, blocks. */
-  users?: number;
+  /** Only from backend/admin: refused and dangerous queries (no data about the people asking). */
   refused?: number;
   dangerousQueries?: number;
-  blockedUsers?: number;
   /** Queries still in progress. */
   pending?: number;
 }
@@ -630,13 +660,14 @@ export type Feature =
   // backend/admin
   /** Accounts with passwords stored (hashed) by the source: set and change passwords. */
   | 'passwords'
-  | 'endUsers'
   | 'gapLifecycle'
   | 'runtimeConfig'
   | 'techEvents'
   | 'retention'
   /** Trusted sites searched by the verification (`trusted_sources` table + live registry). */
   | 'trustedSites'
+  /** Address blocks after prompt injection (`/ip-blocks`). */
+  | 'ipBlocks'
   /** Threat report built from the observability logs (`GET /threats`). */
   | 'threats';
 
@@ -653,31 +684,6 @@ export interface ApiCapabilities {
 /** Information-gap lifecycle in backend/admin (`podejrzenie` → … → `zamknieta`). */
 export type GapStatus = 'suspected' | 'active' | 'in_progress' | 'closed' | 'rejected';
 
-/** A person who writes to the service (e.g. the WhatsApp bot), known only by a pseudonym. */
-export interface EndUser {
-  key: string;
-  /** Masked identifier, e.g. `***456`. */
-  label: string;
-  firstSeen: ISODate;
-  lastSeen: ISODate;
-  queries: number;
-  /** Queries classified as dangerous content (medium or high risk). */
-  dangerous: number;
-  blockedUntil: ISODate | null;
-  blockReason: string | null;
-  blocked: boolean;
-  /** Blocked with no end date. */
-  permanent: boolean;
-}
-
-export interface EndUserDetail extends EndUser {
-  totalQueries: number;
-  recentQueries: CheckRecord[];
-  alerts: Alert[];
-}
-
-export type EndUserFilter = 'all' | 'flagged' | 'blocked';
-
 /** Overrides kept in `runtime_config.json`; `null` = value from `.env`. Keys mirror backend/admin/runtime.py. */
 export interface LlmSettings {
   model: string | null;
@@ -693,18 +699,31 @@ export interface ApiSettings {
   article_extractor: 'local' | 'diffbot' | null;
 }
 
+/**
+ * Progi monitora (backend/admin/runtime.py). Bez danych o użytkownikach aplikacji wszystkie
+ * progi liczą zapytania; `disinfo_min_users` ma historyczną nazwę. Jedyne blokady to adresy
+ * IP po prompt injection (`injection_block_*`). Pozostałe pola blokad i liczenia „osób”
+ * zostały w backendzie tylko dla zgodności starszych plików i są nieużywane.
+ */
 export interface MonitoringSettings {
-  info_gap_min_users: number;
+  info_gap_min_queries: number;
   info_gap_window_hours: number;
   disinfo_min_users: number;
   disinfo_window_hours: number;
   dangerous_alert_after: number;
-  dangerous_block_after: number;
   dangerous_window_hours: number;
-  dangerous_block_hours: number;
-  auto_block: boolean;
+  injection_block_ip: boolean;
+  injection_block_after: number;
+  injection_block_hours: number;
   refuse_high_risk: boolean;
   retention_days: number;
+  // nieużywane (zgodność): bez danych o osobach nie ma blokad ani liczenia osób
+  info_gap_min_users?: number;
+  info_gap_count_by?: string;
+  dangerous_block_after?: number;
+  dangerous_block_hours?: number;
+  auto_block?: boolean;
+  injection_alert_after?: number;
 }
 
 export type SecretName = 'freellm_api_key' | 'google_fact_check_api_key' | 'diffbot_api_token';
@@ -810,10 +829,8 @@ export interface PurgeResult {
 
 // ── Threats (backend/admin/threats.py, built from the log file) ──────────────
 
-/** Who and what an event refers to, filled in from the query journal when possible. */
+/** What an event refers to, filled in from the query journal when possible (never who). */
 export interface ThreatSubject {
-  userKey: string | null;
-  userLabel: string | null;
   channel: string | null;
   queryId: string | null;
   /** Text of the query (people with access to the verification history see it anyway). */
@@ -840,7 +857,6 @@ export interface ManipulationCampaign {
   topicId: string | null;
   status: string | null;
   severity: string | null;
-  users: number;
   count: number | null;
   /** Log events raised for this campaign in the period. */
   signals: number;
@@ -857,14 +873,6 @@ export interface CriticalQueryEvent extends ThreatSubject {
   requestId: string | null;
 }
 
-export interface BlockedUserEvent {
-  at: ISODate;
-  userKey: string | null;
-  userLabel: string | null;
-  until: string | null;
-  stillBlocked: boolean;
-}
-
 export interface ThreatReport {
   file: string;
   logAvailable: boolean;
@@ -874,12 +882,9 @@ export interface ThreatReport {
   eventsScanned: number;
   summary: {
     promptInjection: number;
-    promptInjectionUsers: number;
     manipulationCampaigns: number;
     criticalQueries: number;
-    criticalUsers: number;
     refused: number;
-    blockedUsers: number;
   };
   timeline: { bucket: ISODate; promptInjection: number; manipulation: number; critical: number }[];
   injection: {
@@ -893,6 +898,5 @@ export interface ThreatReport {
     byCategory: Record<string, number>;
     bySeverity: Record<string, number>;
     recent: CriticalQueryEvent[];
-    blocked: BlockedUserEvent[];
   };
 }

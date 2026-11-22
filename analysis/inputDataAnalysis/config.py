@@ -25,10 +25,29 @@ class Settings:
 
 
 @cache
-def get_settings() -> Settings:
+def _load_env_files() -> None:
     load_dotenv(ENV_PATH, override=False)
     # Starsze nazwy LLM_* pozostają akceptowane, by nie blokować dotychczasowych .env.
     load_dotenv(LEGACY_ENV_PATH, override=False)
+
+
+def _apply_admin_overrides() -> None:
+    """Model, klucz i adres API zmienione w panelu admina (``backend/admin/runtime.py``)."""
+    try:
+        from admin.runtime import apply_runtime_overrides
+    except ImportError:  # analiza uruchomiona bez backendu
+        return
+    apply_runtime_overrides()
+
+
+def get_settings() -> Settings:
+    """Czytane przy każdym wywołaniu: zmiana modelu w panelu działa bez restartu.
+
+    Pliki ``.env`` są wczytywane raz; nadpisania z panelu (plik ``runtime_config.json``,
+    czytany ponownie tylko po zmianie) są nakładane na ``os.environ`` przy każdym wywołaniu.
+    """
+    _load_env_files()
+    _apply_admin_overrides()
     api_key = os.getenv("FREELLM_API_KEY") or os.getenv("LLM_API_KEY")
     base_url = os.getenv("FREELLM_BASE_URL") or os.getenv("LLM_BASE_URL")
     model = os.getenv("FREELLM_MODEL") or os.getenv("LLM_MODEL")

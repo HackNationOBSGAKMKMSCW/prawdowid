@@ -55,16 +55,23 @@ npm run dev        # http://localhost:5175
 - Sesja wygasa po czasie z backendu albo przy odpowiedzi 401.
 
 **Role** panelu to administrator i analityk (rola moderatora jest na razie wyłączona; migracja `0007` zmienia istniejące konta moderatorów na analityków). Sprawdza je backend (`backend/accounts/permissions.py`), a panel tylko chowa niedostępne widoki.
-- **Administrator** ma pełną kontrolę nad serwisem: modele, źródła, reguły, blokady, konta i hasła.
-- **Analityk** ma panel obserwacyjny: widzi pulpit, statystyki, alerty, luki, historię weryfikacji, logi, użytkowników serwisu i źródła, może eksportować dane, ale niczego nie zmienia.
+- **Administrator** ma pełną kontrolę nad panelem: modele, źródła, reguły, konta i hasła.
+- **Analityk** ma panel obserwacyjny: widzi pulpit, statystyki, alerty, luki, historię weryfikacji, logi i źródła, może eksportować dane, ale niczego nie zmienia.
 
 Strona dla obywateli nie ma kont: sprawdzanie jest anonimowe. Konta zakłada wyłącznie administrator.
 
+**Bez danych o użytkownikach aplikacji.** Panel nie zbiera i nie pokazuje numerów telefonów,
+adresów IP, pseudonimów ani innych identyfikatorów osób pytających (strona i WhatsApp). Reguły
+liczą zapytania, a alert o treściach niebezpiecznych jest zbiorczy. Wyjątek: próba prompt
+injection ze strony blokuje adres IP (domyślnie od 1. próby na 24 h). Panel pokazuje wtedy
+tylko maskę adresu (`203.0.113.x`), a administrator może go odblokować w alercie albo w
+„Zagrożeniach”. Widok **Konta panelu** pokazuje tylko konta panelu (administrator, analityk).
+
 **Konta i hasła:**
-- Konta zakłada i wyłącza administrator w widoku **Użytkownicy** („Dodaj użytkownika”, domyślnie rola analityka). Formularz generuje losowe hasło początkowe; administrator kopiuje je i przekazuje tej osobie razem z adresem e-mail. Może też ustawić komuś nowe hasło.
+- Konta zakłada i wyłącza administrator w widoku **Konta panelu** („Dodaj konto”, domyślnie rola analityka). Formularz generuje losowe hasło początkowe; administrator kopiuje je i przekazuje tej osobie razem z adresem e-mail. Może też ustawić komuś nowe hasło.
 - Każdy zmienia własne hasło ikoną kłódki w górnym pasku. Zmiana wylogowuje wszystkie jego sesje.
 
-**Dziennik audytu** (`activity_logs`) pokazuje logowania (także nieudane, z adresem IP), zmiany kont, blokady, alerty, luki, źródła i konfigurację.
+**Dziennik audytu** (`activity_logs`) pokazuje logowania do panelu (także nieudane, z adresem IP), zmiany kont panelu, alerty, luki, źródła i konfigurację.
 
 Bez `DATABASE_URL` backend działa na SQLite, ale bez kont, więc logowanie w panelu się nie uda.
 
@@ -80,15 +87,15 @@ Inny adres backendu w trybie deweloperskim: `ADMIN_API_PROXY_TARGET` w `.env`
 | Widok | Endpointy `backend/admin` |
 |---|---|
 | Pulpit, Statystyki | `GET /dashboard`, `GET /queries` (szereg czasowy, kanały, czasy odpowiedzi) |
-| Alerty i ostrzeżenia | `GET /alerts`, `POST /alerts/{id}` (przyjęcie, rozwiązanie, odrzucenie) |
+| Alerty i ostrzeżenia | `GET /alerts`, `POST /alerts/{id}` (przyjęcie, rozwiązanie, odrzucenie), `POST /ip-blocks/{key}/block` i `/unblock` |
+| Zagrożenia: zablokowane adresy | `GET /ip-blocks?active=true`, `POST /ip-blocks/{key}/unblock` |
 | Luki informacyjne | `GET /info-gaps`, `GET /topics/{id}`, `POST /info-gaps/{id}` (podejrzenie → aktywna → w uzupełnianiu → zamknięta / odrzucona) |
-| Użytkownicy serwisu | `GET /users`, `GET /users/{key}`, `POST /users/{key}/block` i `/unblock` |
 | Historia weryfikacji | `GET /queries` (filtry: wynik, flaga, okres, tekst), `GET /queries/{id}` |
 | Logi techniczne | `GET /events`, `GET /events/summary` |
 | Modele i źródła danych | `GET`/`PATCH /config` (model, endpoint, klienci apiReading, pobieranie artykułów, klucze API tylko do zapisu), `GET /config/models` |
 | Reguły i progi | `PATCH /config` (sekcja `monitoring`), `POST /maintenance/purge` |
 | Logowanie, konto | `POST /auth/login`, `/auth/logout`, `GET /auth/me`, `POST /auth/me/password` |
-| Użytkownicy (konta panelu) | `GET`/`POST /accounts`, `PATCH /accounts/{id}`, `POST /accounts/{id}/password` |
+| Konta panelu (bez kont aplikacji) | `GET`/`POST /accounts`, `PATCH /accounts/{id}`, `POST /accounts/{id}/password` |
 | Dziennik audytu | `GET /activity` (bez bazy: `GET /config/audit`) |
 | Strony zaufane | `GET`/`POST`/`PATCH`/`DELETE /sources`, `GET /sources/status`, `POST /sources/check` |
 | Historia weryfikacji: zgłoszenia | `GET /queries?flag=zgloszenie`, pole `report` w `GET /queries/{id}` |

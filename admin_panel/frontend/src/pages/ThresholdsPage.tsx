@@ -8,9 +8,16 @@ import { Async, Card, Field, Modal, PageHeader, Toggle, useAction, useToast } fr
 import { useAsync } from '../hooks/useAsync.ts';
 import { fmtDateTime } from '../utils/format.ts';
 
-type NumberKey = {
-  [K in keyof MonitoringSettings]: MonitoringSettings[K] extends number ? K : never;
-}[keyof MonitoringSettings];
+type NumberKey =
+  | 'info_gap_min_queries'
+  | 'info_gap_window_hours'
+  | 'disinfo_min_users'
+  | 'disinfo_window_hours'
+  | 'dangerous_alert_after'
+  | 'dangerous_window_hours'
+  | 'injection_block_after'
+  | 'injection_block_hours'
+  | 'retention_days';
 
 interface NumberField {
   key: NumberKey;
@@ -25,29 +32,36 @@ const GROUPS: { title: string; subtitle: string; fields: NumberField[] }[] = [
   {
     title: 'Luka informacyjna',
     subtitle:
-      'Temat bez rozstrzygnięcia (brak źródeł albo niewystarczające dane) staje się luką, gdy pyta o niego dość różnych osób. Pierwsze rozstrzygnięcie oparte na źródłach zamyka lukę automatycznie.',
+      'Temat bez rozstrzygnięcia (brak źródeł albo niewystarczające dane) staje się luką, gdy pytano o niego dość razy. Liczymy zapytania, nie osoby: panel nie zbiera danych o użytkownikach aplikacji. Pierwsze rozstrzygnięcie oparte na źródłach zamyka lukę automatycznie.',
     fields: [
-      { key: 'info_gap_min_users', label: 'Różne osoby', hint: 'tyle osób musi zapytać o ten sam temat', min: 1, max: 10_000 },
+      { key: 'info_gap_min_queries', label: 'Zapytania', hint: 'tyle razy trzeba zapytać o ten sam temat', min: 1, max: 10_000 },
       { key: 'info_gap_window_hours', label: 'Okno czasu', hint: 'w jakim okresie liczymy pytania', min: 1, max: 8760, unit: 'h' },
     ],
   },
   {
     title: 'Możliwy atak dezinformacyjny',
-    subtitle: 'Wiele różnych osób w krótkim czasie pyta o twierdzenie ocenione jako fałsz. Od dwukrotności progu alert ma wysoki priorytet.',
+    subtitle: 'W krótkim czasie wiele zapytań o twierdzenie ocenione jako fałsz. Od dwukrotności progu alert ma wysoki priorytet.',
     fields: [
-      { key: 'disinfo_min_users', label: 'Różne osoby', hint: 'próg alertu', min: 2, max: 100_000 },
+      { key: 'disinfo_min_users', label: 'Zapytania', hint: 'próg alertu', min: 2, max: 100_000 },
       { key: 'disinfo_window_hours', label: 'Okno czasu', hint: 'w jakim okresie liczymy pytania', min: 1, max: 2160, unit: 'h' },
     ],
   },
   {
     title: 'Treści niebezpieczne',
     subtitle:
-      'Terroryzm, materiały wybuchowe, broń, broń masowego rażenia, przemoc masowa. Pytanie o fakt jest sprawdzane i oznaczane; prośba o instrukcję lub zdobycie to wysokie ryzyko.',
+      'Terroryzm, materiały wybuchowe, broń, broń masowego rażenia, przemoc masowa. Pytanie o fakt jest sprawdzane i oznaczane; prośba o instrukcję lub zdobycie to wysokie ryzyko. Alert jest zbiorczy: nikogo nie identyfikujemy.',
     fields: [
-      { key: 'dangerous_alert_after', label: 'Alert po', hint: 'zapytaniach o treści niebezpieczne jednej osoby', min: 1, max: 1000 },
-      { key: 'dangerous_block_after', label: 'Blokada po', hint: 'zapytaniach wysokiego ryzyka jednej osoby', min: 1, max: 1000 },
-      { key: 'dangerous_window_hours', label: 'Okno czasu', hint: 'dla obu progów powyżej', min: 1, max: 2160, unit: 'h' },
-      { key: 'dangerous_block_hours', label: 'Długość blokady', hint: 'automatycznej', min: 1, max: 8760, unit: 'h' },
+      { key: 'dangerous_alert_after', label: 'Alert po', hint: 'zapytaniach o treści niebezpieczne (łącznie)', min: 1, max: 1000 },
+      { key: 'dangerous_window_hours', label: 'Okno czasu', hint: 'także okno liczenia prób prompt injection', min: 1, max: 2160, unit: 'h' },
+    ],
+  },
+  {
+    title: 'Prompt injection',
+    subtitle:
+      'Polecenia dla modelu w treści zapytania (np. „zignoruj poprzednie instrukcje”). Każda próba jest oznaczana w historii weryfikacji i trafia do alertów. Adres IP strony WWW może zostać zablokowany — w bazie jest tylko jego skrót (HMAC) i maska, np. 203.0.113.x. WhatsApp nie ma adresu IP, więc tam jest tylko oznaczenie i alert.',
+    fields: [
+      { key: 'injection_block_after', label: 'Blokada po', hint: 'próbach z jednego adresu w oknie czasu', min: 1, max: 1000 },
+      { key: 'injection_block_hours', label: 'Długość blokady', hint: 'admin może odblokować wcześniej', min: 1, max: 8760, unit: 'h' },
     ],
   },
 ];
@@ -59,7 +73,7 @@ export default function ThresholdsPage() {
     <>
       <PageHeader
         title="Reguły i progi"
-        description="Kiedy backend tworzy alerty o lukach informacyjnych, możliwej dezinformacji i niebezpiecznych użytkownikach, kiedy blokuje, i jak długo przechowuje zapytania. Zmiany działają od następnego zapytania."
+        description="Kiedy backend tworzy alerty o lukach informacyjnych, możliwej dezinformacji i treściach niebezpiecznych, kiedy blokuje adres po prompt injection i jak długo przechowuje zapytania. Zmiany działają od następnego zapytania."
       />
       <Async state={config}>
         {/* Keyed by the saved values: after a save the form starts from the new config. */}
@@ -128,15 +142,17 @@ function ThresholdsForm({ config, onSaved }: { config: RuntimeConfig; onSaved: (
               </Field>
             ))}
           </div>
+          {group.title === 'Prompt injection' && (
+            <Toggle
+              checked={form.injection_block_ip}
+              disabled={!editable}
+              onChange={(v) => setForm({ ...form, injection_block_ip: v })}
+              label="Blokuj adres IP po próbie prompt injection"
+              description="To zapytanie i kolejne z tego adresu są odrzucane (strona dostaje błąd 403) do końca blokady."
+            />
+          )}
           {group.title === 'Treści niebezpieczne' && (
             <div className="stack">
-              <Toggle
-                checked={form.auto_block}
-                disabled={!editable}
-                onChange={(v) => setForm({ ...form, auto_block: v })}
-                label="Automatyczna blokada"
-                description="Po przekroczeniu progu zapytań wysokiego ryzyka użytkownik jest czasowo blokowany."
-              />
               <Toggle
                 checked={form.refuse_high_risk}
                 disabled={!editable}
@@ -207,7 +223,7 @@ function ThresholdsForm({ config, onSaved }: { config: RuntimeConfig; onSaved: (
           </>
         }
       >
-        <p>Zapytania użytkowników i ich twierdzenia starsze niż podana liczba dni zostaną trwale usunięte.</p>
+        <p>Zapytania i ich twierdzenia starsze niż podana liczba dni zostaną trwale usunięte.</p>
         <Field label="Starsze niż (dni)">
           <input type="number" min={1} max={3650} value={purgeDays} onChange={(e) => setPurgeDays(e.target.value)} />
         </Field>

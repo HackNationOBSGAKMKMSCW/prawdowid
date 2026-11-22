@@ -174,7 +174,7 @@ export function ClusterDrawer({
           </dd>
         </div>
         <div>
-          <dt>{lifecycle ? 'Różne osoby' : 'Unikalne sesje (szac.)'}</dt>
+          <dt>{lifecycle ? 'Zapytania w oknie' : 'Unikalne sesje (szac.)'}</dt>
           <dd>{cluster.uniqueSessions}</dd>
         </div>
         {Object.keys(cluster.channels).length > 0 && (
@@ -274,7 +274,7 @@ export function ClusterDrawer({
           <p className="muted small">Zamknięcie rozwiązuje też otwarty alert luki. Nowe pytania bez rozstrzygnięcia liczą się od nowa.</p>
         )}
         {move?.to === 'rejected' && (
-          <p className="muted small">Odrzucenie oznacza alert jako fałszywy alarm — temat nie wróci jako luka, dopóki nie zapyta o niego znów dość osób.</p>
+          <p className="muted small">Odrzucenie oznacza alert jako fałszywy alarm — temat nie wróci jako luka, dopóki znów nie padnie o niego dość zapytań.</p>
         )}
         <Field label="Notatka (opcjonalnie)" hint="np. kto przygotowuje komunikat albo jakie źródło dodano">
           <input type="text" maxLength={1000} value={note} onChange={(e) => setNote(e.target.value)} />

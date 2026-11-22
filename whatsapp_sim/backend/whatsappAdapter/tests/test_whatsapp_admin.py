@@ -76,7 +76,7 @@ async def test_bot_feeds_disinformation_detection(monitor):
     await bot.handle(message_from("48601", FALSE_TEXT))
     await bot.handle(message_from("48602", FALSE_TEXT))
     alerts = monitor.store.list_alerts(alert_type="kampania_dezinformacyjna")
-    assert len(alerts) == 1 and alerts[0]["users"] == 2
+    assert len(alerts) == 1 and alerts[0]["count"] == 2
 
 
 async def test_high_risk_message_is_refused_without_running_pipeline(monitor):
@@ -89,15 +89,16 @@ async def test_high_risk_message_is_refused_without_running_pipeline(monitor):
     assert items[0]["status"] == "odrzucone"
 
 
-async def test_blocked_user_is_refused(monitor):
+async def test_phone_number_is_not_stored(monitor):
+    """Numer nadawcy służy tylko rozmowie; w rejestrze panelu go nie ma (ani końcówki)."""
     pipeline = RecordingPipeline(report_for(GAP_TEXT, []))
     bot = SprawdzToBot(pipeline, monitor=monitor)
-    await bot.handle(message_from("48800", GAP_TEXT))
-    key = monitor.store.list_queries()[0][0]["user_key"]
-    monitor.block_user(key, 24, "test")
-    replies = await bot.handle(message_from("48800", GAP_TEXT))
-    assert "wstrzymane" in bodies(replies)[0]
-    assert len(pipeline.texts) == 1
+    await bot.handle(message_from("48600123456", GAP_TEXT))
+    await bot.handle(message_from("48600123456", GAP_TEXT))
+    items, _ = monitor.store.list_queries()
+    assert {(i["user_key"], i["user_label"]) for i in items} == {("anonim", None)}
+    assert "600123456" not in str(items) and "456" not in str([i["user_label"] for i in items])
+    assert len(pipeline.texts) == 2  # nie ma blokad
 
 
 async def test_pipeline_error_is_recorded(monitor):

@@ -36,6 +36,15 @@ export default function AlertsPage() {
     document.getElementById(`alert-${focus}`)?.scrollIntoView({ block: 'center' });
   }, [focus, alerts.data]);
 
+  const withBlocks = supports('ipBlocks') && can('security:write');
+  const blockAction = async (key: string, block: boolean, hours?: number | null) => {
+    const ok = await run(
+      () => (block ? api.blockIp(key, hours) : api.unblockIp(key)),
+      block ? 'Adres zablokowany.' : 'Adres odblokowany.',
+    );
+    if (ok) alerts.reload();
+  };
+
   const setStatus = async (alert: Alert, status: AlertStatus, message: string) => {
     const ok = await run(() => api.updateAlert(alert.id, { status }), message);
     if (ok) {
@@ -81,7 +90,7 @@ export default function AlertsPage() {
         description={
           withCases
             ? 'Sygnały z reguł: luki informacyjne, dużo zapytań o to samo, tematy wysokiego ryzyka (np. terroryzm), próby manipulacji i problemy techniczne. Alert nie jest werdyktem.'
-            : 'Sygnały z reguł backendu: luki informacyjne, możliwe ataki dezinformacyjne i użytkownicy powtarzający pytania o treści niebezpieczne. Alert nie jest werdyktem.'
+            : 'Sygnały z reguł backendu: luki informacyjne, możliwe ataki dezinformacyjne, treści niebezpieczne, prompt injection (z blokadą adresu IP), SQL injection i rosyjska dezinformacja z EUvsDisinfo. Panel nie zbiera danych o osobach pytających; przy prompt injection widać tylko maskę adresu. Alert nie jest werdyktem.'
         }
         actions={
           can('export') && alerts.data ? (
@@ -171,6 +180,73 @@ export default function AlertsPage() {
                       </div>
                     ))}
                   </dl>
+                  {a.ipBlock && (
+                    <div className={`ip-block ${a.ipBlock.active ? 'is-blocked' : ''}`}>
+                      <Icon name="lock" size={14} />
+                      <span>
+                        Adres <strong className="mono">{a.ipBlock.label}</strong>
+                        {a.ipBlock.active ? (
+                          <>
+                            {' '}
+                            — <strong>zablokowany</strong>{' '}
+                            {a.ipBlock.permanent ? 'bez terminu' : `do ${fmtDateTime(a.ipBlock.blockedUntil ?? '')}`}
+                            {a.ipBlock.blockedBy === 'auto' ? ' (automatycznie)' : a.ipBlock.blockedBy ? ` (${a.ipBlock.blockedBy})` : ''}
+                          </>
+                        ) : (
+                          ' — nie jest zablokowany'
+                        )}
+                        <span className="muted"> · pełny adres nie jest zapisywany</span>
+                      </span>
+                      {withBlocks && (
+                        <span className="row gap-xs">
+                          {a.ipBlock.active ? (
+                            <button type="button" className="btn btn-sm" disabled={busy} onClick={() => blockAction(a.ipBlock!.key, false)}>
+                              Odblokuj adres
+                            </button>
+                          ) : (
+                            <>
+                              <button type="button" className="btn btn-sm btn-danger" disabled={busy} onClick={() => blockAction(a.ipBlock!.key, true)}>
+                                Zablokuj adres
+                              </button>
+                              <button type="button" className="btn btn-sm btn-ghost" disabled={busy} onClick={() => blockAction(a.ipBlock!.key, true, null)}>
+                                Bez terminu
+                              </button>
+                            </>
+                          )}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                  {a.link && (
+                    <div className="alert-rule">
+                      <Icon name="external" size={14} />{' '}
+                      <a href={a.link.url} target="_blank" rel="noopener noreferrer">
+                        {a.link.label}
+                      </a>
+                    </div>
+                  )}
+                  {a.occurrences && a.occurrences.length > 0 && (
+                    <details className="alert-occurrences">
+                      <summary className="small">
+                        Ostatnie wystąpienia ({a.occurrences.length}
+                        {a.queryCount && a.queryCount > a.occurrences.length ? ` z ${a.queryCount}` : ''})
+                      </summary>
+                      <ul className="threat-list">
+                        {a.occurrences.map((o, i) => (
+                          <li key={`${o.at}-${o.queryId ?? i}`} className="small">
+                            <span className="muted nowrap">{o.at ? fmtDateTime(o.at) : '—'}</span> · {o.text}
+                            {o.detail && <span className="muted"> · {o.detail}</span>}
+                            {o.queryId && (
+                              <>
+                                {' '}
+                                <Link to={`/checks?focus=${encodeURIComponent(o.queryId)}`}>zapytanie</Link>
+                              </>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    </details>
+                  )}
                   {a.note && (
                     <div className="alert-rule">
                       <Icon name="info" size={14} /> <span>Notatka: {a.note}</span>
@@ -208,11 +284,6 @@ export default function AlertsPage() {
                     {a.clusterId && a.type === 'information_gap' && supports('gapLifecycle') && (
                       <Link to={`/gaps?focus=${encodeURIComponent(a.clusterId)}`} className="btn btn-sm">
                         <Icon name="gap" size={14} /> Luka informacyjna
-                      </Link>
-                    )}
-                    {a.userKey && supports('endUsers') && (
-                      <Link to={`/end-users?focus=${encodeURIComponent(a.userKey)}`} className="btn btn-sm">
-                        <Icon name="users" size={14} /> Użytkownik
                       </Link>
                     )}
                     {a.caseId ? (

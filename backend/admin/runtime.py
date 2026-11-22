@@ -4,7 +4,7 @@ Plik JSON (domyślnie ``backend/admin/data/runtime_config.json``, ``RUNTIME_CONF
 przechowuje tylko nadpisania; ``None`` znaczy „jak w środowisku / .env”. Moduły backendu
 czytają ustawienia przez ``Settings.from_environment()`` przy każdym zapytaniu, a ta
 najpierw woła :func:`apply_runtime_overrides` — zmiana działa więc bez restartu, także w
-innym procesie niż panel admina (plik jest czytany ponownie po zmianie jego mtime).
+innym procesie niż panel admina (plik jest czytany ponownie, gdy zmieni się jego mtime albo i-węzeł).
 
 Moduł nie importuje FastAPI ani klientów API, żeby ``textAnalysis.settings`` mógł go
 importować bez cykli.
@@ -97,22 +97,33 @@ class MonitoringConfig(_Section):
     info_gap_count_by: Literal["auto", "zapytania", "osoby"] = Field(
         default="auto",
         description=(
-            "Próg luki. auto: rozpoznana osoba raz, każde anonimowe zapytanie (strona) osobno, "
-            "próg info_gap_min_users; osoby: różne pseudonimy; zapytania: każde zapytanie, "
-            "próg info_gap_min_queries"
+            "Nieużywane (zgodność ze starszymi plikami): bez danych o użytkownikach luka liczy "
+            "zawsze zapytania, próg info_gap_min_queries"
         ),
     )
     info_gap_min_queries: int = Field(default=3, ge=1, le=100_000)
     info_gap_min_users: int = Field(default=3, ge=1, le=10_000)
     info_gap_window_hours: int = Field(default=168, ge=1, le=24 * 365)
+    # nazwa historyczna: liczone są zapytania o twierdzenie ocenione jako fałsz
     disinfo_min_users: int = Field(default=5, ge=2, le=100_000)
     disinfo_window_hours: int = Field(default=24, ge=1, le=24 * 90)
     dangerous_alert_after: int = Field(default=3, ge=1, le=1000)
     dangerous_block_after: int = Field(default=2, ge=1, le=1000)
     dangerous_window_hours: int = Field(default=24, ge=1, le=24 * 90)
     dangerous_block_hours: int = Field(default=24, ge=1, le=24 * 365)
-    injection_alert_after: int = Field(default=2, ge=1, le=1000)
-    auto_block: bool = True
+    injection_alert_after: int = Field(
+        default=1,
+        ge=1,
+        le=1000,
+        description="Nieużywane (zgodność): każda próba prompt injection trafia do alertu",
+    )
+    # Blokada adresu IP po próbach prompt injection (strona WWW; WhatsApp nie ma adresu IP).
+    injection_block_ip: bool = True
+    injection_block_after: int = Field(
+        default=1, ge=1, le=1000, description="Prób z jednego adresu w oknie dangerous_window_hours"
+    )
+    injection_block_hours: int = Field(default=24, ge=1, le=24 * 365)
+    auto_block: bool = True  # nieużywane (zgodność): blokady osób usunięto
     refuse_high_risk: bool = True
     retention_days: int = Field(default=30, ge=1, le=3650)
 
@@ -167,7 +178,9 @@ class RuntimeConfigStore:
     def __init__(self, path: Path | None = None) -> None:
         self._explicit = path
         self._lock = threading.Lock()
-        self._cache: tuple[Path, float, RuntimeConfig] | None = None
+        # (plik, wersja, konfiguracja); wersja = mtime + i-węzeł: zapis robi os.replace,
+        # więc nowy plik ma nowy i-węzeł nawet przy tym samym znaczniku czasu.
+        self._cache: tuple[Path, tuple[int, int, int], RuntimeConfig] | None = None
 
     @property
     def path(self) -> Path:
@@ -176,17 +189,18 @@ class RuntimeConfigStore:
     def load(self) -> RuntimeConfig:
         path = self.path
         try:
-            mtime = path.stat().st_mtime
+            stat = path.stat()
         except OSError:
             return RuntimeConfig()
+        version = (stat.st_mtime_ns, stat.st_ino, stat.st_size)
         cached = self._cache
-        if cached and cached[0] == path and cached[1] == mtime:
+        if cached and cached[0] == path and cached[1] == version:
             return cached[2]
         try:
             config = RuntimeConfig.model_validate(json.loads(path.read_text(encoding="utf-8")))
         except (OSError, ValueError):
             return cached[2] if cached and cached[0] == path else RuntimeConfig()
-        self._cache = (path, mtime, config)
+        self._cache = (path, version, config)
         return config
 
     def save(self, config: RuntimeConfig) -> None:

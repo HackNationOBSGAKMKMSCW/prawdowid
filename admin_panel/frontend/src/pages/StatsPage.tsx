@@ -42,7 +42,6 @@ export default function StatsPage() {
                 hint={`${fmtInt(s.abstained)} zapytań`}
               />
               <Kpi icon="refresh" label="Typowy czas odpowiedzi" value={fmtDuration(s.medianLatencyMs)} hint={`najwolniejsze 5%: ${fmtDuration(s.p95LatencyMs)}`} />
-              <Kpi icon="users" label="Użytkownicy" value={fmtInt(s.users ?? 0)} hint={`${s.blockedUsers ?? 0} zablokowanych teraz`} />
               {s.dangerousQueries !== undefined && (
                 <Kpi
                   icon="alert"
@@ -68,7 +67,7 @@ export default function StatsPage() {
                   Błędy techniczne: {s.technicalErrors} (nie są werdyktem) ·{' '}
                   {s.refused === undefined
                     ? `Odparte próby manipulacji: ${s.injectionsBlocked}`
-                    : `Odrzucone (blokada lub treść wysokiego ryzyka): ${s.refused}`}
+                    : `Odrzucone (treść wysokiego ryzyka): ${s.refused}`}
                   {s.pending ? ` · W toku lub przerwane: ${s.pending}` : ''}
                 </div>
               </Card>

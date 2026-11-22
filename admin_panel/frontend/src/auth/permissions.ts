@@ -16,6 +16,8 @@ export type Permission =
   | 'models:write'
   | 'channels:write'
   | 'security:read'
+  /** Block and unblock addresses after prompt injection. */
+  | 'security:write'
   | 'rules:read'
   | 'rules:write'
   | 'settings:read'
@@ -23,8 +25,6 @@ export type Permission =
   | 'users:read'
   | 'users:write'
   | 'audit:read'
-  | 'endusers:read'
-  | 'endusers:write'
   | 'export';
 
 /** Observation panel: everything read-only, plus export. */
@@ -37,7 +37,6 @@ const OBSERVE: Permission[] = [
   'sources:read',
   'security:read',
   'rules:read',
-  'endusers:read',
   'export',
 ];
 
@@ -61,7 +60,7 @@ export const ROLE_PERMISSIONS: Record<Role, ReadonlySet<Permission>> = {
     'users:read',
     'users:write',
     'audit:read',
-    'endusers:write',
+    'security:write',
   ]),
   // Read-only observer; the administrator creates and manages the account.
   analyst: new Set<Permission>([...OBSERVE, 'models:read', 'settings:read']),

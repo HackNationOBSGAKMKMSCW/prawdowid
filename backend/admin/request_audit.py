@@ -5,8 +5,7 @@ API strony) i wrzuca zadanie do ``BackgroundWorker``; żądanie idzie dalej od r
 (``sqli.scan_request``) i zapis alertu (``Monitor.register_sql_injection``) wykonuje wątek
 roboczy, więc nie blokują pętli zdarzeń, a zalew prób jest ograniczony rozmiarem kolejki.
 
-Odpowiedź nie zmienia się nigdy. Źródło to pseudonim (HMAC) adresu klienta: pierwszy adres
-z ``X-Forwarded-For`` (aplikacja stoi za proxy, np. Vercel), a bez nagłówka — adres połączenia.
+Odpowiedź nie zmienia się nigdy. Adres klienta nie trafia do alertu SQL injection.
 """
 
 from __future__ import annotations
@@ -38,14 +37,11 @@ def monitor_reporter(get_monitor: Callable[[], Any], channel: str) -> Reporter:
         client_ip: str | None,
         request_id: str | None,
     ) -> None:
-        from .settings import user_label
-
+        del client_ip  # adres IP to dane osobowe: nie trafia do alertu
         monitor = get_monitor()
-        source = monitor.settings.user_key(f"ip:{client_ip}") if client_ip else None
         monitor.register_sql_injection(
             channel=channel,
-            source=source,
-            source_label=user_label(f"ip:{client_ip}") if client_ip else None,
+            source=None,
             patterns=detection.patterns,
             locations=detection.locations,
             method=method,
@@ -57,14 +53,11 @@ def monitor_reporter(get_monitor: Callable[[], Any], channel: str) -> Reporter:
 
 
 def client_address(scope: dict[str, Any], headers: dict[bytes, bytes]) -> str | None:
-    forwarded = headers.get(b"x-forwarded-for", b"").decode("latin-1").split(",")[0].strip()
-    if forwarded:
-        return forwarded[:64]
-    real_ip = headers.get(b"x-real-ip", b"").decode("latin-1").strip()
-    if real_ip:
-        return real_ip[:64]
+    """Adres klienta jak w blokadach IP (``client_ip``: zaufane proxy, ``TRUSTED_PROXY_HOPS``)."""
+    from .client_ip import client_address as resolve
+
     client = scope.get("client")
-    return client[0] if client else None
+    return resolve(headers, client[0] if client else None)
 
 
 def _current_request_id() -> str | None:

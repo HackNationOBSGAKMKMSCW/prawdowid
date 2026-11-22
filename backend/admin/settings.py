@@ -1,9 +1,11 @@
-"""Ustawienia samego panelu admina (token, baza, pseudonimizacja użytkowników)."""
+"""Ustawienia samego panelu admina (token awaryjny, baza).
+
+Rejestr nie zapisuje identyfikatorów użytkowników aplikacji. Wyjątek: adres IP, z którego
+przyszła próba prompt injection, trafia do blokad jako klucz HMAC (``ip_salt``) z maską.
+"""
 
 from __future__ import annotations
 
-import hashlib
-import hmac
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -13,15 +15,15 @@ DATA_DIR = Path(__file__).resolve().parent / "data"
 ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
 LEGACY_ENV_FILE = Path(__file__).resolve().parents[1] / ".env"
 DEFAULT_DB_PATH = DATA_DIR / "admin.db"
-_DEFAULT_SALT = "prawdowid-admin"
 
 
 @dataclass(frozen=True)
 class AdminSettings:
     api_token: str | None = field(default=None, repr=False)
     db_path: Path = DEFAULT_DB_PATH
-    user_salt: str = field(default=_DEFAULT_SALT, repr=False)
     max_text_length: int = 4000
+    # Sól HMAC kluczy adresów IP w blokadach; brak = losowa, zapisana w bazie (monitor_meta).
+    ip_salt: str | None = field(default=None, repr=False)
 
     @classmethod
     def from_environment(cls) -> AdminSettings:
@@ -30,13 +32,8 @@ class AdminSettings:
         return cls(
             api_token=(os.getenv("ADMIN_API_TOKEN") or "").strip() or None,
             db_path=Path(os.getenv("ADMIN_DB_PATH") or DEFAULT_DB_PATH),
-            user_salt=os.getenv("ADMIN_USER_SALT") or _DEFAULT_SALT,
+            ip_salt=(os.getenv("ADMIN_IP_SALT") or "").strip() or None,
         )
-
-    def user_key(self, user_id: str) -> str:
-        """Pseudonim użytkownika: HMAC identyfikatora, stały między zapytaniami."""
-        digest = hmac.new(self.user_salt.encode(), user_id.strip().encode(), hashlib.sha256)
-        return digest.hexdigest()[:16]
 
 
 def load_env_file(*paths: Path) -> None:
@@ -45,11 +42,3 @@ def load_env_file(*paths: Path) -> None:
     for path in paths or (ENV_FILE, LEGACY_ENV_FILE):
         if path.is_file():
             load_dotenv(path, override=False)
-
-
-def user_label(user_id: str) -> str:
-    """Zamaskowany identyfikator do wyświetlenia w panelu (np. numer telefonu)."""
-    value = user_id.strip()
-    if len(value) <= 4:
-        return "***"
-    return "***" + value[-3:]

@@ -4,15 +4,13 @@ import type {
   ApiCapabilities,
   AvailableModels,
   ConfigChange,
-  EndUser,
-  EndUserDetail,
-  EndUserFilter,
   GapStatus,
   PurgeResult,
   RuntimeConfig,
   RuntimeConfigPatch,
   TechEvent,
   TechEventQuery,
+  IpBlock,
   TechSummary,
   ThreatReport,
   TrustedSite,
@@ -129,13 +127,6 @@ export interface AdminApi {
   // ── Features of the real backend (backend/admin) ──────────────────────────
   // Gated by `capabilities.features`; sources without them reject the call.
 
-  /** `endUsers`: people who write to the service, by pseudonym. */
-  listEndUsers(filter?: EndUserFilter): Promise<EndUser[]>;
-  getEndUser(key: string): Promise<EndUserDetail>;
-  /** `hours: null` blocks with no end date. */
-  blockEndUser(key: string, hours: number | null, reason?: string): Promise<EndUser>;
-  unblockEndUser(key: string): Promise<EndUser>;
-
   /** `gapLifecycle`: move an information gap through its states. */
   updateGapStatus(clusterId: string, status: GapStatus, note?: string): Promise<QueryCluster>;
 
@@ -155,6 +146,12 @@ export interface AdminApi {
   deleteTrustedSite(url: string): Promise<void>;
   /** Fetches the site again and re-detects how to search it. */
   checkTrustedSite(url: string): Promise<TrustedSite>;
+
+  /** `ipBlocks`: addresses that sent a prompt injection (masked); `activeOnly`: blocked now. */
+  listIpBlocks(activeOnly?: boolean): Promise<IpBlock[]>;
+  /** `hours: null` blocks with no end date; `undefined` uses the configured duration. */
+  blockIp(key: string, hours?: number | null): Promise<IpBlock>;
+  unblockIp(key: string): Promise<IpBlock>;
 
   /** `threats`: prompt injection, manipulation campaigns and critical queries from the logs. */
   getThreats(hours: number): Promise<ThreatReport>;

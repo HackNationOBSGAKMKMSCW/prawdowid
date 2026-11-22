@@ -14,7 +14,6 @@ export interface RawClaim {
   id?: number;
   query_id?: string;
   ts?: string;
-  user_key?: string;
   topic_id?: string;
   text: string;
   verdict: string | null;
@@ -26,8 +25,6 @@ export interface RawClaim {
 export interface RawQuery {
   id: string;
   ts: string;
-  user_key: string;
-  user_label: string | null;
   channel: string | null;
   text: string | null;
   status: 'w_toku' | 'zakonczone' | 'odrzucone' | 'blad' | string;
@@ -78,7 +75,7 @@ export interface RawQueryPage {
 
 export interface RawAlert {
   id: string;
-  type: 'luka_informacyjna' | 'kampania_dezinformacyjna' | 'niebezpieczny_uzytkownik' | string;
+  type: 'luka_informacyjna' | 'kampania_dezinformacyjna' | 'tresci_niebezpieczne' | 'prompt_injection' | 'rosyjska_dezinformacja' | 'sql_injection' | string;
   subject: string;
   severity: string;
   status: 'otwarty' | 'w_analizie' | 'rozwiazany' | 'falszywy_alarm' | string;
@@ -100,6 +97,7 @@ export interface RawGap {
   gap_status: string;
   gap_since: string | null;
   gap_users: number;
+  gap_queries?: number;
   gap_note: string | null;
   gap_updated_at: string | null;
 }
@@ -110,34 +108,15 @@ export interface RawTopic extends RawGap {
   by_kind: Record<string, { claims: number; users: number }>;
 }
 
-export interface RawUser {
-  user_key: string;
-  label: string | null;
-  first_seen: string;
-  last_seen: string;
-  queries: number;
-  dangerous: number;
-  blocked_until: string | null;
-  block_reason: string | null;
-}
-
-export interface RawUserDetail extends RawUser {
-  total_queries: number;
-  recent_queries: RawQuery[];
-  alerts: RawAlert[];
-}
-
 export interface RawDashboard {
   generated_at: string;
   window_hours: number;
   queries: number;
-  users: number;
   dangerous_queries: number;
   verdicts: Record<string, number>;
   statuses: Record<string, number>;
   open_alerts: Record<string, number>;
   active_info_gaps: number;
-  blocked_users: number;
   latest_alerts: RawAlert[];
 }
 

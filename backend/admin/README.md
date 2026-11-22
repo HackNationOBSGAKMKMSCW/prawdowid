@@ -36,8 +36,10 @@ Bez `DATABASE_URL` nie ma kont; panel działa wtedy tylko z awaryjnym `ADMIN_API
 | `DATABASE_URL` | brak | PostgreSQL: konta, sesje, dziennik zapytań i działań |
 | `ADMIN_API_TOKEN` | brak | Awaryjny dostęp bez konta (najlepiej nie ustawiać) |
 | `ADMIN_DB_PATH` | `backend/admin/data/admin.db` | Baza SQLite z zapytaniami, alertami i audytem |
-| `ADMIN_USER_SALT` | stała | Sól HMAC do pseudonimizacji identyfikatorów użytkowników |
 | `RUNTIME_CONFIG_FILE` | `backend/admin/data/runtime_config.json` | Nadpisania konfiguracji |
+| `ADMIN_IP_SALT` | losowa, w bazie | Sól HMAC adresów IP w blokadach po prompt injection |
+| `CLIENT_IP_HEADER` | `cf-connecting-ip` | Nagłówek zaufanego proxy z adresem klienta (pusty = nie ufaj) |
+| `TRUSTED_PROXY_HOPS` | `1` | Ile zaufanych proxy dopisuje się do `X-Forwarded-For` (0 = adres połączenia) |
 
 Katalog `data/` jest w `.gitignore`, bo może zawierać klucze API.
 
@@ -47,9 +49,9 @@ Katalog `data/` jest w `.gitignore`, bo może zawierać klucze API.
 from admin import ClaimInput, get_monitor
 
 monitor = get_monitor()
-decision = monitor.screen(user_id=sender, text=text, channel="whatsapp")
+decision = monitor.screen(text=text, channel="whatsapp")  # bez numeru nadawcy
 if not decision.allowed:
-    return decision.message  # użytkownik zablokowany albo treść wysokiego ryzyka
+    return decision.message  # treść wysokiego ryzyka
 analysis = await textAnalysis.run(text)
 ...
 result = monitor.complete(
@@ -65,30 +67,37 @@ if result.message:  # stan luki informacyjnej: dołącz do odpowiedzi
 
 API strony (`admin/web.py`, `CheckJournal`) i bot WhatsApp
 (`whatsapp_sim/backend/whatsappAdapter/admin_bridge.py`) są już wpięte.
-Rejestruje każdą wiadomość do sprawdzenia, odrzuca zablokowanych i treści wysokiego ryzyka,
+Rejestruje każdą wiadomość do sprawdzenia (bez danych o nadawcy), odrzuca treści wysokiego ryzyka,
 a do odpowiedzi dołącza komunikat o luce informacyjnej. Bot i panel muszą mieć to samo
 `ADMIN_DB_PATH`. `ADMIN_MONITOR=off` wyłącza rejestr. Awaria monitora nie przerywa rozmowy.
 
 ## Reguły
 
-Progi ustawia się w sekcji `monitoring` konfiguracji (`PATCH /api/admin/config`).
+Progi ustawia się w sekcji `monitoring` konfiguracji (`PATCH /api/admin/config`, w panelu
+„Reguły i progi”). Działają od następnego zapytania.
+
+**Bez danych o użytkownikach aplikacji.** Dziennik nie zapisuje numeru telefonu, adresu IP,
+pseudonimu ani żadnego innego identyfikatora osoby pytającej (`user_key` = `anonim`,
+`user_label` = `NULL`). Dlatego wszystkie reguły liczą **zapytania**, a nie osoby, a alert o
+treściach niebezpiecznych jest zbiorczy. Migracja `0010_no_end_user_data` usuwa dane zapisane
+wcześniej (tabela `end_users`, pseudonimy, źródła w alertach). Jedyny wyjątek to adres, z
+którego przyszła próba prompt injection: trafia do `ip_blocks` (migracja `0011`) jako klucz
+HMAC z maską, żeby można go było zablokować.
 
 - **Luka informacyjna.** Twierdzenie jest jej kandydatem, gdy nie ma rozstrzygnięcia: werdykt `brak_wystarczajacych_danych` albo `nieweryfikowalny`, albo brak jakichkolwiek źródeł.
   - Podobne twierdzenia są grupowane w tematy.
-  - Próg zależy od `info_gap_count_by`:
-    - `auto` (domyślnie): próg `info_gap_min_users`, domyślnie 3 w ciągu 7 dni. Każdy rozpoznany użytkownik liczy się raz: numer z WhatsApp albo klient strony (pseudonim adresu IP). Każde zapytanie w kanale anonimowym (`Monitor.screen(anonymous=True)`) liczy się osobno.
-    - `zapytania`: `info_gap_min_queries` zapytań bez pokrycia. Dwa twierdzenia z jednego zapytania liczą się raz.
-    - `osoby`: `info_gap_min_users` różnych osób.
-  - Po przekroczeniu progu temat dostaje stan `aktywna`, powstaje alert, a użytkownik bota dostaje komunikat o luce.
-  - W tematach są liczniki `gap_queries` i `gap_users`.
+  - Próg: `info_gap_min_queries` zapytań bez pokrycia (domyślnie 3) w oknie `info_gap_window_hours` (domyślnie 7 dni). Dwa twierdzenia z jednego zapytania liczą się raz. Pola `info_gap_count_by` i `info_gap_min_users` zostały tylko dla zgodności i są nieużywane.
+  - Po przekroczeniu progu temat dostaje stan `aktywna`, powstaje alert, a osoba pytająca dostaje komunikat o luce.
+  - W tematach jest licznik `gap_queries` (`gap_users` zawsze 0).
   - Stany: `podejrzenie` → `aktywna` → `w_uzupelnianiu` → `zamknieta` albo `odrzucona`.
   - Pierwsze rozstrzygnięcie oparte na źródłach (prawda/fałsz) zamyka lukę automatycznie.
-- **Możliwy atak dezinformacyjny.** Alert `kampania_dezinformacyjna` powstaje, gdy `disinfo_min_users` różnych osób (domyślnie 5 w ciągu 24 h) pyta o temat oceniony jako fałsz. Przy co najmniej dwukrotności progu alert ma ważność `wysoka`. Strona liczy się jako jedna osoba, więc sam ruch ze strony tego alertu nie wywoła.
+- **Możliwy atak dezinformacyjny.** Alert `kampania_dezinformacyjna` powstaje, gdy `disinfo_min_users` **zapytań** (nazwa pola historyczna; domyślnie 5 w ciągu 24 h) dotyczy tematu ocenionego jako fałsz. Przy co najmniej dwukrotności progu alert ma ważność `wysoka`.
 - **Treści niebezpieczne:** terroryzm, materiały wybuchowe, broń, broń masowego rażenia, przemoc masowa.
   - Pytanie o fakt, np. „czy zamach w X był…”, dostaje poziom `sredni`: jest przetwarzane i oznaczane.
   - Prośba o instrukcję, przepis lub zdobycie dostaje poziom `wysoki` i jest odrzucana.
-  - `dangerous_alert_after` zapytań w oknie czasu daje alert `niebezpieczny_uzytkownik`.
-  - `dangerous_block_after` zapytań wysokiego ryzyka daje czasową blokadę (`dangerous_block_hours`).
+  - `dangerous_alert_after` zapytań (łącznie) w oknie `dangerous_window_hours` daje zbiorczy alert `tresci_niebezpieczne` (temat `wszystkie`, w szczegółach kategorie i liczba próśb wysokiego ryzyka).
+  - Nikt nie jest blokowany (`refuse_high_risk` odrzuca same prośby wysokiego ryzyka).
+- **Prompt injection.** Każda próba dostaje flagę `prompt_injection` i trafia jako wystąpienie do alertu `prompt_injection`: jeden alert na adres IP strony (`ip:<klucz>`), a bez adresu (WhatsApp) na kanał. Od `injection_block_after` prób z jednego adresu (domyślnie 1) w oknie `dangerous_window_hours` adres jest blokowany na `injection_block_hours` (domyślnie 24 h, `injection_block_ip`): to zapytanie i kolejne dostają `403 user_blocked`. Admin blokuje i odblokuje w panelu (alert albo „Zagrożenia”). Szczegóły: [ALERTS_FRONTEND.md](ALERTS_FRONTEND.md).
 - **Zweryfikowana rosyjska dezinformacja.** Twierdzenie z zapytania na stronie jest w bazie EUvsDisinfo (`knownDisinfo`, MCP). Powstaje wtedy alert `rosyjska_dezinformacja`, jeden na przypadek z bazy. Każde kolejne zapytanie zwiększa licznik i dopisuje się do `details.wystapienia`, a zapytanie dostaje flagę `rosyjska_dezinformacja`.
 - **SQL injection.** `admin/sqli.py` szuka składni SQL (UNION SELECT, `' OR '1'='1`, `; DROP TABLE`, SLEEP itp.):
   - w każdym żądaniu API strony i panelu (`admin/request_audit.py`, middleware w `server.py` i `admin/api.py`);
@@ -103,11 +112,11 @@ Progi ustawia się w sekcji `monitoring` konfiguracji (`PATCH /api/admin/config`
 
 `PATCH /api/admin/config` zapisuje nadpisania w pliku JSON. Wartość `null` przywraca to, co jest w `.env`.
 
-`Settings.from_environment()` nakłada nadpisania na `os.environ` przy każdym zapytaniu. Zmiana działa więc bez restartu, także w procesie bota.
+`Settings.from_environment()` (textAnalysis, werdykt) i `inputDataAnalysis.config.get_settings()` nakładają nadpisania na `os.environ` przy każdym zapytaniu. Zmiana działa więc bez restartu we wszystkich etapach, także w procesie bota.
 
 | Pole | Zmienna środowiskowa |
 |---|---|
-| `llm.model` | `FREELLM_MODEL`: textAnalysis i werdykt |
+| `llm.model` | `FREELLM_MODEL`: analiza wejścia, textAnalysis i werdykt |
 | `llm.text_analysis_model` | `TEXT_ANALYSIS_MODEL`: tylko textAnalysis |
 | `llm.base_url`, `llm.timeout_s`, `llm.max_retries` | `FREELLM_BASE_URL`, `FREELLM_TIMEOUT`, `FREELLM_MAX_RETRIES` |
 | `apis.disabled_clients` | `API_READING_DISABLED_CLIENTS`: np. `["sejm", "eurlex"]` |
@@ -122,13 +131,12 @@ Klucze są tylko do zapisu. API i audyt pokazują wyłącznie maskę (`****abcd`
 
 | Metoda i ścieżka | Opis |
 |---|---|
-| `GET /dashboard` | Liczniki, werdykty, otwarte alerty, aktywne luki, zablokowani |
-| `GET /queries` | Logi zapytań użytkowników. Filtry: `user`, `flag`, `verdict`, `status`, `since`, `until`, `q` |
+| `GET /dashboard` | Liczniki, werdykty, otwarte alerty, aktywne luki, treści niebezpieczne |
+| `GET /queries` | Logi zapytań (bez danych o osobach). Filtry: `flag`, `verdict`, `status`, `since`, `until`, `q` |
 | `GET /queries/{id}` | Szczegóły zapytania z twierdzeniami i zgłoszeniem błędu (`report`) |
 | `GET /events`, `GET /events/summary` | Techniczne logi observability (`backend/logs/app.jsonl`) |
-| `GET /users`, `GET /users/{key}` | Użytkownicy (pseudonimy) i ich historia |
-| `POST /users/{key}/block`, `POST /users/{key}/unblock` | Blokada i odblokowanie (`hours: null` blokuje bezterminowo) |
 | `GET /alerts`, `GET /alerts/{id}`, `POST /alerts/{id}` | Alerty i zmiana ich statusu |
+| `GET /ip-blocks`, `POST /ip-blocks/{ip_key}/block`, `POST /ip-blocks/{ip_key}/unblock` | Adresy po prompt injection (maska), blokada i odblokowanie |
 | `GET /info-gaps`, `POST /info-gaps/{topic_id}`, `GET /topics/{id}` | Luki informacyjne |
 | `GET /info-gaps/summary` | Ile zapytań w oknie nie miało pokrycia w danych, liczba tematów w każdym stanie, najczęstsze tematy |
 | `GET /info-gaps/ranking` | Tematy z największą liczbą zapytań bez pokrycia (także poniżej progu), z trendem dziennym |
@@ -143,7 +151,8 @@ Klucze są tylko do zapisu. API i audyt pokazują wyłącznie maskę (`****abcd`
 Flaga `zgloszenie:<powód>` w `GET /queries?flag=zgloszenie` to wyniki, w których ktoś zgłosił
 błąd na stronie (`wrong_verdict`, `bad_source`, `misunderstood`, `other`).
 
-Identyfikatory użytkowników są pseudonimizowane (HMAC). Panel pokazuje tylko maskę, np. `***456`.
+Panel nie ma widoku użytkowników aplikacji. `GET /accounts` i pozostałe endpointy kont obsługują
+wyłącznie konta panelu (role `analyst` i `admin`); konta z rolą `user` są dla panelu niewidoczne.
 
 Nowe typy alertów (rosyjska dezinformacja, SQL injection) dla frontu: [ALERTS_FRONTEND.md](ALERTS_FRONTEND.md).
 

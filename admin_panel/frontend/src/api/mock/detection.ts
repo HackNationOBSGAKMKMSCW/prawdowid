@@ -144,7 +144,9 @@ export const DEFAULT_RECIPIENT_ROLE: Record<AlertType, Role> = {
   source_status: 'admin',
   system: 'admin',
   disinformation: 'analyst',
-  dangerous_user: 'admin',
+  dangerous_content: 'admin',
+  known_disinformation: 'analyst',
+  sql_injection: 'admin',
 };
 
 /** An alert as computed from current data — before status and notifications are applied. */

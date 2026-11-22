@@ -8,7 +8,7 @@ uzupełnia (pseudonim, kanał, treść zapytania, stan alertu):
 * **ataki manipulacyjne** — ``admin_alert`` typu ``kampania_dezinformacyjna``: wiele osób w
   krótkim czasie sprawdza tę samą fałszywą informację;
 * **informacje krytyczne** — ``admin_sensitive_query`` i ``admin_query_refused``: terroryzm,
-  broń, materiały wybuchowe i inne kategorie ``safety.classify``; ``admin_user_blocked``.
+  broń, materiały wybuchowe i inne kategorie ``safety.classify``. Bez danych o osobach.
 """
 
 from __future__ import annotations
@@ -21,7 +21,6 @@ from typing import Any
 INJECTION = "prompt_injection"
 CAMPAIGN = "kampania_dezinformacyjna"
 SENSITIVE = ("admin_sensitive_query", "admin_query_refused")
-BLOCKED = "admin_user_blocked"
 RECENT = 50
 
 
@@ -67,7 +66,6 @@ class _Lookup:
         self.store = store
         self._queries: dict[str, dict[str, Any] | None] = {}
         self._by_request: dict[str, dict[str, Any] | None] = {}
-        self._users: dict[str, dict[str, Any] | None] = {}
         self._alerts: dict[str, dict[str, Any] | None] = {}
 
     def query(self, query_id: str | None, request_id: str | None) -> dict[str, Any] | None:
@@ -80,13 +78,6 @@ class _Lookup:
                 self._by_request[request_id] = self._safe(self.store.query_by_request, request_id)
             return self._by_request[request_id]
         return None
-
-    def user(self, user_key: str | None) -> dict[str, Any] | None:
-        if not user_key:
-            return None
-        if user_key not in self._users:
-            self._users[user_key] = self._safe(self.store.get_user, user_key)
-        return self._users[user_key]
 
     def alert(self, alert_id: str | None) -> dict[str, Any] | None:
         if not alert_id:
@@ -103,12 +94,9 @@ class _Lookup:
             return None
 
 
-def _who(event: dict[str, Any], query: dict[str, Any] | None, lookup: _Lookup) -> dict[str, Any]:
-    user_key = event.get("user_key") or (query or {}).get("user_key")
-    user = lookup.user(user_key)
+def _who(event: dict[str, Any], query: dict[str, Any] | None) -> dict[str, Any]:
+    """Kanał i zapytanie zdarzenia — bez danych o osobie (starsze logi mogą je mieć)."""
     return {
-        "user_key": user_key,
-        "user_label": (query or {}).get("user_label") or (user or {}).get("label"),
         "channel": event.get("channel") or (query or {}).get("channel"),
         "query_id": (query or {}).get("id") or event.get("query_id"),
         "text": (query or {}).get("text"),
@@ -130,7 +118,6 @@ def threat_report(
     timeline: dict[str, Counter[str]] = {}
     injections: list[dict[str, Any]] = []
     critical: list[dict[str, Any]] = []
-    blocked: list[dict[str, Any]] = []
     campaigns: dict[str, dict[str, Any]] = {}
 
     for event in events:
@@ -155,20 +142,15 @@ def threat_report(
         elif name in SENSITIVE:
             kind = "critical"
             critical.append({**event, "_at": moment})
-        elif name == BLOCKED:
-            blocked.append({**event, "_at": moment})
         if kind:
             timeline.setdefault(_bucket(moment, hours), Counter())[kind] += 1
 
     # --- prompt injection ------------------------------------------------------------
     by_text = Counter(str(e.get("text_sha256")) for e in injections if e.get("text_sha256"))
-    injection_users = set()
     recent_injections = []
     for event in sorted(injections, key=lambda e: e["_at"], reverse=True):
         query = lookup.query(event.get("query_id"), event.get("request_id"))
-        who = _who(event, query, lookup)
-        if who["user_key"]:
-            injection_users.add(who["user_key"])
+        who = _who(event, query)
         if len(recent_injections) < RECENT:
             recent_injections.append(
                 {
@@ -210,16 +192,13 @@ def threat_report(
     # --- informacje krytyczne ---------------------------------------------------------
     categories: Counter[str] = Counter()
     severities: Counter[str] = Counter()
-    critical_users = set()
     recent_critical = []
     for event in sorted(critical, key=lambda e: e["_at"], reverse=True):
         names = [str(c) for c in event.get("categories") or []]
         categories.update(names)
         severities[str(event.get("severity") or "brak")] += 1
         query = lookup.query(event.get("query_id"), event.get("request_id"))
-        who = _who(event, query, lookup)
-        if who["user_key"]:
-            critical_users.add(who["user_key"])
+        who = _who(event, query)
         if len(recent_critical) < RECENT:
             recent_critical.append(
                 {
@@ -232,20 +211,6 @@ def threat_report(
                     **who,
                 }
             )
-    blocked_list = []
-    for event in sorted(blocked, key=lambda e: e["_at"], reverse=True)[:RECENT]:
-        user = lookup.user(event.get("user_key"))
-        blocked_list.append(
-            {
-                "ts": _iso(event["_at"]),
-                "user_key": event.get("user_key"),
-                "user_label": (user or {}).get("label"),
-                "until": event.get("until"),
-                "still_blocked": bool((user or {}).get("blocked_until"))
-                and str((user or {}).get("blocked_until")) > _iso(now),
-            }
-        )
-
     return {
         "since": _iso(since),
         "until": _iso(now),
@@ -253,12 +218,9 @@ def threat_report(
         "events_scanned": scanned,
         "summary": {
             "prompt_injection": len(injections),
-            "prompt_injection_users": len(injection_users),
             "manipulation_campaigns": len(campaign_list),
             "critical_queries": len(critical),
-            "critical_users": len(critical_users),
             "refused": sum(1 for e in critical if e.get("event") == "admin_query_refused"),
-            "blocked_users": len({e.get("user_key") for e in blocked}),
         },
         "timeline": [
             {
@@ -282,6 +244,5 @@ def threat_report(
             "by_category": dict(categories.most_common()),
             "by_severity": dict(severities),
             "recent": recent_critical,
-            "blocked": blocked_list,
         },
     }

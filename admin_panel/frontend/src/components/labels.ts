@@ -86,7 +86,9 @@ export const ALERT_TYPE: Record<AlertType, { label: string; short: string }> = {
   source_status: { label: 'Status źródła', short: 'Źródło' },
   system: { label: 'Problem techniczny', short: 'System' },
   disinformation: { label: 'Możliwy atak dezinformacyjny', short: 'Dezinformacja' },
-  dangerous_user: { label: 'Niebezpieczny użytkownik', short: 'Użytkownik' },
+  dangerous_content: { label: 'Treści niebezpieczne', short: 'Treści' },
+  known_disinformation: { label: 'Rosyjska dezinformacja (EUvsDisinfo)', short: 'EUvsDisinfo' },
+  sql_injection: { label: 'Próby SQL injection', short: 'SQL' },
 };
 
 export const GAP_STATUS: Record<GapStatus, { label: string; tone: Tone }> = {

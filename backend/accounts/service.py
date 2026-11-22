@@ -205,12 +205,20 @@ class AccountService:
         return User.from_row(row) if row else None
 
     def list_users(
-        self, *, role: str | None = None, active: bool | None = None, search: str | None = None
+        self,
+        *,
+        role: str | None = None,
+        roles: tuple[str, ...] | None = None,
+        active: bool | None = None,
+        search: str | None = None,
     ) -> list[User]:
         where, params = [], []
         if role:
             where.append("role = %s::user_role")
             params.append(role)
+        if roles:
+            where.append("role::text = ANY(%s)")
+            params.append(list(roles))
         if active is not None:
             where.append("is_active = %s")
             params.append(active)

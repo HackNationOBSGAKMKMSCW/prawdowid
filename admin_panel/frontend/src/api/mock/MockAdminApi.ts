@@ -17,12 +17,11 @@ import type {
   AvailableModels,
   CheckFlag,
   ConfigChange,
-  EndUser,
-  EndUserDetail,
   Feature,
   PurgeResult,
   RuntimeConfig,
   TechEvent,
+  IpBlock,
   TechSummary,
   ThreatReport,
   TrustedSite,
@@ -910,18 +909,6 @@ export class MockAdminApi implements AdminApi {
     return Promise.reject(unsupported('Zmiana hasła'));
   }
 
-  listEndUsers(): Promise<EndUser[]> {
-    return Promise.reject(unsupported('Użytkownicy serwisu'));
-  }
-  getEndUser(): Promise<EndUserDetail> {
-    return Promise.reject(unsupported('Użytkownicy serwisu'));
-  }
-  blockEndUser(): Promise<EndUser> {
-    return Promise.reject(unsupported('Blokada użytkownika'));
-  }
-  unblockEndUser(): Promise<EndUser> {
-    return Promise.reject(unsupported('Blokada użytkownika'));
-  }
   updateGapStatus(): Promise<QueryCluster> {
     return Promise.reject(unsupported('Stan luki informacyjnej'));
   }
@@ -942,6 +929,15 @@ export class MockAdminApi implements AdminApi {
   }
   getThreats(): Promise<ThreatReport> {
     return Promise.reject(unsupported('Zagrożenia z logów'));
+  }
+  listIpBlocks(): Promise<IpBlock[]> {
+    return Promise.reject(unsupported('Blokady adresów IP'));
+  }
+  blockIp(): Promise<IpBlock> {
+    return Promise.reject(unsupported('Blokady adresów IP'));
+  }
+  unblockIp(): Promise<IpBlock> {
+    return Promise.reject(unsupported('Blokady adresów IP'));
   }
   listTrustedSites(): Promise<TrustedSite[]> {
     return Promise.reject(unsupported('Strony zaufane'));
