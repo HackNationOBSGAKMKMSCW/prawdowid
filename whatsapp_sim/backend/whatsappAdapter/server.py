@@ -6,15 +6,19 @@ WhatsApp transport would instead POST those bodies to the Graph API.
 """
 
 import asyncio
+import contextlib
 import json
+import logging
 import os
 from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import Body, FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 from observability import ObservabilityMiddleware
 from pydantic import ValidationError
+from trustedSources.api import router as trusted_sources_router
 
 from .admin_bridge import monitor_from_environment
 from .bot import BOT_NAME, SprawdzToBot
@@ -23,6 +27,8 @@ from .pipeline import DemoPipeline, FactCheckPipeline, LivePipeline
 
 MODE_ENV = "SPRAWDZTO_MODE"
 MAX_PAYLOAD_MESSAGES = 10
+WARM_ENV = "TRUSTED_SOURCES_WARM"
+logger = logging.getLogger(__name__)
 
 
 def pipeline_from_environment() -> FactCheckPipeline:
@@ -36,8 +42,25 @@ def pipeline_from_environment() -> FactCheckPipeline:
 
 def create_app(bot: SprawdzToBot | None = None) -> FastAPI:
     bot = bot or SprawdzToBot(pipeline_from_environment(), monitor=monitor_from_environment())
-    app = FastAPI(title="SprawdzTo WhatsApp adapter", docs_url="/api/whatsapp/docs")
+
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+        task = None
+        if bot.mode == "live" and os.getenv(WARM_ENV, "true").lower() not in {"0", "false", "no"}:
+            task = asyncio.create_task(_warm_trusted_sources())
+        try:
+            yield
+        finally:
+            if task is not None and not task.done():
+                task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await task
+
+    app = FastAPI(
+        title="SprawdzTo WhatsApp adapter", docs_url="/api/whatsapp/docs", lifespan=lifespan
+    )
     app.add_middleware(ObservabilityMiddleware, skip_paths=("/api/whatsapp/health",))
+    app.include_router(trusted_sources_router)
 
     @app.get("/api/whatsapp/health")
     async def health() -> dict[str, Any]:
@@ -72,6 +95,19 @@ def create_app(bot: SprawdzToBot | None = None) -> FastAPI:
         return {"messages": await bot.handle_webhook(payload)}
 
     return app
+
+
+async def _warm_trusted_sources() -> None:
+    """Detect new whitelist entries and prefetch listing/feed pages in the background."""
+
+    import trustedSources
+
+    try:
+        logger.info("trusted sources warmed: %s", await trustedSources.warm())
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        logger.exception("trusted source warm-up failed")
 
 
 async def _stream_events(bot: SprawdzToBot, payload: dict[str, Any]) -> AsyncIterator[str]:

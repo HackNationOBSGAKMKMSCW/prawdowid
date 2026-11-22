@@ -563,6 +563,29 @@ def _evidence_from_reading(results: Any) -> None:
         )
 
 
+def _evidence_from_trusted(report: Any) -> None:
+    hits = getattr(report, "hits", None)
+    if hits is None:
+        return
+    failures = getattr(report, "failures", []) or []
+    queried = getattr(report, "sources_queried", 0) or 0
+    log_event(
+        "trusted_search",
+        hits=len(hits),
+        articles=sum(1 for hit in hits if getattr(hit, "kind", "") == "article"),
+        sources_queried=queried,
+        failed_sources=len(failures),
+        duration_ms=getattr(report, "duration_ms", None),
+    )
+    if not hits:
+        log_event(
+            "evidence_empty",
+            level="warning",
+            provider="trusted_sources",
+            reason="search_failed" if queried and len(failures) >= queried else "no_results",
+        )
+
+
 def _abstain_from_verdict(verdict: Any) -> None:
     value = str(getattr(verdict, "value", verdict))
     if value in {"no_data", "unverified"}:
@@ -587,6 +610,9 @@ STAGE_TARGETS: tuple[StageTarget, ...] = (
         on_result=_evidence_from_reading,
     ),
     StageTarget("articleScraping.service", "run", "articleScraping.run"),
+    StageTarget(
+        "trustedSources.service", "run", "trustedSources.run", on_result=_evidence_from_trusted
+    ),
     StageTarget(
         "inputDataAnalysis.pipeline",
         "analyze_async",

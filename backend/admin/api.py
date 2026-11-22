@@ -11,20 +11,20 @@ Opcjonalny nagłówek ``X-Admin-User`` trafia do audytu zmian konfiguracji.
 
 from __future__ import annotations
 
-import hmac
+import contextlib
 import os
 from collections import deque
 from datetime import timedelta
 from pathlib import Path
 from typing import Any, Literal
 
-from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Query
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from .monitor import ADMIN_GAP_STATUSES, ALERT_STATUSES, ALERT_TYPES, Monitor, iso
 from .runtime import RuntimeConfigStore, apply_config, public_view
 from .settings import AdminSettings
-from .store import AdminStore
+from .store import AdminStore, PostgresAdminStore
 
 GAP_FILTERS = ("podejrzenie", "aktywna", "w_uzupelnianiu", "zamknieta", "odrzucona")
 
@@ -60,23 +60,31 @@ def create_router(
     settings: AdminSettings,
     *,
     log_file: Path | None = None,
+    guard: Any = None,
+    activity: Any = None,
 ) -> APIRouter:
+    from accounts.api import Guard, Principal
+
     router = APIRouter(prefix="/api/admin")
+    guard = guard or Guard(None, settings.api_token)
 
-    def require_admin(
-        authorization: str | None = Header(default=None),
-        x_admin_user: str | None = Header(default=None),
-    ) -> str:
-        if not settings.api_token:
-            raise HTTPException(503, "Panel admina jest wyłączony: ustaw ADMIN_API_TOKEN.")
-        scheme, _, token = (authorization or "").partition(" ")
-        if scheme.lower() != "bearer" or not hmac.compare_digest(
-            token.strip().encode(), settings.api_token.encode()
-        ):
-            raise HTTPException(401, "Nieprawidłowy token administratora.")
-        return (x_admin_user or "admin").strip()[:64] or "admin"
+    def need(permission: str) -> Any:
+        return Depends(guard.require(permission))
 
-    admin = [Depends(require_admin)]
+    def record(
+        principal: Principal, action: str, subject_type: str, subject_id: str, **details: Any
+    ) -> None:
+        """Wpis w dzienniku działań (gdy jest baza); błąd dziennika nie psuje operacji."""
+        if activity is None:
+            return
+        with contextlib.suppress(Exception):
+            activity.record(
+                action,
+                principal.actor(),
+                subject_type=subject_type,
+                subject_id=subject_id,
+                details=details,
+            )
 
     def log_path() -> Path:
         """Ten sam plik, do którego pisze observability (``LOG_FILE`` albo domyślny)."""
@@ -89,11 +97,11 @@ def create_router(
 
     @router.get("/health")
     def health() -> dict[str, Any]:
-        return {"status": "ok", "enabled": bool(settings.api_token)}
+        return {"status": "ok", "enabled": guard.enabled}
 
     # --- przegląd ----------------------------------------------------------------------
 
-    @router.get("/dashboard", dependencies=admin)
+    @router.get("/dashboard", dependencies=[need("dashboard:read")])
     def dashboard(hours: int = Query(24, ge=1, le=24 * 365)) -> dict[str, Any]:
         now = monitor.now()
         since = iso(now - timedelta(hours=hours))
@@ -106,7 +114,7 @@ def create_router(
 
     # --- logi użytkowników -------------------------------------------------------------
 
-    @router.get("/queries", dependencies=admin)
+    @router.get("/queries", dependencies=[need("checks:read")])
     def queries(
         user: str | None = None,
         flag: str | None = Query(None, description="np. niebezpieczne, luka_informacyjna, falsz"),
@@ -131,14 +139,14 @@ def create_router(
         )
         return {"total": total, "limit": limit, "offset": offset, "items": items}
 
-    @router.get("/queries/{query_id}", dependencies=admin)
+    @router.get("/queries/{query_id}", dependencies=[need("checks:read")])
     def query(query_id: str) -> dict[str, Any]:
         item = monitor.store.get_query(query_id)
         if item is None:
             raise not_found(f"zapytanie {query_id}")
         return item
 
-    @router.get("/events", dependencies=admin)
+    @router.get("/events", dependencies=[need("security:read")])
     def events(
         event: str | None = None,
         request_id: str | None = None,
@@ -161,7 +169,7 @@ def create_router(
             tail.append(item)
         return {"file": str(path), "count": len(tail), "items": list(tail)}
 
-    @router.get("/events/summary", dependencies=admin)
+    @router.get("/events/summary", dependencies=[need("security:read")])
     def events_summary(since: str | None = None) -> dict[str, Any]:
         from observability.report import iter_events, summarize
 
@@ -169,7 +177,7 @@ def create_router(
 
     # --- użytkownicy -------------------------------------------------------------------
 
-    @router.get("/users", dependencies=admin)
+    @router.get("/users", dependencies=[need("endusers:read")])
     def users(
         flagged: bool = False, blocked: bool = False, limit: int = Query(100, ge=1, le=1000)
     ) -> dict[str, Any]:
@@ -178,7 +186,7 @@ def create_router(
         )
         return {"items": items}
 
-    @router.get("/users/{user_key}", dependencies=admin)
+    @router.get("/users/{user_key}", dependencies=[need("endusers:read")])
     def user(user_key: str) -> dict[str, Any]:
         item = monitor.store.get_user(user_key)
         if item is None:
@@ -191,23 +199,31 @@ def create_router(
         ]
         return {**item, "total_queries": total, "recent_queries": recent, "alerts": alerts}
 
-    @router.post("/users/{user_key}/block", dependencies=admin)
-    def block(user_key: str, body: BlockRequest) -> dict[str, Any]:
+    @router.post("/users/{user_key}/block")
+    def block(
+        user_key: str, body: BlockRequest, principal: Principal = need("endusers:write")
+    ) -> dict[str, Any]:
         try:
-            return monitor.block_user(user_key, body.hours, body.reason)
+            result = monitor.block_user(user_key, body.hours, body.reason)
         except KeyError:
             raise not_found(f"użytkownik {user_key}") from None
+        record(
+            principal, "enduser.blocked", "end_user", user_key, hours=body.hours, reason=body.reason
+        )
+        return result
 
-    @router.post("/users/{user_key}/unblock", dependencies=admin)
-    def unblock(user_key: str) -> dict[str, Any]:
+    @router.post("/users/{user_key}/unblock")
+    def unblock(user_key: str, principal: Principal = need("endusers:write")) -> dict[str, Any]:
         try:
-            return monitor.unblock_user(user_key)
+            result = monitor.unblock_user(user_key)
         except KeyError:
             raise not_found(f"użytkownik {user_key}") from None
+        record(principal, "enduser.unblocked", "end_user", user_key)
+        return result
 
     # --- alerty ------------------------------------------------------------------------
 
-    @router.get("/alerts", dependencies=admin)
+    @router.get("/alerts", dependencies=[need("alerts:read")])
     def alerts(
         type: str | None = Query(None, description=", ".join(ALERT_TYPES)),  # noqa: A002
         status: str | None = Query(None, description=", ".join(ALERT_STATUSES)),
@@ -219,7 +235,7 @@ def create_router(
         )
         return {"items": items}
 
-    @router.get("/alerts/{alert_id}", dependencies=admin)
+    @router.get("/alerts/{alert_id}", dependencies=[need("alerts:read")])
     def alert(alert_id: str) -> dict[str, Any]:
         item = monitor.store.get_alert(alert_id)
         if item is None:
@@ -228,16 +244,22 @@ def create_router(
             item["topic"] = monitor.store.get_topic(item["subject"])
         return item
 
-    @router.post("/alerts/{alert_id}", dependencies=admin)
-    def update_alert(alert_id: str, body: AlertUpdate) -> dict[str, Any]:
+    @router.post("/alerts/{alert_id}")
+    def update_alert(
+        alert_id: str, body: AlertUpdate, principal: Principal = need("alerts:write")
+    ) -> dict[str, Any]:
         try:
-            return monitor.set_alert_status(alert_id, body.status, body.note)
+            result = monitor.set_alert_status(alert_id, body.status, body.note)
         except KeyError:
             raise not_found(f"alert {alert_id}") from None
+        record(
+            principal, "alert.status_changed", "alert", alert_id, status=body.status, note=body.note
+        )
+        return result
 
     # --- luki informacyjne -------------------------------------------------------------
 
-    @router.get("/info-gaps", dependencies=admin)
+    @router.get("/info-gaps", dependencies=[need("clusters:read")])
     def info_gaps(
         status: list[str] = Query(default=["aktywna", "w_uzupelnianiu"]),  # noqa: B008
         limit: int = Query(100, ge=1, le=1000),
@@ -248,23 +270,29 @@ def create_router(
             raise HTTPException(422, f"nieznany status luki: {', '.join(unknown)}")
         return {"items": monitor.store.list_gaps(status, limit=limit, offset=offset)}
 
-    @router.get("/topics/{topic_id}", dependencies=admin)
+    @router.get("/topics/{topic_id}", dependencies=[need("clusters:read")])
     def topic(topic_id: str) -> dict[str, Any]:
         item = monitor.store.get_topic(topic_id)
         if item is None:
             raise not_found(f"temat {topic_id}")
         return item
 
-    @router.post("/info-gaps/{topic_id}", dependencies=admin)
-    def update_gap(topic_id: str, body: GapUpdate) -> dict[str, Any]:
+    @router.post("/info-gaps/{topic_id}")
+    def update_gap(
+        topic_id: str, body: GapUpdate, principal: Principal = need("alerts:write")
+    ) -> dict[str, Any]:
         try:
-            return monitor.set_gap_status(topic_id, body.status, body.note)
+            result = monitor.set_gap_status(topic_id, body.status, body.note)
         except KeyError:
             raise not_found(f"temat {topic_id}") from None
+        record(
+            principal, "info_gap.status_changed", "topic", topic_id, status=body.status, note=body.note
+        )
+        return result
 
     # --- konfiguracja: modele i kluczowe API --------------------------------------------
 
-    @router.get("/config", dependencies=admin)
+    @router.get("/config", dependencies=[need("settings:read")])
     def get_config() -> dict[str, Any]:
         config = runtime.load()
         apply_config(config)
@@ -277,7 +305,7 @@ def create_router(
 
     @router.patch("/config")
     def patch_config(
-        patch: dict[str, dict[str, Any]], actor: str = Depends(require_admin)
+        patch: dict[str, dict[str, Any]], principal: Principal = need("settings:write")
     ) -> dict[str, Any]:
         disabled = (patch.get("apis") or {}).get("disabled_clients")
         if disabled:
@@ -290,14 +318,15 @@ def create_router(
             raise HTTPException(422, str(exc)) from None
         apply_config(config)
         if changes:
-            monitor.store.add_audit(iso(monitor.now()), actor, changes)
+            monitor.store.add_audit(iso(monitor.now()), principal.label, changes)
+            record(principal, "config.updated", "config", "runtime", changes=changes)
         return {"changes": changes, "config": public_view(config)}
 
-    @router.get("/config/audit", dependencies=admin)
+    @router.get("/config/audit", dependencies=[need("audit:read")])
     def audit(limit: int = Query(100, ge=1, le=1000)) -> dict[str, Any]:
         return {"items": monitor.store.list_audit(limit)}
 
-    @router.get("/config/models", dependencies=admin)
+    @router.get("/config/models", dependencies=[need("models:read")])
     async def available_models() -> dict[str, Any]:
         """Modele zgłaszane przez skonfigurowany endpoint (``GET /models``)."""
         from openai import AsyncOpenAI
@@ -319,11 +348,13 @@ def create_router(
 
     # --- retencja ----------------------------------------------------------------------
 
-    @router.post("/maintenance/purge", dependencies=admin)
-    def purge(body: PurgeRequest) -> dict[str, Any]:
+    @router.post("/maintenance/purge")
+    def purge(body: PurgeRequest, principal: Principal = need("settings:write")) -> dict[str, Any]:
         days = body.older_than_days or monitor.config.retention_days
         before = iso(monitor.now() - timedelta(days=days))
-        return {"before": before, "deleted": monitor.store.purge(before)}
+        deleted = monitor.store.purge(before)
+        record(principal, "maintenance.purged", "user_queries", before, deleted=deleted)
+        return {"before": before, "deleted": deleted}
 
     return router
 
@@ -334,10 +365,23 @@ def create_app(
     monitor: Monitor | None = None,
     runtime: RuntimeConfigStore | None = None,
     log_file: Path | None = None,
+    database: Any = None,
 ) -> FastAPI:
+    """Panel admina. Z bazą (``DATABASE_URL``): konta, logowanie, źródła i dziennik działań.
+
+    Bez bazy działa jak dotąd: rejestr w SQLite i dostęp tylko ``ADMIN_API_TOKEN``.
+    ``ADMIN_STORE=sqlite`` wymusza tryb bez bazy (testy, praca lokalna).
+    """
     settings = settings or AdminSettings.from_environment()
     runtime = runtime or RuntimeConfigStore()
-    monitor = monitor or Monitor(AdminStore(settings.db_path), settings, runtime)
+    if database is None and monitor is None and os.getenv("ADMIN_STORE", "").lower() != "sqlite":
+        from database import database_url, get_database
+
+        if database_url():
+            database = get_database()
+    if monitor is None:
+        store = PostgresAdminStore(database) if database is not None else AdminStore(settings.db_path)
+        monitor = Monitor(store, settings, runtime)
     apply_config(runtime.load())
     monitor.purge_expired()
 
@@ -348,6 +392,41 @@ def create_app(
         app.add_middleware(ObservabilityMiddleware, skip_paths=("/api/admin/health",))
     except ImportError:  # pragma: no cover - observability jest częścią backendu
         pass
-    app.include_router(create_router(monitor, runtime, settings, log_file=log_file))
+
+    from accounts.api import Guard
+
+    accounts = activity = None
+    if database is not None:
+        from accounts import AccountService, ActivityLog, TrustedSourceRepository
+        from accounts.api import create_auth_router, create_management_router
+
+        activity = ActivityLog(database)
+        accounts = AccountService(database, activity=activity)
+        accounts.purge_expired_tokens()
+        app.include_router(create_auth_router(accounts, prefix="/api/admin/auth", panel=True))
+        app.include_router(
+            create_management_router(
+                Guard(accounts, settings.api_token),
+                accounts,
+                TrustedSourceRepository(database, activity),
+                activity,
+                on_sources_changed=_refresh_trusted_sources,
+            )
+        )
+    guard = Guard(accounts, settings.api_token)
+    app.include_router(
+        create_router(monitor, runtime, settings, log_file=log_file, guard=guard, activity=activity)
+    )
     app.state.monitor = monitor
+    app.state.database = database
     return app
+
+
+def _refresh_trusted_sources() -> None:
+    """Zmiana listy w panelu: rejestr trustedSources w tym procesie przeładuje ją od razu."""
+    try:
+        from trustedSources.registry import default_registry
+
+        default_registry().refresh()
+    except Exception:  # noqa: BLE001, S110 - inne procesy przeładują listę same (co 5 min)
+        pass

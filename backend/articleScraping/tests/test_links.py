@@ -69,7 +69,7 @@ def test_extract_links_and_service_share_candidate_selection() -> None:
         original_text="See https://fact.example/review/1#section and https://user.example/article."
     )
     sources = [FactCheckLinkSource(), TextLinkSource()]
-    service_candidates, failures, found_count = _select_candidates(
+    service_candidates, _reserves, failures, found_count = _select_candidates(
         analysis, [_reading_result()], sources
     )
 
@@ -78,3 +78,38 @@ def test_extract_links_and_service_share_candidate_selection() -> None:
     )
     assert failures == []
     assert found_count == 4
+
+
+def test_trusted_links_interleave_with_fact_checks_before_user_links() -> None:
+    from types import SimpleNamespace
+
+    from articleScraping.links import TrustedLinkSource, select_candidates
+    from articleScraping.protocols import CandidateLink
+
+    report = SimpleNamespace(
+        hits=[
+            SimpleNamespace(url="https://www.gov.pl/web/rcb/a", kind="article"),
+            SimpleNamespace(url="https://meteo.imgw.pl/", kind="reference"),
+            SimpleNamespace(url="https://www.gov.pl/web/rcb/b", kind="article"),
+        ]
+    )
+    trusted = TrustedLinkSource(report).extract(AnalysisDataContainer())
+    assert [candidate.url for candidate in trusted] == [
+        "https://www.gov.pl/web/rcb/a",
+        "https://www.gov.pl/web/rcb/b",
+    ]
+    assert TrustedLinkSource(None).extract(AnalysisDataContainer()) == []
+
+    candidates = [
+        CandidateLink("https://user.example/1", "user_text"),
+        *[CandidateLink(f"https://fact.example/{index}", "fact_check") for index in range(4)],
+        *trusted,
+    ]
+    selected, rejected = select_candidates(candidates, max_links=4)
+    assert [candidate.source for candidate in selected] == [
+        "fact_check",
+        "trusted_source",
+        "fact_check",
+        "trusted_source",
+    ]
+    assert {kind for _, kind in rejected} == {"LinkLimitExceeded"}

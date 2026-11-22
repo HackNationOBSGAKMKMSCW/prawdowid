@@ -70,3 +70,22 @@ def validate_url(value: str) -> str:
         netloc = f"{netloc}:{port}"
     path = parsed.path or "/"
     return urlunsplit((scheme, netloc, path, parsed.query, ""))
+
+
+_PORTAL_HOSTS = frozenset({"www.gov.pl", "gov.pl"})
+
+
+def site_key(url: str) -> str:
+    """The "site" a URL belongs to, used to require evidence from different sites.
+
+    Host without ``www.``; on the gov.pl portal each institution's subsite
+    (``/web/<id>``) counts as its own site (``gov.pl/web/rcb``).
+    """
+
+    parts = urlsplit(url)
+    host = (parts.hostname or "").lower()
+    if host in _PORTAL_HOSTS:
+        segments = [segment for segment in parts.path.split("/") if segment]
+        if len(segments) >= 2 and segments[0] == "web":
+            return f"gov.pl/web/{segments[1].lower()}"
+    return host.removeprefix("www.")
