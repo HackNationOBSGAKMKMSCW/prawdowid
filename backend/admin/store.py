@@ -37,6 +37,7 @@ CREATE TABLE IF NOT EXISTS user_queries (
 );
 CREATE INDEX IF NOT EXISTS ix_user_queries_ts ON user_queries(ts);
 CREATE INDEX IF NOT EXISTS ix_user_queries_user ON user_queries(user_key, ts);
+CREATE INDEX IF NOT EXISTS ix_user_queries_request ON user_queries(request_id);
 
 CREATE TABLE IF NOT EXISTS query_claims (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -180,6 +181,16 @@ class AdminStore:
         assignments = ", ".join(f"{name} = ?" for name in fields)
         self._execute(
             f"UPDATE user_queries SET {assignments} WHERE id = ?", [*fields.values(), query_id]
+        )
+
+    def query_by_request(self, request_id: str) -> dict[str, Any] | None:
+        """Wpis dziennika dla ``request_id`` z logów (bez twierdzeń)."""
+        return _row(
+            self._one(
+                "SELECT * FROM user_queries WHERE request_id = ? ORDER BY ts DESC LIMIT 1",
+                [request_id],
+            ),
+            ("flags", "safety", "report"),
         )
 
     def get_query(self, query_id: str) -> dict[str, Any] | None:

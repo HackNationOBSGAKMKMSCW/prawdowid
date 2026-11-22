@@ -19,6 +19,9 @@ Reguły (progi w ``RuntimeConfig.monitoring``, zmieniane przez admina):
   krótkim oknie o twierdzenie ocenione jako fałsz.
 * **niebezpieczny użytkownik** — powtarzające się zapytania o terroryzm, broń, materiały
   wybuchowe itp. (``safety.classify``): alert, a przy zamiarze operacyjnym blokada czasowa.
+* **próba prompt injection** — tekst z poleceniami dla modelu (``observability.injection``):
+  flaga ``prompt_injection``, zdarzenie w logach, a od ``injection_alert_after`` prób jednej
+  osoby w oknie ``dangerous_window_hours`` alert. Tekst nadal jest sprawdzany jako dane.
 """
 
 from __future__ import annotations
@@ -43,7 +46,13 @@ TRUE_VERDICTS = frozenset({"prawda", "prawdziwy"})
 GAP_STATUSES = ("brak", "podejrzenie", "aktywna", "w_uzupelnianiu", "zamknieta", "odrzucona")
 ADMIN_GAP_STATUSES = ("aktywna", "w_uzupelnianiu", "zamknieta", "odrzucona")
 ALERT_STATUSES = ("otwarty", "w_analizie", "rozwiazany", "falszywy_alarm")
-ALERT_TYPES = ("luka_informacyjna", "kampania_dezinformacyjna", "niebezpieczny_uzytkownik")
+ALERT_TYPES = (
+    "luka_informacyjna",
+    "kampania_dezinformacyjna",
+    "niebezpieczny_uzytkownik",
+    "prompt_injection",
+)
+INJECTION_FLAG = "prompt_injection"
 PERMANENT = "9999-12-31T23:59:59.000Z"
 TOPIC_LOOKBACK = timedelta(days=30)
 
@@ -75,6 +84,30 @@ def _log(event: str, level: str = "info", **fields: Any) -> None:
         from observability import log_event
 
         log_event(event, level=level, **fields)
+
+
+def _scan_injection(text: str) -> Any:
+    """Wzorce prompt injection z observability; ``None`` bez dopasowania lub modułu."""
+    with contextlib.suppress(Exception):
+        from observability.injection import scan
+
+        return scan(text)
+    return None
+
+
+def _log_injection(text: str, match: Any, **fields: Any) -> None:
+    with contextlib.suppress(Exception):
+        from observability.events import log_prompt_injection
+
+        log_prompt_injection(
+            text=text,
+            pattern=match.pattern,
+            source="input",
+            kind="input_pattern",
+            snippet=match.snippet,
+            detector="monitor",
+            **fields,
+        )
 
 
 def _request_id() -> str | None:
@@ -180,6 +213,9 @@ class Monitor:
         safety = classify(text)
         query_id = (query_id or new_id())[:32]
         flags = [f"niebezpieczne:{name}" for name in safety.categories]
+        injection = _scan_injection(text)
+        if injection is not None:
+            flags.append(INJECTION_FLAG)
 
         self.store.insert_query(
             id=query_id,
@@ -196,6 +232,10 @@ class Monitor:
             account_id=account_id,
         )
         self.store.touch_user(key, user_label(user_id), ts, dangerous=safety.dangerous)
+
+        if injection is not None:
+            _log_injection(text, injection, user_key=key, query_id=query_id, channel=channel[:32])
+            self._watch_injection(key, now, cfg)
 
         blocked_until = self._blocked_until(key, ts)
         if blocked_until is None and safety.dangerous:
@@ -215,9 +255,24 @@ class Monitor:
         if not decision.allowed:
             flags.append(f"odrzucone:{decision.reason}")
             self.store.update_query(query_id, status="odrzucone", flags=flags, completed_at=ts)
-            _log("admin_query_refused", "warning", reason=decision.reason, user_key=key)
+            _log(
+                "admin_query_refused",
+                "warning",
+                reason=decision.reason,
+                user_key=key,
+                query_id=query_id,
+                channel=channel[:32],
+                **safety.as_dict(),
+            )
         elif safety.dangerous:
-            _log("admin_sensitive_query", "warning", user_key=key, **safety.as_dict())
+            _log(
+                "admin_sensitive_query",
+                "warning",
+                user_key=key,
+                query_id=query_id,
+                channel=channel[:32],
+                **safety.as_dict(),
+            )
         return decision
 
     def _blocked_until(self, user_key: str, ts: str) -> str | None:
@@ -260,6 +315,24 @@ class Monitor:
                 },
             )
         return blocked_until
+
+    def _watch_injection(self, user_key: str, now: datetime, cfg: MonitoringConfig) -> None:
+        """Alert, gdy jedna osoba powtarza próby sterowania modelem."""
+        since = iso(now - timedelta(hours=cfg.dangerous_window_hours))
+        _, attempts = self.store.list_queries(
+            user_key=user_key, flag=INJECTION_FLAG, since=since, limit=1
+        )
+        if attempts >= cfg.injection_alert_after:
+            self._upsert_alert(
+                "prompt_injection",
+                user_key,
+                now,
+                title=f"Powtarzające się próby prompt injection ({attempts})",
+                severity="wysoka" if attempts >= 2 * cfg.injection_alert_after else "srednia",
+                count=attempts,
+                users=1,
+                details={"okno_h": cfg.dangerous_window_hours},
+            )
 
     def _recent_categories(self, user_key: str, since: str) -> dict[str, int]:
         counts: dict[str, int] = {}

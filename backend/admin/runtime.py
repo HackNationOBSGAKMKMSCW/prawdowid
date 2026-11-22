@@ -102,6 +102,7 @@ class MonitoringConfig(_Section):
     dangerous_block_after: int = Field(default=2, ge=1, le=1000)
     dangerous_window_hours: int = Field(default=24, ge=1, le=24 * 90)
     dangerous_block_hours: int = Field(default=24, ge=1, le=24 * 365)
+    injection_alert_after: int = Field(default=2, ge=1, le=1000)
     auto_block: bool = True
     refuse_high_risk: bool = True
     retention_days: int = Field(default=30, ge=1, le=3650)

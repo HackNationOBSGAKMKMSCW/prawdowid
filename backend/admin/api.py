@@ -185,6 +185,17 @@ def create_router(
 
         return summarize(iter_events(log_path(), since))
 
+    @router.get("/threats", dependencies=[need("security:read")])
+    def threats(hours: int = Query(24, ge=1, le=24 * 90)) -> dict[str, Any]:
+        """Zagrożenia z logów: prompt injection, ataki manipulacyjne, informacje krytyczne."""
+        from observability.report import iter_events
+
+        from .threats import threat_report
+
+        path = log_path()
+        report = threat_report(iter_events(path), monitor.store, hours=hours, now=monitor.now())
+        return {"file": str(path), "log_available": path.is_file(), **report}
+
     # --- użytkownicy -------------------------------------------------------------------
 
     @router.get("/users", dependencies=[need("endusers:read")])

@@ -63,14 +63,21 @@ def create_app(
     url_validator: UrlValidator | None = None,
     admin_panel: bool | None = None,
     monitor: object | None = None,
+    init_logging: bool = False,
 ) -> FastAPI:
     """API strony; ``admin_panel`` (domyślnie ``ADMIN_PANEL``, włączony): ``/api/admin``.
 
     Z panelem każde ``/api/check`` i zgłoszenie trafia do dziennika zapytań panelu
     (``admin.web.CheckJournal``). ``monitor``: gotowy monitor (testy).
+    ``init_logging``: logi observability do pliku (``LOG_FILE``) i instrumentacja potoku, w tym
+    wykrywanie prompt injection; z nich panel buduje raport zagrożeń (``/api/admin/threats``).
     """
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        if init_logging:
+            import observability
+
+            observability.init()
         owns_store = store is None
         active_store = (
             await (store_factory or PostgresStore.connect_from_environment)()
@@ -126,4 +133,4 @@ def create_app(
     return app
 
 
-app = create_app()
+app = create_app(init_logging=True)
