@@ -144,7 +144,9 @@ Region bazy i funkcji (`fra1`) musi być ten sam: backend wysyła do bazy wiele 
 |---|---|
 | `FREELLM_API_KEY` | klucz z https://platform.openai.com/api-keys |
 | `FREELLM_BASE_URL` | `https://api.openai.com/v1` |
-| `FREELLM_MODEL` | wybrany model OpenAI |
+| `FREELLM_MODEL` | `gpt-6.2-sol` |
+| `LLM_REASONING_EFFORT` | `low`: najniższy poziom, jaki przyjmuje gpt-6.2-sol (`none` odrzuca) |
+| `FREELLM_TIMEOUT` | `60`: limit jednego wywołania modelu w sekundach (bez tej zmiennej część kodu czeka tylko 30 s) |
 | `GOOGLE_FACT_CHECK_API_KEY` | klucz Google Fact Check Tools |
 | `EUVSDISINFO_API_KEY` | klucz EUvsDisinfo (bez niego to sprawdzenie jest wyłączone) |
 | `ADMIN_USER_SALT` | losowy ciąg, np. `openssl rand -hex 32` |
@@ -154,8 +156,11 @@ weryfikacja certyfikatu działa z Neonem). Opcjonalnie: `LLM_REASONING_EFFORT` (
 `.env.example`) i strojenie (`ARTICLE_*`, `TRUSTED_*`, `MAX_CONCURRENT_CHECKS`).
 
 Model można podmienić samą zmienną `FREELLM_MODEL` (i redeployem). Parametry, których dany
-model nie przyjmuje (np. `temperature` w gpt-5-mini albo `reasoning_effort` w gpt-4o),
-backend pomija sam po pierwszym błędzie 400 (`backend/llm_compat.py`).
+model nie przyjmuje, backend dopasowuje sam po pierwszym błędzie 400
+(`backend/llm_compat.py`): przy odrzuconym `reasoning_effort: none` próbuje `minimal`, potem
+`low`, a odrzucone `temperature` pomija. Każda nowa instancja funkcji uczy się tego od nowa
+(dodatkowe nieudane wywołania), dlatego `LLM_REASONING_EFFORT` warto ustawić od razu.
+Wywołania narzędzi (tools) nie są używane, więc wystarcza Chat Completions.
 
 ### Krok 3. Tabele i konto admina (raz, z własnego komputera)
 
