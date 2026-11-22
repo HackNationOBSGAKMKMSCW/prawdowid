@@ -1,7 +1,11 @@
-import { useId, type ReactNode } from 'react';
+import { useEffect, useId, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { FULL_SOURCE_LIST, WHATSAPP_NUMBER } from '../content/sources.ts';
+import { listTrustedSources, type TrustedSource } from '../api/client.ts';
+import { FULL_SOURCE_LIST, type FullSourceGroup, WHATSAPP_NUMBER } from '../content/sources.ts';
 import { VERDICT_ORDER, VERDICTS } from '../content/verdicts.ts';
+import { plural } from '../lib/format.ts';
+
+const countLabel = (n: number) => `${n} ${plural(n, 'źródło', 'źródła', 'źródeł')}`;
 
 /**
  * Treści informacyjne używane w dwóch miejscach: w oknach otwieranych ze stopki
@@ -74,15 +78,77 @@ export function HowItWorksContent({ level }: { level: Level }) {
   );
 }
 
+/** Grupy dla `trust` z `GET /api/trusted-sources`, w tej kolejności. */
+const TRUST_GROUPS: { trust: string; id: string; name: string; why: string }[] = [
+  {
+    trust: 'official',
+    id: 'urzedowe',
+    name: 'Strony urzędowe i instytucje publiczne',
+    why: 'Oficjalne informacje państwa i instytucji: przepisy, komunikaty, decyzje, ostrzeżenia.',
+  },
+  {
+    trust: 'fact_checker',
+    id: 'fact-check',
+    name: 'Serwisy sprawdzające fakty',
+    why: 'Organizacje, które sprawdzają popularne twierdzenia i publikują swoje ustalenia.',
+  },
+  {
+    trust: 'other',
+    id: 'inne',
+    name: 'Inne wiarygodne źródła',
+    why: 'Pozostałe źródła z naszej listy.',
+  },
+];
+
+function groupSources(sources: TrustedSource[]): FullSourceGroup[] {
+  const known = new Set(TRUST_GROUPS.map((g) => g.trust));
+  return TRUST_GROUPS.map((group) => ({
+    id: group.id,
+    name: group.name,
+    why: group.why,
+    sources: sources
+      .filter((s) => s.trust === group.trust || (group.trust === 'other' && !known.has(s.trust)))
+      .sort((a, b) => a.name.localeCompare(b.name, 'pl'))
+      .map((s) => ({ name: s.name, url: s.url, note: s.description || s.topics.join(', ') || undefined })),
+  })).filter((group) => group.sources.length > 0);
+}
+
+/**
+ * Lista z backendu (te same źródła, które przeszukuje weryfikacja); w trybie demo
+ * albo gdy serwer nie odpowiada — lista wpisana w kodzie.
+ */
+function useSourceGroups(): { groups: FullSourceGroup[]; live: boolean } {
+  const [live, setLive] = useState<FullSourceGroup[] | null>(null);
+  useEffect(() => {
+    const ctrl = new AbortController();
+    listTrustedSources(ctrl.signal).then(
+      (sources) => {
+        if (sources && sources.length) setLive(groupSources(sources));
+      },
+      () => {
+        // Bez serwera zostaje lista z kodu.
+      },
+    );
+    return () => ctrl.abort();
+  }, []);
+  return live ? { groups: live, live: true } : { groups: FULL_SOURCE_LIST, live: false };
+}
+
 export function SourcesContent({ level }: { level: Level }) {
+  const { groups, live } = useSourceGroups();
   return (
     <>
-      {FULL_SOURCE_LIST.map((group) => (
+      {live && (
+        <p className="note note--muted">
+          Aktualna lista z serwera: {countLabel(groups.reduce((n, g) => n + g.sources.length, 0))}.
+        </p>
+      )}
+      {groups.map((group) => (
         <Section key={group.id} level={level} title={group.name}>
           <p className="panel__text">{group.why}</p>
           <ul className="plain-list">
             {group.sources.map((source) => (
-              <li key={source.name} className="source-groups__item">
+              <li key={`${source.name}-${source.url ?? ''}`} className="source-groups__item">
                 <strong className="source-groups__name">
                   {source.url ? (
                     <a href={source.url} target="_blank" rel="noopener noreferrer">
@@ -184,8 +250,12 @@ export function AccessibilityContent({ level }: { level: Level }) {
               tle, podkreślone linki.
             </li>
             <li>
-              <strong>Przeczytaj na głos</strong> – wynik może przeczytać syntezator mowy Twojej
-              przeglądarki.
+              <strong>Czytaj stronę na głos</strong> – ikona głośnika w nagłówku. Syntezator mowy
+              Twojej przeglądarki czyta treść strony, a potem sam czyta każdą kolejną, także wynik
+              sprawdzania. Klawisz Esc przerywa czytanie, ponowne kliknięcie ikony je wyłącza.
+            </li>
+            <li>
+              <strong>Przeczytaj na głos</strong> – przycisk pod wynikiem czyta sam wynik.
             </li>
             <li>
               Całą stronę obsłużysz klawiaturą. Na początku strony jest link „Przejdź do treści”.

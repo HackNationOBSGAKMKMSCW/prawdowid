@@ -5,10 +5,12 @@ Input użytkownika przechodzi przez cały potok, a na końcu są **dwie niezale�
 ```
 tekst, submitted_at
   ├─ textAnalysis.run                    ekstrakcja twierdzeń            ┐
+  │    └─ knownDisinfo.run               baza EUvsDisinfo (równolegle z wyszukaniem, patrz niżej)
   ├─ apiReading.run + trustedSources.run wyszukanie (równolegle)         │ zdarzenie "evidence"
   └─ articleScraping.run                 pobranie artykułów (≥ 2 strony) ┘
         ├─ inputDataAnalysis.analyze_async  ocena INPUTU: manipulacje A–G, spójność dat  → "input_analysis"
         └─ prawdowid_analysis.run           ocena TEZ: prawda / fałsz / brak danych      → "claims_verdict"
+             + nadpisanie twierdzeń znalezionych w bazie EUvsDisinfo
 ```
 
 Obie oceny dostają te same pobrane artykuły pod tymi samymi identyfikatorami (`art1`, `art2`…). Cytat z dowolnej oceny można więc powiązać z `evidence.data.scraping.articles`.
@@ -25,11 +27,11 @@ async for event in verification.stream(text, submitted_at=sent_at):
 # 2) zadanie z osobnymi częściami (np. pod dwa endpointy)
 job = verification.start(text, submitted_at=sent_at)
 job.request_id
-await job.input_analysis      # VerificationEvent
-await job.claims_verdict      # VerificationEvent
+await job.input_analysis  # VerificationEvent
+await job.claims_verdict  # VerificationEvent
 
 # 3) wszystko naraz
-report = await verification.run(text)   # VerificationReport
+report = await verification.run(text)  # VerificationReport
 ```
 
 `submitted_at` to czas wysłania zapytania przez użytkownika. Domyślnie przyjmowana jest chwila wywołania. `timeout` (domyślnie 240 s) ogranicza **każdą ocenę osobno**.
@@ -59,6 +61,22 @@ Zasady:
 - Gdy nie uda się zebrać materiałów (np. textAnalysis zawiedzie), obie oceny kończą się błędem `evidence_failed`.
 - Brak artykułów nie przerywa przepływu. Ocena inputu i tak sprawdza manipulacje, a werdykt zwykle zwraca „brak danych”.
 
+## Baza EUvsDisinfo: zweryfikowana rosyjska dezinformacja
+
+Zaraz po ekstrakcji twierdzeń [knownDisinfo](../knownDisinfo/README.md) sprawdza, czy któreś z nich jest w bazie EUvsDisinfo. Szuka przez MCP, a LLM-sędzia potwierdza, że wpis to ta sama teza. Wynik wpływa wyłącznie na `claims_verdict` i nie ma osobnego zdarzenia.
+
+- **Trafione twierdzenie** dostaje:
+  - `verdict: "falsz"`, `verdict_label: "Zweryfikowana rosyjska dezinformacja"`, `confidence: "wysoka"`;
+  - pole `known_disinformation` z tytułem, `url`, opisem przypadku i uzasadnieniem dopasowania;
+  - przypadek jako pierwszy dowód w `evidence`;
+  - wpis w `adjustments`.
+
+  Werdykt dla całego tekstu jest liczony od nowa tą samą regułą co w `prawdowid_analysis` (`aggregate`).
+- **`data.known_disinfo`** jest zawsze obecne i ma postać `{status: ok | disabled | error, source: "EUvsDisinfo", matches: [...], warnings: [...]}`.
+- **Gdy baza nie działa** albo brak klucza, werdykt wychodzi bez zmian, a powód jest w `known_disinfo`.
+- **Gdy padnie ocena tez na źródłach**, a w bazie jest trafienie, zdarzenie i tak ma status `ok`. Trafienia są rozstrzygające same w sobie, a pozostałe twierdzenia dostają `blad_analizy`.
+- **Limit czasu** (`timeout`) obejmuje osobno werdykt i osobno sprawdzenie w bazie.
+
 ## Podpięcie przyszłego REST API (szkic, nie jest wdrożony)
 
 ```python
@@ -68,10 +86,13 @@ async def verify_stream(body: VerifyIn):
     async def events():
         async for event in verification.stream(body.text, submitted_at=body.submitted_at):
             yield f"event: {event.part}\ndata: {event.model_dump_json()}\n\n"
+
     return StreamingResponse(events(), media_type="text/event-stream")
+
 
 # Wariant B: start i dwa endpointy, które front wywołuje razem
 JOBS: dict[str, verification.VerificationJob] = {}
+
 
 @app.post("/api/verify")
 async def verify(body: VerifyIn):
@@ -79,9 +100,11 @@ async def verify(body: VerifyIn):
     JOBS[job.request_id] = job
     return {"request_id": job.request_id}
 
+
 @app.get("/api/verify/{request_id}/input")
 async def input_part(request_id: str):
     return await JOBS[request_id].input_analysis
+
 
 @app.get("/api/verify/{request_id}/claims")
 async def claims_part(request_id: str):
@@ -104,7 +127,7 @@ Pakiety oceny są w `analysis/`, który zostaje dołączony do `sys.path` (inną
 
 | Ocena | Plik konfiguracji | Zmienne |
 |---|---|---|
-| inputu (`inputDataAnalysis`) | `analysis/inputDataAnalysis/.env` | `LLM_API_KEY`, `LLM_BASE_URL`, `LLM_MODEL` |
-| tez (`prawdowid_analysis`) | `analysis/.env`, potem `backend/.env` | `FREELLM_*` (lub starsze `OPENAI_*`, `LLM_MODEL`) |
+| inputu (`inputDataAnalysis`) | główny `.env` | wspólne `FREELLM_API_KEY`, `FREELLM_BASE_URL`, `FREELLM_MODEL`; opcjonalnie `LLM_TIMEOUT`, `LLM_TEMPERATURE`, `LLM_MAX_RETRIES` |
+| tez (`prawdowid_analysis`) | główny `.env` | te same `FREELLM_*` (akceptuje też starsze `OPENAI_*`, `LLM_MODEL`) |
 
-Oba pliki definiują `LLM_MODEL`. Konfiguracja oceny inputu ładuje się pierwsza, więc każda ocena używa swojego modelu. Werdykt korzysta wyłącznie z pobranych artykułów i fact-checków (`use_corpus=False`), bo `analysis/data/sources` zawiera tylko przykłady testowe.
+Obie oceny używają jednego modelu z `FREELLM_*`; parametry generowania oceny inputu można dostroić osobno. Starszy `backend/.env` jest czytany jako zapas. Werdykt korzysta wyłącznie z pobranych artykułów i fact-checków (`use_corpus=False`), bo `analysis/data/sources` zawiera tylko przykłady testowe.

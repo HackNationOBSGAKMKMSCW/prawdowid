@@ -12,17 +12,24 @@ import logging
 import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any
 
+from dotenv import load_dotenv
 from fastapi import Body, FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 from observability import ObservabilityMiddleware
 from pydantic import ValidationError
 from trustedSources.api import router as trusted_sources_router
 
+from .admin_bridge import monitor_from_environment
 from .bot import BOT_NAME, SprawdzToBot
 from .cloud_api import parse_webhook
 from .pipeline import DemoPipeline, FactCheckPipeline, LivePipeline
+
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+load_dotenv(PROJECT_ROOT / ".env", override=False)
+load_dotenv(PROJECT_ROOT / "backend" / ".env", override=False)
 
 MODE_ENV = "SPRAWDZTO_MODE"
 MAX_PAYLOAD_MESSAGES = 10
@@ -40,7 +47,7 @@ def pipeline_from_environment() -> FactCheckPipeline:
 
 
 def create_app(bot: SprawdzToBot | None = None) -> FastAPI:
-    bot = bot or SprawdzToBot(pipeline_from_environment())
+    bot = bot or SprawdzToBot(pipeline_from_environment(), monitor=monitor_from_environment())
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:

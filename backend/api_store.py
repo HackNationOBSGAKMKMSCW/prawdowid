@@ -11,7 +11,10 @@ from uuid import UUID
 
 import asyncpg
 
-MIGRATION_PATH = Path(__file__).resolve().parent / "migrations" / "0001_api_feedback.sql"
+# Ten sam plik stosuje ``python -m database migrate``; jest idempotentny (IF NOT EXISTS).
+MIGRATION_PATH = (
+    Path(__file__).resolve().parent / "database" / "migrations" / "0005_api_feedback.sql"
+)
 _SSL_MODES = {"disable", "allow", "prefer", "require", "verify-ca", "verify-full"}
 
 

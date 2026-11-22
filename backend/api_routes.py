@@ -116,6 +116,13 @@ async def check(
         finally:
             semaphore.release()
     except VerificationFailed as exc:
+        # Which stage failed and the exception type only: never the submitted text or message.
+        logger.warning(
+            "analysis_part_failed request_id=%s part=%s kind=%s",
+            current_request_id(),
+            exc.part,
+            exc.kind,
+        )
         if exc.kind.lower() == "timeout":
             raise ApiFailure(504, "analysis_timeout", "The analysis exceeded its time limit.") from None
         raise ApiFailure(502, "analysis_failed", "The analysis could not be completed.") from None

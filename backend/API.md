@@ -4,7 +4,7 @@ The production app is `server:app` and exposes the browser check and feedback
 routes. Run commands from the repository root:
 
 ```bash
-python -m pip install -r backend/requirements.txt -r analysis/requirements.txt
+python -m pip install -r requirements.txt
 PYTHONPATH=backend:analysis:analysis/src uvicorn server:app --reload --port 8000 --no-access-log
 ```
 
@@ -22,6 +22,8 @@ of exact browser origins. The deployment template is [`../render.yaml`](../rende
 | `GET` | `/api/check?text=...` | Run a full synchronous analysis for text or a bare website URL. |
 | `POST` | `/api/check/{id}/report` | Store feedback for a returned result ID. |
 | `GET` | `/api/health` | Readiness check, including PostgreSQL connectivity. |
+| `GET` | `/api/trusted-sources` | Enabled trusted sources, public fields only (`id`, `name`, `url`, `trust`, `topics`, `description`). |
+| `GET` | `/api/trusted-sources/{source_id}` | One enabled trusted source (404 for unknown or disabled). |
 | `GET` | `/docs` | Interactive OpenAPI documentation. |
 | `GET` | `/redoc` | ReDoc API documentation. |
 | `GET` | `/openapi.json` | OpenAPI schema. |
@@ -99,7 +101,8 @@ returns `204`. The first report for a result ID is stored; retries are
 idempotent. Unknown or expired IDs return `404`.
 
 The app creates `api_check_results` and `api_check_reports` from
-[`migrations/0001_api_feedback.sql`](migrations/0001_api_feedback.sql) at startup.
+[`database/migrations/0005_api_feedback.sql`](database/migrations/0005_api_feedback.sql) at startup
+(idempotent; `python -m database migrate` applies the same file).
 It stores result IDs, input type, report reason, and optional comment—not the
 submitted text or full analysis. `REPORT_RETENTION_DAYS` defaults to 180 and is
 configurable up to 3650 days. A submitted report extends its result ID's expiry
@@ -109,8 +112,9 @@ removes their reports.
 
 ## Other implemented routers
 
-These routes exist in the repository but are not mounted by the browser API's
-`server:app`:
+`server:app` mounts only the two read-only `GET` routes above
+(`public_sources.py`). The full router below fetches remote pages and calls the
+LLM, so it is not exposed on the public browser API:
 
 | Method | Path | Description / usage |
 | --- | --- | --- |
@@ -168,7 +172,7 @@ The API contract and store tests use fake analysis stages and an in-memory store
 they do not connect to PostgreSQL or external providers:
 
 ```bash
-python -m pytest backend/tests/test_api.py backend/tests/test_api_store.py
+python -m pytest backend/tests/test_browser_api.py
 ```
 
 To exercise a live local request, configure the existing database connection

@@ -6,6 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 from articleScraping.models import ScrapedArticle, ScrapingReport
+from knownDisinfo import DisinfoCase, DisinfoCheck, StatementCheck
 
 from verification import Stages, run, start, stream
 from verification.mapping import to_reference_sources, to_truth_sources
@@ -51,9 +52,19 @@ ARTICLES = (
 
 
 class Recorder:
-    def __init__(self, input_delay=0.0, claims_delay=0.0, input_error=None, claims_error=None):
+    def __init__(
+        self,
+        input_delay=0.0,
+        claims_delay=0.0,
+        input_error=None,
+        claims_error=None,
+        known=None,
+        verdict=None,
+    ):
         self.input_delay, self.claims_delay = input_delay, claims_delay
         self.input_error, self.claims_error = input_error, claims_error
+        self.known = known or DisinfoCheck(status="ok")
+        self.verdict = verdict or {"verdict": "falszywy", "summary": "s", "claims": []}
         self.input_args = None
         self.claims_args = None
         self.analysis = SimpleNamespace(statements=["Szczepienia na COVID są obowiązkowe."])
@@ -91,9 +102,15 @@ class Recorder:
             await asyncio.sleep(self.claims_delay)
             if self.claims_error:
                 raise self.claims_error
-            return {"verdict": "falszywy", "summary": "s", "claims": []}
+            return self.verdict
 
-        return Stages(analyze, read, search_trusted, scrape, assess_input, assess_claims)
+        async def check_known_disinfo(analysis):
+            assert analysis is self.analysis
+            return self.known
+
+        return Stages(
+            analyze, read, search_trusted, scrape, assess_input, assess_claims, check_known_disinfo
+        )
 
 
 @pytest.fixture
@@ -277,3 +294,103 @@ async def test_contract_with_real_verdict_pipeline(monkeypatch):
     claim = event.data["claims"][0]
     assert claim["verdict"] == "falsz"
     assert claim["evidence"][0]["url"] == ARTICLES[0].url
+
+
+# --- known EUvsDisinfo cases override the claim verdict ----------------------------------------
+
+CASE = DisinfoCase(
+    case_id="https://euvsdisinfo.eu/report/covid-vaccines-are-mandatory",
+    title="COVID vaccination is mandatory for everyone",
+    summary="Governments make COVID vaccination mandatory for all.",
+    url="https://euvsdisinfo.eu/report/covid-vaccines-are-mandatory",
+)
+HIT = DisinfoCheck(
+    status="ok",
+    statements=[
+        StatementCheck(
+            index=1,
+            statement="Szczepienia na COVID są obowiązkowe.",
+            match=CASE,
+            reason="Ta sama teza.",
+        )
+    ],
+)
+
+
+def claim(claim_id, text, verdict="brak_wystarczajacych_danych"):
+    schemas = pytest.importorskip("prawdowid_analysis.schemas")
+    return schemas.ClaimVerdict(
+        claim_id=claim_id,
+        claim=text,
+        verdict=verdict,
+        verdict_label=schemas.VERDICT_LABELS_PL[verdict],
+        confidence="niska",
+        explanation="e",
+    ).model_dump(mode="json")
+
+
+async def test_database_hit_overrides_claim_and_recomputes_text_verdict(no_verdict_schemas):
+    verdict = {
+        "verdict": "brak_wystarczajacych_danych",
+        "summary": "s",
+        "claims": [
+            claim("T1", "Szczepienia na COVID są obowiązkowe."),
+            claim("T2", "Inne twierdzenie.", "prawda"),
+        ],
+    }
+    events = await collect(Recorder(known=HIT, verdict=verdict))
+    data = {e.part: e for e in events}["claims_verdict"].data
+    first, second = data["claims"]
+    assert (first["verdict"], first["verdict_label"]) == (
+        "falsz",
+        "Zweryfikowana rosyjska dezinformacja",
+    )
+    assert first["confidence"] == "wysoka"
+    assert first["evidence"][0]["url"] == CASE.url
+    assert first["known_disinformation"]["url"] == CASE.url
+    assert second["verdict"] == "prawda" and "known_disinformation" not in second
+    assert data["verdict"] == "zawiera_falsz"  # recomputed by prawdowid_analysis.aggregate
+    assert data["known_disinfo"]["matches"][0]["claim_id"] == "T1"
+
+
+async def test_without_hits_the_verdict_is_unchanged_and_check_status_reported(no_verdict_schemas):
+    failed = DisinfoCheck(status="error", warnings=["McpError: 401"])
+    events = await collect(Recorder(known=failed))
+    data = {e.part: e for e in events}["claims_verdict"].data
+    assert data["verdict"] == "falszywy" and data["claims"] == []
+    assert data["known_disinfo"] == {
+        "status": "error",
+        "source": "EUvsDisinfo",
+        "matches": [],
+        "warnings": ["McpError: 401"],
+    }
+
+
+async def test_database_hit_is_conclusive_when_the_verdict_model_fails(no_verdict_schemas):
+    pytest.importorskip("prawdowid_analysis.schemas")
+    events = await collect(Recorder(known=HIT, claims_error=RuntimeError("model down")))
+    event = {e.part: e for e in events}["claims_verdict"]
+    assert event.status == "ok"
+    assert event.data["verdict"] == "falszywy"
+    assert event.data["claims"][0]["verdict_label"] == "Zweryfikowana rosyjska dezinformacja"
+    assert "EUvsDisinfo" in event.data["warnings"][0]
+
+
+async def test_verdict_failure_without_hits_is_still_an_error(no_verdict_schemas):
+    events = await collect(Recorder(claims_error=RuntimeError("model down")))
+    event = {e.part: e for e in events}["claims_verdict"]
+    assert event.status == "error" and event.error.kind == "RuntimeError"
+
+
+async def test_failing_database_check_never_breaks_the_verdict(no_verdict_schemas):
+    recorder = Recorder()
+    stages = recorder.stages()
+
+    async def broken(analysis):
+        raise ConnectionError("down")
+
+    stages = Stages(**{**stages.__dict__, "check_known_disinfo": broken})
+    report = await run(USER_INPUT, submitted_at=SUBMITTED, stages=stages)
+    assert report.claims_verdict.status == "ok"
+    known = report.claims_verdict.data["known_disinfo"]
+    assert known["status"] == "error" and "ConnectionError" in known["warnings"][0]

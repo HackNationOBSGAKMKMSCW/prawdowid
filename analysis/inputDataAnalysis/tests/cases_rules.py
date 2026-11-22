@@ -17,7 +17,7 @@ from inputDataAnalysis.temporal import (
     evaluate,
 )
 
-from .case_base import Case, d, day, iso, ref_str
+from .case_base import Case, d, day, iso
 
 SRC_2019 = TruthSource(id="s1", title="PAP", content="...", published_at=date(2019, 6, 4))
 SRC_2024 = TruthSource(id="s5", title="Agencja", content="...", published_at=date(2024, 1, 1))

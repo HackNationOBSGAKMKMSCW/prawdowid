@@ -12,7 +12,6 @@ is part of the main web app: it is the **WhatsApp** view of `frontend/`
 ```
 whatsapp_sim/
 ├── backend/                  # Python adapter (FastAPI), port 8000
-│   ├── requirements.txt
 │   ├── pytest.ini
 │   └── whatsappAdapter/      # bot, Cloud API shapes, verdicts, server, tests
 frontend/src/whatsapp/        # chat simulator, the /whatsapp view of the main app
@@ -39,8 +38,8 @@ Backend (Python 3.14), from the repository root:
 
 ```bash
 python -m venv .venv
-.venv/bin/python -m pip install -r whatsapp_sim/backend/requirements.txt
-cd whatsapp_sim/backend && ../../.venv/bin/python -m whatsappAdapter --demo
+.venv/bin/python -m pip install -r requirements.txt
+cd whatsapp_sim/backend && ../../.venv/bin/python -m whatsappAdapter --demo --port 8001
 ```
 
 Web app with the simulator, in a second terminal:
@@ -50,7 +49,8 @@ cd frontend && npm install && npm run dev
 ```
 
 Open <http://localhost:5173/whatsapp> (or use the **Strona / WhatsApp** switch at
-the top). Vite proxies `/api` to the adapter on port 8000. The WhatsApp number on
+the top). Vite proxies `/api/whatsapp` to the adapter on port 8001 (`WHATSAPP_PROXY_TARGET`)
+and the rest of `/api` to the browser API (`server:app`) on port 8000. The WhatsApp number on
 the start page opens this view with the typed message ready to send
 (`/whatsapp?text=…`); nothing goes to the real WhatsApp.
 
@@ -59,7 +59,7 @@ the start page opens this view with the typed message ready to send
   as example data.
 - Without `--demo` the adapter runs the real pipeline and needs
   `FREELLM_API_KEY` (plus `FREELLM_BASE_URL`, `FREELLM_MODEL`) and
-  `GOOGLE_FACT_CHECK_API_KEY` in `backend/.env` (the main app's file). Missing
+  `GOOGLE_FACT_CHECK_API_KEY` in the project-root `.env` (see `.env.example`). Missing
   keys are reported in the chat instead of failing silently.
 - `SPRAWDZTO_MODE=demo|live`, `--host`, and `--port` are also supported.
 

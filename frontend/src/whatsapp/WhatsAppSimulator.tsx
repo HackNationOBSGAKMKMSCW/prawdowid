@@ -115,12 +115,13 @@ function dayLabel(time: number): string {
   return date.toLocaleDateString('pl-PL', { day: 'numeric', month: 'long', year: 'numeric' });
 }
 
-// Card colour follows the verdict emoji the adapter puts in the header.
+// Card colour follows the verdict wording the adapter puts in the header.
 function cardTone(header: string): string {
-  if (header.startsWith('❌')) return 'false';
-  if (header.startsWith('⚠')) return 'misleading';
-  if (header.startsWith('✅')) return 'true';
-  if (header.startsWith('🔀')) return 'conflicting';
+  const text = header.toLocaleLowerCase('pl-PL');
+  if (text.includes('fałsz')) return 'false';
+  if (text.includes('wprowadza w błąd')) return 'misleading';
+  if (text.includes('prawda')) return 'true';
+  if (text.includes('rozbieżne')) return 'conflicting';
   return 'neutral';
 }
 

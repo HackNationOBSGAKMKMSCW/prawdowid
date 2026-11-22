@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import { reportCheck, type ReportReason } from '../api/client.ts';
+import { ApiError, reportCheck, type ReportReason } from '../api/client.ts';
 import Modal from './Modal.tsx';
 
 const REASONS: { value: ReportReason; label: string }[] = [
@@ -26,7 +26,8 @@ export default function ReportDialog({ open, checkId, onClose, onSent }: ReportD
   const [reason, setReason] = useState<ReportReason | null>(null);
   const [comment, setComment] = useState('');
   const [missingReason, setMissingReason] = useState(false);
-  const [failed, setFailed] = useState(false);
+  /** Komunikat o nieudanym wysłaniu; `null` = brak błędu. */
+  const [failed, setFailed] = useState<string | null>(null);
 
   const close = () => {
     onClose();
@@ -45,15 +46,15 @@ export default function ReportDialog({ open, checkId, onClose, onSent }: ReportD
       document.querySelector<HTMLInputElement>('input[name="report-reason"]')?.focus();
       return;
     }
-    setFailed(false);
+    setFailed(null);
     setStep('sending');
     try {
       await reportCheck(checkId, { reason, comment: comment.trim() || undefined });
       setStep('sent');
       onSent();
-    } catch {
+    } catch (err) {
       setStep('form');
-      setFailed(true);
+      setFailed(reportFailure(err));
     }
   };
 
@@ -130,7 +131,7 @@ export default function ReportDialog({ open, checkId, onClose, onSent }: ReportD
 
         {failed && (
           <p className="field-error field-error--flat" role="alert">
-            Nie udało się wysłać zgłoszenia. Spróbuj jeszcze raz.
+            {failed}
           </p>
         )}
 
@@ -145,4 +146,15 @@ export default function ReportDialog({ open, checkId, onClose, onSent }: ReportD
       </form>
     </Modal>
   );
+}
+
+function reportFailure(err: unknown): string {
+  if (err instanceof ApiError) {
+    if (err.code === 'result_not_found') {
+      return 'Ten wynik już wygasł albo nie został zapisany. Sprawdź wiadomość jeszcze raz i zgłoś nowy wynik.';
+    }
+    if (err.code === 'network') return 'Brak połączenia z serwerem. Sprawdź internet i spróbuj jeszcze raz.';
+    if (err.code === 'storage_unavailable') return 'Nie możemy teraz zapisać zgłoszenia. Spróbuj za chwilę.';
+  }
+  return 'Nie udało się wysłać zgłoszenia. Spróbuj jeszcze raz.';
 }

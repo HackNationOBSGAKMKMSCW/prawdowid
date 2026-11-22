@@ -6,6 +6,7 @@ import asyncio
 import os
 from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from api_routes import (
     UrlValidator,
@@ -15,10 +16,16 @@ from api_routes import (
     router,
 )
 from api_store import PostgresStore
+from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from observability.middleware import ObservabilityMiddleware
+from public_sources import router as trusted_sources_router
 from request_limits import RequestSizeLimitMiddleware
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+load_dotenv(PROJECT_ROOT / ".env", override=False)
+load_dotenv(PROJECT_ROOT / "backend" / ".env", override=False)
 
 StoreFactory = Callable[[], Awaitable[PostgresStore]]
 
@@ -37,7 +44,11 @@ def create_app(
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         owns_store = store is None
-        active_store = await (store_factory or PostgresStore.connect_from_environment)() if owns_store else store
+        active_store = (
+            await (store_factory or PostgresStore.connect_from_environment)()
+            if owns_store
+            else store
+        )
         app.state.store = active_store
         try:
             yield
@@ -57,6 +68,7 @@ def create_app(
         raise ValueError("MAX_CONCURRENT_CHECKS must be at least 1")
     app.state.check_semaphore = asyncio.Semaphore(max_concurrent_checks)
     app.include_router(router)
+    app.include_router(trusted_sources_router)
     app.add_middleware(RequestSizeLimitMiddleware, max_body_bytes=96 * 1024)
     app.add_middleware(
         CORSMiddleware,
