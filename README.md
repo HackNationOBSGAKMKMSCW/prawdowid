@@ -26,6 +26,9 @@ BEZPIECZEŃSTWO (wbudowane od początku)
 - Treść użytkownika jest w prompcie oznaczona jako niezaufane dane, a wynik wymuszony do schematu JSON z dozwolonymi kategoriami.
 - Heurystyczne wykrywanie prompt injection oraz token canary w wyjściu: wykrycie wycieku zeruje część wyniku i ustawia ostrzeżenia.
 - Ochrona SSRF przy pobieraniu URL (tylko HTTP/HTTPS, blokada adresów prywatnych, loopback i link-local)
+---
+Aktualny czas analizy (ok. 50 s) jest bezpośrednio uwarunkowany mocą obliczeniową obecnego środowiska uruchomieniowego. Migracja na wydajniejszy sprzęt pozwoli zredukować ten czas i stabilnie utrzymać go poniżej progu 30 sekund.
+---
   
 ## 1. Przegląd
 
