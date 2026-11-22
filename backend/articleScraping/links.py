@@ -2,12 +2,15 @@
 
 import re
 from collections.abc import Sequence
+from dataclasses import replace
+from typing import Protocol
 
 from apiReading.models import ReadingResult
 from textAnalysis.container import AnalysisDataContainer
 
+from .models import MIN_DISTINCT_SITES
 from .protocols import CandidateLink
-from .url_validation import InvalidUrlError, validate_url
+from .url_validation import InvalidUrlError, site_key, validate_url
 
 _URL_PATTERN = re.compile(r"https?://[^\s<>\"']+", re.IGNORECASE)
 MAX_TEXT_SCAN_CHARS = 50_000
@@ -66,10 +69,63 @@ class FactCheckLinkSource:
                 if isinstance(reviews, list):
                     for review in reviews:
                         if isinstance(review, dict) and isinstance(review.get("url"), str):
-                            links.append(CandidateLink(url=review["url"], source="fact_check"))
+                            publisher = review.get("publisher")
+                            links.append(
+                                CandidateLink(
+                                    url=review["url"],
+                                    source="fact_check",
+                                    title=_text_or_none(review.get("title")),
+                                    publisher=_text_or_none(
+                                        publisher.get("name") if isinstance(publisher, dict) else None
+                                    ),
+                                )
+                            )
                 if isinstance(payload.get("url"), str):
                     links.append(CandidateLink(url=payload["url"], source="fact_check"))
         return links
+
+
+def _text_or_none(value: object) -> str | None:
+    return value.strip() or None if isinstance(value, str) else None
+
+
+class _TrustedHit(Protocol):
+    url: str
+    kind: str
+
+
+class _TrustedReport(Protocol):
+    @property
+    def hits(self) -> Sequence[_TrustedHit]: ...
+
+
+class TrustedLinkSource:
+    """Article URLs found on whitelisted sources (``trustedSources.run`` report)."""
+
+    def __init__(self, report: _TrustedReport | None) -> None:
+        self._report = report
+
+    def extract(
+        self,
+        analysis: AnalysisDataContainer,
+        reading_results: Sequence[ReadingResult] = (),
+    ) -> list[CandidateLink]:
+        del analysis, reading_results
+        if self._report is None:
+            return []
+        return [
+            CandidateLink(
+                url=hit.url,
+                source="trusted_source",
+                title=_text_or_none(getattr(hit, "title", None)),
+                publisher=_text_or_none(getattr(hit, "source_name", None)),
+            )
+            for hit in self._report.hits
+            if hit.kind == "article" and isinstance(hit.url, str)
+        ]
+
+
+_SOURCE_PRIORITY = {"fact_check": 0, "trusted_source": 1, "user_text": 2}
 
 
 def extract_links(
@@ -89,29 +145,64 @@ def select_candidates(
     candidates: Sequence[CandidateLink],
     max_links: int = MAX_LINKS,
     max_user_links: int = MAX_USER_TEXT_LINKS,
+    min_sites: int = MIN_DISTINCT_SITES,
 ) -> tuple[list[CandidateLink], list[tuple[CandidateLink, str]]]:
-    """Canonicalize and apply shared deduplication and per-source link limits."""
+    """Canonicalize and apply shared deduplication, site diversity and per-source limits.
 
-    prioritized = sorted(candidates, key=lambda candidate: candidate.source != "fact_check")
-    selected: list[CandidateLink] = []
+    Order: fact-check and trusted-source links interleaved (1st of each, 2nd of
+    each, ...), user-supplied links last. The best link of each of the first
+    ``min_sites`` different sites is selected before anything else, so one site
+    cannot fill the whole quota. Links over the limits are returned as
+    ``LinkLimitExceeded`` and can be used as reserves.
+    """
+
+    rank_in_source: dict[str, int] = {}
+    keyed = []
+    for candidate in candidates:
+        rank = rank_in_source.get(candidate.source, 0)
+        rank_in_source[candidate.source] = rank + 1
+        priority = _SOURCE_PRIORITY.get(candidate.source, len(_SOURCE_PRIORITY))
+        keyed.append(((candidate.source == "user_text", rank, priority), candidate))
+    prioritized = [candidate for _, candidate in sorted(keyed, key=lambda pair: pair[0])]
+
     rejected: list[tuple[CandidateLink, str]] = []
+    valid: list[CandidateLink] = []
     seen: set[str] = set()
-    user_text_count = 0
     for candidate in prioritized:
         try:
             url = validate_url(candidate.url)
         except InvalidUrlError:
             rejected.append((candidate, "InvalidUrl"))
             continue
-        if url in seen:
+        if url not in seen:
+            seen.add(url)
+            valid.append(replace(candidate, url=url))
+
+    first_of_site: list[int] = []
+    sites: set[str] = set()
+    for index, candidate in enumerate(valid):
+        if len(sites) >= min_sites:
+            break
+        site = site_key(candidate.url)
+        if site not in sites:
+            sites.add(site)
+            first_of_site.append(index)
+    leading = set(first_of_site)
+    order = first_of_site + [index for index in range(len(valid)) if index not in leading]
+
+    chosen: set[int] = set()
+    user_text_count = 0
+    for index in order:
+        candidate = valid[index]
+        is_user = candidate.source == "user_text"
+        if len(chosen) >= max_links or (is_user and user_text_count >= max_user_links):
             continue
-        seen.add(url)
-        if len(selected) >= max_links or (
-            candidate.source == "user_text" and user_text_count >= max_user_links
-        ):
-            rejected.append((CandidateLink(url=url, source=candidate.source), "LinkLimitExceeded"))
-            continue
-        selected.append(CandidateLink(url=url, source=candidate.source))
-        if candidate.source == "user_text":
-            user_text_count += 1
+        chosen.add(index)
+        user_text_count += is_user
+    selected = [candidate for index, candidate in enumerate(valid) if index in chosen]
+    rejected.extend(
+        (candidate, "LinkLimitExceeded")
+        for index, candidate in enumerate(valid)
+        if index not in chosen
+    )
     return selected, rejected

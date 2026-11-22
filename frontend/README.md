@@ -5,7 +5,8 @@ Aplikacja webowa Prawdowida z dwoma widokami, przełączanymi u góry ekranu:
 - **Strona** (`/`) – użytkownik wkleja wiadomość albo link i dostaje wynik z
   werdyktem dla każdego zdania oraz źródłami. Interfejs według projektu „Prawdowid v4”.
 - **WhatsApp** (`/whatsapp`) – symulator czatu z Prawdowidem
-  (`src/whatsapp/`), rozmawia z adapterem z `whatsapp_sim/backend`. Nic nie trafia
+  (`src/whatsapp/`). Ten sam backend i ta sama weryfikacja co na stronie, wynik
+  podany jak wiadomości czatu (`whatsapp_sim/backend`). Nic nie trafia
   do prawdziwego WhatsAppa. Numer na stronie startowej otwiera ten widok z
   wpisaną wiadomością (`/whatsapp?text=…`).
 
@@ -41,13 +42,38 @@ i nie potrzebuje backendu. Pasek „DEMO” na górze pokazuje wszystkie
 scenariusze: wynik ze źródłami, analiza dat i manipulacji, link, opinia,
 „napisz więcej”, „poza zakresem” i awaria.
 
-Żeby łączyć się z backendem, ustaw w `.env.local` (wzór w `.env.example`):
+### Z prawdziwym backendem
 
-```
-VITE_API_MODE=live
+Jeden backend i frontend w trybie `live` (każde w osobnym terminalu, z
+katalogu głównego repo):
+
+```bash
+# 1. backend: strona (/api/check, /api/check/{id}/report, /api/health, /api/trusted-sources)
+#    i symulator WhatsApp (/api/whatsapp/*), ta sama weryfikacja dla obu
+#    (DATABASE_URL i klucze modeli w głównym .env, wzór: .env.example; zob. backend/API.md)
+PYTHONPATH=backend:analysis:analysis/src uvicorn server:app --port 8000
+
+# 2. frontend połączony z backendem
+cd frontend && npm run dev:live    # http://localhost:5173
 ```
 
-W dev Vite przekierowuje `/api` na `http://127.0.0.1:8000`.
+Zamiast `npm run dev:live` można ustawić `VITE_API_MODE=live` w głównym `.env` projektu.
+Vite przekazuje całe `/api` na port 8000 (`API_PROXY_TARGET` w głównym `.env`, wzór w
+głównym `.env.example`). Osobny adapter WhatsApp, np. offline demo
+(`cd whatsapp_sim/backend && python -m whatsappAdapter --demo`, port 8001), włącza się
+przez `WHATSAPP_PROXY_TARGET=http://127.0.0.1:8001`.
+`npm run build:live` buduje stronę w trybie `live`; na serwerze `/api` musi
+prowadzić do `server:app` (ta sama domena albo `VITE_API_BASE_URL` + `CORS_ORIGINS`).
+
+W trybie `live`:
+
+- strona startowa pyta `GET /api/health` i ostrzega, gdy serwer nie działa;
+- błędy z backendu (`invalid_url`, `unsafe_url`, `url_unavailable`,
+  `analysis_busy`, `analysis_timeout`, …) mają własne komunikaty, a przy
+  problemach z treścią „Popraw wiadomość” wraca do formularza z tekstem;
+- „Lista źródeł” pochodzi z `GET /api/trusted-sources` (te same źródła, które
+  przeszukuje weryfikacja); bez serwera zostaje lista z kodu;
+- „Zgłoś błąd” zapisuje zgłoszenie w bazie (`POST /api/check/{id}/report`).
 
 ## Ekrany
 
@@ -59,12 +85,16 @@ W dev Vite przekierowuje `/api` na `http://127.0.0.1:8000`.
 | Wynik                   | karty zdań (werdykt, wyjaśnienie, źródła) i karty analizy (daty, manipulacja) |
 | Napisz trochę więcej    | backend zwrócił `clarify`                                                     |
 | Tego nie sprawdzamy     | backend zwrócił `out_of_scope`                                                |
-| Coś poszło nie tak      | błąd sieci, błąd HTTP albo limit czasu (90 s)                                 |
+| Coś poszło nie tak      | błąd sieci, błąd HTTP albo limit czasu; komunikat zależy od kodu błędu API    |
 
 Podstrony: `/zrodla` (pełna lista źródeł), `/pomoc`, `/deklaracja-dostepnosci`.
 
-Link `/?q=<tekst>` od razu sprawdza podany tekst – z tego korzysta przycisk
-„Udostępnij wynik”.
+Lista źródeł (`/zrodla` i skrót na stronie startowej) pochodzi z bazy:
+`GET /api/trusted-sources`, czyli tabela `trusted_sources` edytowana w panelu admina.
+Gdy serwer nie odpowiada, strona pisze, że listy nie da się pobrać; nie ma zapasowej
+listy w kodzie. Tylko tryb `mock` pokazuje przykładową listę (`src/content/sources.ts`).
+
+Link `/?q=<tekst>` od razu sprawdza podany tekst.
 
 ## Kontrakt API
 
@@ -75,7 +105,7 @@ Typy są w [`src/api/types.ts`](src/api/types.ts).
 Zanim strona sprawdzi krótką wiadomość, pyta backend, czy wiadomo, o co chodzi.
 „Czy naprawdę spadł dron w Polsce?” dotyczy konkretnego zdarzenia, ale nie mówi
 kiedy ani gdzie, więc strona najpierw pokazuje pytania. Odpowiedzi łączą się z
-pierwszą wiadomością w jedno twierdzenie, które dopiero trafia do `/api/check`.
+pierwszą wiadomością w jedno twierdzenie, które dopiero trafia do `GET /api/check`.
 To ta sama logika co w bocie WhatsApp (`whatsapp_sim/backend/whatsappAdapter/clarification.py`).
 
 Rozmowa żyje w przeglądarce: każde zapytanie niesie wszystkie dotychczasowe wypowiedzi,
@@ -105,22 +135,27 @@ serwer niczego nie przechowuje.
 - Przykłady z paska DEMO omijają pytania. W trybie `mock` pytania zadają reguły
   z [`src/api/mockClarify.ts`](src/api/mockClarify.ts) (te same co w trybie demo bota),
   np. wpisz „Czy na prawdę spadł dron w Polsce?”.
-- Wynik po dopytaniu pokazuje „Sprawdziliśmy z Twoimi szczegółami: …”, a „Udostępnij wynik”
-  udostępnia to pełne twierdzenie.
+- Wynik po dopytaniu pokazuje „Sprawdziliśmy z Twoimi szczegółami: …”.
+- Endpoint jest w tym samym backendzie (`uvicorn server:app`), obok `/api/whatsapp/*`;
+  `SPRAWDZTO_CLARIFY=0` wyłącza pytania na stronie i w WhatsAppie.
 
-### `POST /api/check`
+### `GET /api/check?text=...`
 
-```json
-{ "text": "Szczepionki powodują autyzm." }
+```http
+GET /api/check?text=Szczepionki%20powoduj%C4%85%20autyzm.
 ```
 
-Odpowiedź – jeden z trzech wariantów:
+W kodzie klienckim parametr `text` jest kodowany przez `URLSearchParams`.
+Każde wywołanie uruchamia nową analizę. Tekst jest częścią adresu GET, więc nie
+przekazuj w nim sekretów ani wrażliwych danych.
+
+Odpowiedź po ukończonej analizie:
 
 ```jsonc
 // wynik
 {
   "status": "result",
-  "id": "abc123",                 // potrzebne do zgłoszenia błędu i usunięcia danych
+  "id": "abc123",                 // potrzebne do zgłoszenia błędu
   "input_type": "text",           // albo "url"
   "claims": [
     {
@@ -139,11 +174,6 @@ Odpowiedź – jeden z trzech wariantów:
   "source_names": { "pap": "Polska Agencja Prasowa" }   // opcjonalnie, dla dates.issues[].source_id
 }
 
-// wiadomość za krótka / niejasna
-{ "status": "clarify" }
-
-// pytanie spoza zakresu
-{ "status": "out_of_scope" }
 ```
 
 ### `POST /api/check/{id}/report` → `204`
@@ -155,6 +185,26 @@ Okno „Zgłoś błąd”:
 ```
 
 `reason`: `wrong_verdict` | `bad_source` | `misunderstood` | `other`; `comment` jest opcjonalny (do 1000 znaków).
+
+Backend początkowo zwraca `result` dla ukończonej analizy. Błędne dane i awarie
+zwracają odpowiedzi HTTP z kodem błędu; nie są przedstawiane jako `clarify` ani
+`out_of_scope`, dopóki reguły tych klasyfikacji nie zostaną zdefiniowane.
+
+### Produkcyjne połączenie z API
+
+Frontend pozostaje hostowany na Vercel, a API działa jako osobna usługa FastAPI
+na Render (konfiguracja w `render.yaml`). W ustawieniach builda Vercel ustaw:
+
+```text
+VITE_API_MODE=live
+VITE_API_BASE_URL=https://<adres-api-render>/api
+VITE_CHECK_TIMEOUT_MS=360000
+```
+
+W Render ustaw `CORS_ORIGINS` na dokładne originy frontendu (bez ścieżki),
+`DATABASE_URL` na istniejącą bazę PostgreSQL oraz wymagane klucze/model LLM.
+`REPORT_RETENTION_DAYS` steruje retencją identyfikatorów wyników i zgłoszeń;
+codzienny cron usuwa wygasłe rekordy.
 
 ## Dostępność
 

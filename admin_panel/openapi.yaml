@@ -1,0 +1,710 @@
+openapi: 3.1.0
+info:
+  title: Prawdowid — API panelu administracyjnego
+  version: 0.1.0
+  description: |
+    Kontrakt między panelem administracyjnym (`admin_panel/frontend`) a backendem.
+    Panel wywołuje te ścieżki względem `apiBaseUrl` z `config.json`; każdą ścieżkę
+    można nadpisać w `config.json` → `endpoints` (klucze jak w `src/api/endpoints.ts`).
+
+    Zasady:
+    - uwierzytelnienie: `Authorization: Bearer <token>` z `POST /auth/login`,
+    - 401 → panel wylogowuje użytkownika, 403 → brak uprawnień roli,
+    - błędy zwracają `{"detail": "komunikat po polsku"}`, który panel pokazuje użytkownikowi,
+    - klucze API dostawców modeli NIGDY nie są zwracane — tylko `keyConfigured`,
+    - zapytania obywateli są zwracane z zamaskowanymi danymi osobowymi.
+servers:
+  - url: /api/admin
+security:
+  - bearer: []
+
+paths:
+  /auth/login:
+    post:
+      tags: [auth]
+      security: []
+      summary: Logowanie (z limitem prób po stronie serwera)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string }
+      responses:
+        '200': { description: Sesja, content: { application/json: { schema: { $ref: '#/components/schemas/Session' } } } }
+        '401': { $ref: '#/components/responses/Error' }
+        '429': { $ref: '#/components/responses/Error' }
+  /auth/logout:
+    post:
+      tags: [auth]
+      responses: { '204': { description: Wylogowano } }
+  /auth/me:
+    get:
+      tags: [auth]
+      responses: { '200': { description: Bieżący użytkownik, content: { application/json: { schema: { $ref: '#/components/schemas/User' } } } } }
+  /health:
+    get:
+      tags: [system]
+      security: []
+      responses:
+        '200':
+          description: Stan API
+          content: { application/json: { schema: { type: object, properties: { status: { type: string }, version: { type: string } } } } }
+
+  /dashboard:
+    get:
+      tags: [dashboard]
+      parameters:
+        - { name: rangeHours, in: query, schema: { type: integer, enum: [24, 48, 168] } }
+      responses: { '200': { description: Statystyki, content: { application/json: { schema: { $ref: '#/components/schemas/DashboardStats' } } } } }
+
+  /alerts:
+    get:
+      tags: [alerts]
+      parameters:
+        - { name: type, in: query, schema: { $ref: '#/components/schemas/AlertType' } }
+        - { name: severity, in: query, schema: { $ref: '#/components/schemas/Severity' } }
+        - { name: status, in: query, schema: { type: string, description: 'Status alertu albo `open` (new + acknowledged + escalated)' } }
+      responses: { '200': { description: Alerty od najpoważniejszych, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Alert' } } } } } }
+  /alerts/{id}:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    patch:
+      tags: [alerts]
+      requestBody:
+        content: { application/json: { schema: { type: object, required: [status], properties: { status: { $ref: '#/components/schemas/AlertStatus' } } } } }
+      responses: { '200': { description: Alert, content: { application/json: { schema: { $ref: '#/components/schemas/Alert' } } } } }
+  /alerts/{id}/escalate:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    post:
+      tags: [alerts, cases]
+      summary: Tworzy sprawę moderatora albo dołącza alert do otwartej sprawy tej samej grupy zapytań (deduplikacja)
+      requestBody:
+        content: { application/json: { schema: { type: object, properties: { assigneeId: { type: string } } } } }
+      responses: { '200': { description: Sprawa, content: { application/json: { schema: { $ref: '#/components/schemas/ModeratorCase' } } } } }
+
+  /clusters:
+    get:
+      tags: [clusters]
+      summary: Grupy podobnych zapytań (powtarzające się zapytania, luki informacyjne)
+      parameters:
+        - { name: onlyGaps, in: query, schema: { type: boolean } }
+        - { name: onlySurging, in: query, schema: { type: boolean } }
+        - { name: search, in: query, schema: { type: string } }
+      responses: { '200': { description: Grupy, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/QueryCluster' } } } } } }
+  /clusters/{id}:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    get:
+      tags: [clusters]
+      responses: { '200': { description: Grupa, content: { application/json: { schema: { $ref: '#/components/schemas/QueryCluster' } } } } }
+
+  /cases:
+    get:
+      tags: [cases]
+      parameters:
+        - { name: status, in: query, schema: { type: string, description: 'Status sprawy, `open` albo `any`' } }
+        - { name: search, in: query, schema: { type: string } }
+      responses: { '200': { description: Sprawy, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/ModeratorCase' } } } } } }
+  /cases/{id}:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    get:
+      tags: [cases]
+      responses: { '200': { description: Sprawa, content: { application/json: { schema: { $ref: '#/components/schemas/ModeratorCase' } } } } }
+    patch:
+      tags: [cases]
+      description: Zamknięcie (`resolved`/`rejected`) wymaga `resolution` — inaczej 422.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status: { $ref: '#/components/schemas/CaseStatus' }
+                assigneeId: { type: [string, 'null'] }
+                priority: { $ref: '#/components/schemas/Severity' }
+                resolution: { type: string }
+      responses: { '200': { description: Sprawa, content: { application/json: { schema: { $ref: '#/components/schemas/ModeratorCase' } } } } }
+  /cases/{id}/comments:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    post:
+      tags: [cases]
+      requestBody: { content: { application/json: { schema: { type: object, required: [text], properties: { text: { type: string, maxLength: 2000 } } } } } }
+      responses: { '200': { description: Sprawa, content: { application/json: { schema: { $ref: '#/components/schemas/ModeratorCase' } } } } }
+  /cases/{id}/forward:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    post:
+      tags: [cases]
+      summary: Faktyczne przekazanie sprawy (wysyła powiadomienie) — w odróżnieniu od rekomendacji
+      requestBody: { content: { application/json: { schema: { type: object, required: [userId], properties: { userId: { type: string }, note: { type: string } } } } } }
+      responses: { '200': { description: Sprawa, content: { application/json: { schema: { $ref: '#/components/schemas/ModeratorCase' } } } } }
+
+  /checks:
+    get:
+      tags: [checks]
+      summary: Historia weryfikacji (zapis przebiegu sprawdzeń)
+      parameters:
+        - { name: search, in: query, schema: { type: string } }
+        - { name: outcome, in: query, schema: { $ref: '#/components/schemas/CheckOutcome' } }
+        - { name: verdict, in: query, schema: { $ref: '#/components/schemas/Verdict' } }
+        - { name: channel, in: query, schema: { type: string } }
+        - { name: flag, in: query, schema: { $ref: '#/components/schemas/CheckFlag' } }
+        - { name: clusterId, in: query, schema: { type: string } }
+        - { name: sinceHours, in: query, schema: { type: integer } }
+        - { name: page, in: query, schema: { type: integer, minimum: 1 } }
+        - { name: pageSize, in: query, schema: { type: integer, maximum: 5000 } }
+      responses:
+        '200':
+          description: Strona wyników
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, total, page, pageSize]
+                properties:
+                  items: { type: array, items: { $ref: '#/components/schemas/CheckRecord' } }
+                  total: { type: integer }
+                  page: { type: integer }
+                  pageSize: { type: integer }
+  /checks/{id}:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    get:
+      tags: [checks]
+      responses: { '200': { description: Zapis, content: { application/json: { schema: { $ref: '#/components/schemas/CheckRecord' } } } } }
+    delete:
+      tags: [checks]
+      summary: Trwałe usunięcie zapisu (żądanie usunięcia danych)
+      responses: { '204': { description: Usunięto } }
+
+  /sources:
+    get:
+      tags: [sources]
+      responses: { '200': { description: Katalog źródeł, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Source' } } } } } }
+    post:
+      tags: [sources]
+      requestBody: { content: { application/json: { schema: { $ref: '#/components/schemas/SourceInput' } } } }
+      responses: { '200': { description: Źródło, content: { application/json: { schema: { $ref: '#/components/schemas/Source' } } } } }
+  /sources/{id}:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    patch:
+      tags: [sources]
+      description: Zmiana statusu na `suspended`/`excluded` wymaga `statusNote`.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status: { type: string, enum: [active, suspended, excluded] }
+                statusNote: { type: string }
+                tier: { type: string, enum: [A, B, C] }
+      responses: { '200': { description: Źródło, content: { application/json: { schema: { $ref: '#/components/schemas/Source' } } } } }
+  /sources/{id}/refresh:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    post:
+      tags: [sources]
+      responses: { '200': { description: Źródło, content: { application/json: { schema: { $ref: '#/components/schemas/Source' } } } } }
+
+  /models/providers:
+    get:
+      tags: [models]
+      responses: { '200': { description: Rejestr dostawców, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/ModelProvider' } } } } } }
+    post:
+      tags: [models]
+      description: '`keyRef` to nazwa sekretu po stronie serwera; sam klucz nie przechodzi przez API panelu.'
+      requestBody: { content: { application/json: { schema: { $ref: '#/components/schemas/ProviderInput' } } } }
+      responses: { '200': { description: Dostawca, content: { application/json: { schema: { $ref: '#/components/schemas/ModelProvider' } } } } }
+  /models/providers/{id}:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    delete:
+      tags: [models]
+      responses: { '204': { description: Usunięto }, '409': { $ref: '#/components/responses/Error' } }
+  /models/providers/{id}/test:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    post:
+      tags: [models]
+      responses:
+        '200':
+          description: Wynik testu połączenia
+          content: { application/json: { schema: { type: object, properties: { ok: { type: boolean }, latencyMs: { type: integer }, message: { type: string } } } } }
+  /models/assignments:
+    get:
+      tags: [models]
+      responses: { '200': { description: Przypisania modeli do etapów, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/PipelineAssignment' } } } } } }
+  /models/assignments/{role}:
+    parameters:
+      - { name: role, in: path, required: true, schema: { $ref: '#/components/schemas/PipelineRole' } }
+    patch:
+      tags: [models]
+      summary: Podmiana modelu dla etapu potoku (bez przebudowy systemu)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                providerId: { type: [string, 'null'] }
+                fallbackProviderIds: { type: array, items: { type: string } }
+                enabled: { type: boolean }
+                params: { $ref: '#/components/schemas/PipelineParams' }
+      responses:
+        '200': { description: Przypisanie, content: { application/json: { schema: { $ref: '#/components/schemas/PipelineAssignment' } } } }
+        '422': { $ref: '#/components/responses/Error' }
+
+  /channels:
+    get:
+      tags: [channels]
+      responses: { '200': { description: Kanały, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/ChannelInfo' } } } } } }
+  /channels/{id}:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    patch:
+      tags: [channels]
+      requestBody: { content: { application/json: { schema: { type: object, properties: { enabled: { type: boolean } } } } } }
+      responses: { '200': { description: Kanał, content: { application/json: { schema: { $ref: '#/components/schemas/ChannelInfo' } } } } }
+
+  /security/events:
+    get:
+      tags: [security]
+      parameters:
+        - { name: sinceHours, in: query, schema: { type: integer } }
+      responses: { '200': { description: Zdarzenia, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/SecurityEvent' } } } } } }
+
+  /settings/alert-rules:
+    get:
+      tags: [settings]
+      responses: { '200': { description: Reguły, content: { application/json: { schema: { $ref: '#/components/schemas/AlertRules' } } } } }
+    put:
+      tags: [settings]
+      requestBody: { content: { application/json: { schema: { $ref: '#/components/schemas/AlertRules' } } } }
+      responses: { '200': { description: Reguły, content: { application/json: { schema: { $ref: '#/components/schemas/AlertRules' } } } } }
+  /settings/privacy:
+    get:
+      tags: [settings]
+      responses: { '200': { description: Prywatność, content: { application/json: { schema: { $ref: '#/components/schemas/PrivacySettings' } } } } }
+    put:
+      tags: [settings]
+      requestBody: { content: { application/json: { schema: { $ref: '#/components/schemas/PrivacySettings' } } } }
+      responses: { '200': { description: Prywatność, content: { application/json: { schema: { $ref: '#/components/schemas/PrivacySettings' } } } } }
+  /settings/privacy/purge-demo:
+    post:
+      tags: [settings]
+      summary: Usunięcie danych sesji demonstracyjnej
+      responses: { '200': { description: Wynik, content: { application/json: { schema: { type: object, properties: { deletedChecks: { type: integer } } } } } } }
+
+  /users:
+    get:
+      tags: [users]
+      responses: { '200': { description: Użytkownicy, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/User' } } } } } }
+    post:
+      tags: [users]
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object, required: [email, name, role], properties: { email: { type: string }, name: { type: string }, role: { $ref: '#/components/schemas/Role' } } }
+      responses: { '200': { description: Użytkownik, content: { application/json: { schema: { $ref: '#/components/schemas/User' } } } } }
+  /users/{id}:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    patch:
+      tags: [users]
+      requestBody:
+        content: { application/json: { schema: { type: object, properties: { role: { $ref: '#/components/schemas/Role' }, active: { type: boolean } } } } }
+      responses: { '200': { description: Użytkownik, content: { application/json: { schema: { $ref: '#/components/schemas/User' } } } } }
+
+  /audit:
+    get:
+      tags: [audit]
+      responses:
+        '200':
+          description: Dziennik audytu
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  required: [id, at, actor, action, target]
+                  properties:
+                    id: { type: string }
+                    at: { type: string, format: date-time }
+                    actor: { type: string }
+                    action: { type: string }
+                    target: { type: string }
+                    detail: { type: string }
+
+components:
+  securitySchemes:
+    bearer: { type: http, scheme: bearer }
+  parameters:
+    Id: { name: id, in: path, required: true, schema: { type: string } }
+  responses:
+    Error:
+      description: Błąd z komunikatem dla użytkownika
+      content: { application/json: { schema: { type: object, properties: { detail: { type: string } } } } }
+
+  schemas:
+    Role: { type: string, enum: [admin, moderator, analyst] }
+    Severity: { type: string, enum: [critical, high, medium, low] }
+    Verdict: { type: string, enum: [confirmed, 'false', misleading, insufficient, not_verifiable] }
+    CheckOutcome:
+      type: string
+      enum: [verdict, abstained, technical_error, needs_clarification]
+      description: Awaria techniczna i prośba o doprecyzowanie nigdy nie są werdyktem.
+    CheckFlag: { type: string, enum: [prompt_injection, high_risk, pii_masked, archival_material, incident_match, source_status_warning, conflicting_sources] }
+    AlertType: { type: string, enum: [information_gap, query_surge, high_risk, prompt_injection, incident_match, source_status, system] }
+    AlertStatus: { type: string, enum: [new, acknowledged, escalated, resolved, dismissed] }
+    CaseStatus: { type: string, enum: [new, in_progress, waiting_for_source, resolved, rejected] }
+    PipelineRole: { type: string, enum: [claim_extraction, answer_generation, embedding, ocr, transcription, reverse_image] }
+    Health: { type: string, enum: [ok, degraded, down, unknown] }
+
+    User:
+      type: object
+      required: [id, email, name, role, active, createdAt]
+      properties:
+        id: { type: string }
+        email: { type: string }
+        name: { type: string }
+        role: { $ref: '#/components/schemas/Role' }
+        active: { type: boolean }
+        createdAt: { type: string, format: date-time }
+        lastLoginAt: { type: string, format: date-time }
+    UserRef:
+      type: object
+      required: [id, name, role]
+      properties: { id: { type: string }, name: { type: string }, role: { $ref: '#/components/schemas/Role' } }
+    Session:
+      type: object
+      required: [token, user, expiresAt]
+      properties:
+        token: { type: string }
+        user: { $ref: '#/components/schemas/User' }
+        expiresAt: { type: string, format: date-time }
+
+    Evidence:
+      type: object
+      required: [id, sourceId, title, publisher, url, retrievedAt, stance]
+      properties:
+        id: { type: string }
+        sourceId: { type: string }
+        title: { type: string }
+        publisher: { type: string }
+        url: { type: string, format: uri }
+        publishedAt: { type: string, format: date-time }
+        retrievedAt: { type: string, format: date-time }
+        snippet: { type: string }
+        stance: { type: string, enum: [supports, refutes, context] }
+    ClaimResult:
+      type: object
+      required: [id, text, verdict, strength, rationale, evidence]
+      properties:
+        id: { type: string }
+        text: { type: string }
+        verdict: { $ref: '#/components/schemas/Verdict' }
+        strength: { type: string, enum: [strong, moderate, weak, none] }
+        rationale: { type: string }
+        missing: { type: string, description: Czego nie udało się ustalić }
+        evidence: { type: array, items: { $ref: '#/components/schemas/Evidence' } }
+    CheckRecord:
+      type: object
+      required: [id, createdAt, channel, inputKind, query, outcome, overallVerdict, strength, claims, flags, riskTopics, durationMs, models, tokens, costPln]
+      properties:
+        id: { type: string }
+        createdAt: { type: string, format: date-time }
+        channel: { type: string }
+        inputKind: { type: string, enum: [text, url, image] }
+        query: { type: string, description: Treść z zamaskowanymi danymi osobowymi }
+        outcome: { $ref: '#/components/schemas/CheckOutcome' }
+        overallVerdict: { oneOf: [{ $ref: '#/components/schemas/Verdict' }, { type: 'null' }] }
+        strength: { type: string, enum: [strong, moderate, weak, none] }
+        claims: { type: array, items: { $ref: '#/components/schemas/ClaimResult' } }
+        flags: { type: array, items: { $ref: '#/components/schemas/CheckFlag' } }
+        riskTopics: { type: array, items: { type: string } }
+        clusterId: { type: string }
+        durationMs: { type: integer }
+        models: { type: object, additionalProperties: { type: string } }
+        tokens: { type: integer }
+        costPln: { type: number }
+        errorMessage: { type: string }
+
+    QueryCluster:
+      type: object
+      required: [id, label, keywords, total, inWindow, previousWindow, uniqueSessions, noEvidence, noEvidenceRatio, verdicts, channels, firstSeen, lastSeen, hourly, riskTopics, sampleQueries, isInformationGap, isSurging]
+      properties:
+        id: { type: string }
+        label: { type: string }
+        keywords: { type: array, items: { type: string } }
+        total: { type: integer }
+        inWindow: { type: integer, description: Zapytania w oknie reguły wzrostu }
+        previousWindow: { type: integer }
+        uniqueSessions: { type: integer }
+        noEvidence: { type: integer, description: Zapytania bez dowodów w oknie reguły luki }
+        noEvidenceRatio: { type: number, minimum: 0, maximum: 1 }
+        verdicts: { type: object, additionalProperties: { type: integer } }
+        channels: { type: object, additionalProperties: { type: integer } }
+        firstSeen: { type: string, format: date-time }
+        lastSeen: { type: string, format: date-time }
+        hourly: { type: array, items: { type: integer }, minItems: 48, maxItems: 48 }
+        riskTopics: { type: array, items: { type: string } }
+        sampleQueries: { type: array, items: { type: string } }
+        missing: { type: string }
+        isInformationGap: { type: boolean }
+        isSurging: { type: boolean }
+        caseId: { type: string }
+
+    Alert:
+      type: object
+      required: [id, type, severity, status, title, description, rule, createdAt, updatedAt, checkIds, metrics, notified]
+      properties:
+        id: { type: string }
+        type: { $ref: '#/components/schemas/AlertType' }
+        severity: { $ref: '#/components/schemas/Severity' }
+        status: { $ref: '#/components/schemas/AlertStatus' }
+        title: { type: string }
+        description: { type: string }
+        rule: { type: string, description: Czytelny opis reguły, która zadziałała }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        clusterId: { type: string }
+        caseId: { type: string }
+        checkIds: { type: array, items: { type: string } }
+        metrics: { type: object, additionalProperties: { type: [string, number] } }
+        notified:
+          type: array
+          description: Faktycznie wysłane powiadomienia
+          items:
+            type: object
+            properties:
+              user: { $ref: '#/components/schemas/UserRef' }
+              channel: { type: string, enum: [panel, email] }
+              at: { type: string, format: date-time }
+        recommendedRole: { $ref: '#/components/schemas/Role' }
+
+    ModeratorCase:
+      type: object
+      required: [id, title, status, priority, alertIds, checkIds, queryCount, forwarding, riskTopics, createdAt, updatedAt, events]
+      properties:
+        id: { type: string }
+        title: { type: string }
+        status: { $ref: '#/components/schemas/CaseStatus' }
+        priority: { $ref: '#/components/schemas/Severity' }
+        clusterId: { type: string }
+        alertIds: { type: array, items: { type: string } }
+        checkIds: { type: array, items: { type: string } }
+        queryCount: { type: integer }
+        assignee: { $ref: '#/components/schemas/UserRef' }
+        forwarding:
+          type: object
+          required: [recommended]
+          description: Rekomendacja przekazania i faktyczne przekazanie są osobnymi polami.
+          properties:
+            recommended: { type: boolean }
+            recommendedRole: { $ref: '#/components/schemas/Role' }
+            reason: { type: string }
+            forwardedTo: { $ref: '#/components/schemas/UserRef' }
+            forwardedAt: { type: string, format: date-time }
+            forwardedBy: { type: string }
+        riskTopics: { type: array, items: { type: string } }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        resolution: { type: string }
+        events:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              at: { type: string, format: date-time }
+              actor: { type: string }
+              kind: { type: string, enum: [created, status_changed, comment, queries_linked, assigned, forward_recommended, forwarded] }
+              text: { type: string }
+
+    SourceInput:
+      type: object
+      required: [name, url, type, tier, language, license, updateFrequency, qualification]
+      properties:
+        name: { type: string }
+        url: { type: string, format: uri }
+        type: { type: string, enum: [official, public_data, legal, fact_check, incident_db, media, international] }
+        tier: { type: string, enum: [A, B, C] }
+        language: { type: string }
+        license: { type: string }
+        updateFrequency: { type: string }
+        qualification: { type: string }
+    Source:
+      allOf:
+        - $ref: '#/components/schemas/SourceInput'
+        - type: object
+          required: [id, domain, status, documents, addedAt, lastFetchOk]
+          properties:
+            id: { type: string }
+            domain: { type: string }
+            status: { type: string, enum: [active, suspended, excluded] }
+            statusNote: { type: string }
+            documents: { type: integer }
+            addedAt: { type: string, format: date-time }
+            lastFetchedAt: { type: string, format: date-time }
+            lastFetchOk: { type: boolean }
+
+    ProviderInput:
+      type: object
+      required: [name, vendor, protocol, model, baseUrl, region, roles, costPer1kInputPln, costPer1kOutputPln]
+      properties:
+        name: { type: string }
+        vendor: { type: string }
+        protocol: { type: string, enum: [openai_compatible, anthropic, google, ollama, http_custom] }
+        model: { type: string }
+        baseUrl: { type: string }
+        region: { type: string, enum: [PL, EOG, poza_EOG, self_hosted] }
+        roles: { type: array, items: { $ref: '#/components/schemas/PipelineRole' } }
+        keyRef: { type: string, description: Nazwa sekretu po stronie serwera (np. MISTRAL_API_KEY) }
+        costPer1kInputPln: { type: number }
+        costPer1kOutputPln: { type: number }
+        notes: { type: string }
+    ModelProvider:
+      allOf:
+        - $ref: '#/components/schemas/ProviderInput'
+        - type: object
+          required: [id, keyConfigured, health]
+          properties:
+            id: { type: string }
+            keyConfigured: { type: boolean }
+            health: { $ref: '#/components/schemas/Health' }
+            latencyP50Ms: { type: integer }
+            errorRate: { type: number }
+            lastCheckedAt: { type: string, format: date-time }
+    PipelineParams:
+      type: object
+      properties:
+        temperature: { type: number }
+        timeoutS: { type: number }
+        maxRetries: { type: integer }
+    PipelineAssignment:
+      type: object
+      required: [role, providerId, fallbackProviderIds, enabled, params, updatedAt, updatedBy]
+      properties:
+        role: { $ref: '#/components/schemas/PipelineRole' }
+        providerId: { type: [string, 'null'] }
+        fallbackProviderIds: { type: array, items: { type: string } }
+        enabled: { type: boolean }
+        params: { $ref: '#/components/schemas/PipelineParams' }
+        updatedAt: { type: string, format: date-time }
+        updatedBy: { type: string }
+
+    ChannelInfo:
+      type: object
+      required: [id, name, kind, enabled, demoAdapter, health, requests24h, medianLatencyMs, consistency]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        kind: { type: string, enum: [web, whatsapp, sms, messenger, discord, other] }
+        enabled: { type: boolean }
+        demoAdapter: { type: boolean }
+        health: { $ref: '#/components/schemas/Health' }
+        requests24h: { type: integer }
+        medianLatencyMs: { type: integer }
+        consistency: { type: object, properties: { passed: { type: integer }, total: { type: integer }, lastRunAt: { type: string, format: date-time } } }
+        operatorCostNote: { type: string }
+
+    SecurityEvent:
+      type: object
+      required: [id, at, type, channel, detail, action]
+      properties:
+        id: { type: string }
+        at: { type: string, format: date-time }
+        type: { type: string, enum: [prompt_injection, rate_limited, ssrf_blocked, invalid_input, auth_failed] }
+        channel: { type: string }
+        detail: { type: string }
+        action: { type: string, enum: [instructions_ignored, blocked, throttled, logged] }
+        checkId: { type: string }
+
+    AlertRules:
+      type: object
+      required: [informationGap, querySurge, highRisk, promptInjection, recipients, notifyByEmail]
+      properties:
+        informationGap:
+          type: object
+          properties:
+            enabled: { type: boolean }
+            minQueries: { type: integer, minimum: 1 }
+            windowHours: { type: integer, minimum: 1 }
+            minNoEvidenceRatio: { type: number, minimum: 0, maximum: 1 }
+            similarityThreshold: { type: number, minimum: 0, maximum: 1 }
+        querySurge:
+          type: object
+          properties:
+            enabled: { type: boolean }
+            minQueries: { type: integer, minimum: 1 }
+            windowHours: { type: integer, minimum: 1 }
+            growthFactor: { type: number, minimum: 1 }
+        highRisk:
+          type: object
+          properties:
+            enabled: { type: boolean }
+            notifyImmediately: { type: boolean }
+            topics:
+              type: array
+              items:
+                type: object
+                required: [id, label, keywords, severity]
+                properties:
+                  id: { type: string }
+                  label: { type: string }
+                  keywords: { type: array, items: { type: string } }
+                  severity: { $ref: '#/components/schemas/Severity' }
+        promptInjection:
+          type: object
+          properties:
+            enabled: { type: boolean }
+            minEventsPerHour: { type: integer, minimum: 1 }
+        recipients:
+          type: object
+          description: Typ alertu → identyfikatory użytkowników. Pusta lista = tylko rekomendacja.
+          additionalProperties: { type: array, items: { type: string } }
+        notifyByEmail: { type: boolean }
+
+    PrivacySettings:
+      type: object
+      required: [retentionDays, maskPii, storeFullContent, anonymizeAfterDays, logIpAddresses]
+      properties:
+        retentionDays: { type: integer, minimum: 1, maximum: 365 }
+        maskPii: { type: boolean }
+        storeFullContent: { type: boolean }
+        anonymizeAfterDays: { type: integer }
+        logIpAddresses: { type: boolean }
+
+    DashboardStats:
+      type: object
+      required: [rangeHours, generatedAt, checks, abstained, technicalErrors, injectionsBlocked, medianLatencyMs, p95LatencyMs, costTotalPln, costPer1000Pln, verdicts, channels, series, openCases, activeAlerts, criticalAlerts, informationGaps, quality]
+      properties:
+        rangeHours: { type: integer }
+        generatedAt: { type: string, format: date-time }
+        checks: { type: integer }
+        abstained: { type: integer }
+        technicalErrors: { type: integer }
+        injectionsBlocked: { type: integer }
+        medianLatencyMs: { type: integer }
+        p95LatencyMs: { type: integer }
+        costTotalPln: { type: number }
+        costPer1000Pln: { type: number }
+        verdicts: { type: object, additionalProperties: { type: integer } }
+        channels: { type: object, additionalProperties: { type: integer } }
+        series:
+          type: array
+          items: { type: object, properties: { t: { type: string, format: date-time }, total: { type: integer }, abstained: { type: integer } } }
+        openCases: { type: integer }
+        activeAlerts: { type: integer }
+        criticalAlerts: { type: integer }
+        informationGaps: { type: integer }
+        quality:
+          type: array
+          items:
+            type: object
+            properties:
+              key: { type: string }
+              label: { type: string }
+              value: { type: number }
+              target: { type: number }
+              unit: { type: string, enum: ['%', s, ''] }
+              direction: { type: string, enum: [min, max] }
+        qualityEvaluatedAt: { type: string, format: date-time }

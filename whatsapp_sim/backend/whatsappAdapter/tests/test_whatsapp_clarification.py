@@ -148,7 +148,7 @@ async def test_answer_completes_the_claim_and_runs_the_check() -> None:
     replies = await bot.handle(incoming("wczoraj"))
 
     assert pipeline.texts == [RESOLVED]
-    assert bodies(replies)[0].startswith(f"🧩 Sprawdziłem z Twoimi szczegółami: _„{RESOLVED}”_")
+    assert bodies(replies)[0].startswith(f"Sprawdziłem z Twoimi szczegółami: _„{RESOLVED}”_")
     turns, round_index, _ = clarifier.calls[1]
     assert [t.text for t in turns] == [DRONE, "Kiedy i gdzie?", "wczoraj"]
     assert round_index == 2
@@ -164,7 +164,7 @@ async def test_follow_up_question_then_round_limit_forces_the_check() -> None:
     follow_up = question_text(await bot.handle(incoming("wczoraj")))
     await bot.handle(incoming("Rzeszów"))
 
-    assert "Jeszcze jedno pytanie" in follow_up and "❓ Gdzie?" in follow_up
+    assert "Jeszcze jedno pytanie" in follow_up and "\n\nGdzie?\n\n" in follow_up
     assert [call[1] for call in clarifier.calls] == [1, 2, 3]
     assert pipeline.texts == [RESOLVED]
     assert bot.conversations.get("48500") is None
@@ -180,7 +180,7 @@ async def test_skip_checks_the_original_message_without_details(skip) -> None:
     replies = await bot.handle(skip)
 
     assert pipeline.texts == [DRONE]
-    assert not bodies(replies)[0].startswith("🧩")
+    assert "Sprawdziłem z Twoimi" not in bodies(replies)[0]
     assert "wiadomość przekazana dalej" in bodies(replies)[-1]
     assert len(clarifier.calls) == 1
 
@@ -220,7 +220,7 @@ async def test_new_topic_drops_the_old_question_and_starts_over() -> None:
     replies = await bot.handle(incoming(new_question))
 
     assert pipeline.texts == [new_question]
-    assert not bodies(replies)[0].startswith("🧩")
+    assert "Sprawdziłem z Twoimi" not in bodies(replies)[0]
     assert clarifier.calls[2][0] == [DialogueTurn("user", new_question)]
 
 
@@ -418,7 +418,7 @@ def test_webhook_in_demo_mode_asks_and_then_checks(monkeypatch) -> None:
     question = send("wamid.1", DRONE)
     answer = send("wamid.2", "wczoraj koło Rzeszowa")
 
-    assert question_text(question).startswith("🧩 *Chcę dobrze zrozumieć")
+    assert question_text(question).startswith("*Chcę dobrze zrozumieć")
     assert "Sprawdziłem z Twoimi szczegółami" in bodies(answer)[0]
 
 

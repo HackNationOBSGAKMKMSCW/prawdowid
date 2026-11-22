@@ -60,6 +60,6 @@ export default function CheckPage() {
     case 'result':
       return <ResultScreen key={screen.runId} result={screen.result} checked={screen.checked} />;
     case 'state':
-      return <StateScreen kind={screen.kind} />;
+      return <StateScreen kind={screen.kind} failure={screen.failure} />;
   }
 }

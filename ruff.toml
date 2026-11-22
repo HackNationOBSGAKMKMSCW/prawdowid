@@ -12,3 +12,7 @@ docstring-code-format = true
 # pycodestyle, pyflakes, isort, pyupgrade, bugbear, simplify
 select = ["E", "F", "I", "UP", "B", "SIM"]
 ignore = ["E501"] # line length is handled by the formatter
+
+[lint.per-file-ignores]
+# FastAPI: Depends(guard.require("uprawnienie")) w domyślnym argumencie to wzorzec zależności
+"**/api.py" = ["B008"]

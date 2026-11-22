@@ -17,29 +17,22 @@ from .verdicts import OverallVerdict, Verdict, classify_rating, overall_verdict
 MAX_CLAIMS_PER_STATEMENT = 3
 MAX_REVIEWS_PER_CLAIM = 2
 
-VERDICT_ICONS = {
-    Verdict.FALSE: "❌",
-    Verdict.MISLEADING: "⚠️",
-    Verdict.TRUE: "✅",
-    Verdict.UNVERIFIED: "❔",
-}
-
 _OVERALL_HEADLINES = {
-    OverallVerdict.FALSE: "❌ *Prawdopodobnie FAŁSZ*",
-    OverallVerdict.MISLEADING: "⚠️ *Wprowadza w błąd lub jest tylko częściowo prawdziwe*",
-    OverallVerdict.TRUE: "✅ *Prawdopodobnie PRAWDA*",
-    OverallVerdict.CONFLICTING: "🔀 *Oceny są rozbieżne*",
-    OverallVerdict.UNVERIFIED: "❔ *Brak jednoznacznej oceny*",
-    OverallVerdict.NO_DATA: "🔍 *Nie znalazłem weryfikacji*",
+    OverallVerdict.FALSE: "*Prawdopodobnie FAŁSZ*",
+    OverallVerdict.MISLEADING: "*Wprowadza w błąd lub jest tylko częściowo prawdziwe*",
+    OverallVerdict.TRUE: "*Prawdopodobnie PRAWDA*",
+    OverallVerdict.CONFLICTING: "*Oceny są rozbieżne*",
+    OverallVerdict.UNVERIFIED: "*Brak jednoznacznej oceny*",
+    OverallVerdict.NO_DATA: "*Nie znalazłem weryfikacji*",
 }
 
 # Plain-text card headers (interactive headers do not support markup).
 _CARD_HEADERS = {
-    OverallVerdict.FALSE: "❌ Prawdopodobnie FAŁSZ",
-    OverallVerdict.MISLEADING: "⚠️ Wprowadza w błąd",
-    OverallVerdict.TRUE: "✅ Prawdopodobnie PRAWDA",
-    OverallVerdict.CONFLICTING: "🔀 Oceny są rozbieżne",
-    OverallVerdict.UNVERIFIED: "❔ Brak jednoznacznej oceny",
+    OverallVerdict.FALSE: "Prawdopodobnie FAŁSZ",
+    OverallVerdict.MISLEADING: "Wprowadza w błąd",
+    OverallVerdict.TRUE: "Prawdopodobnie PRAWDA",
+    OverallVerdict.CONFLICTING: "Oceny są rozbieżne",
+    OverallVerdict.UNVERIFIED: "Brak jednoznacznej oceny",
 }
 _OVERALL_TO_VERDICT = {
     OverallVerdict.FALSE: Verdict.FALSE,
@@ -48,7 +41,7 @@ _OVERALL_TO_VERDICT = {
 }
 
 _NO_DATA_TIPS = (
-    "💡 *Co możesz zrobić:*\n"
+    "*Co możesz zrobić:*\n"
     "• sprawdź, kto jest autorem i gdzie to opublikowano,\n"
     "• poszukaj tej informacji w kilku niezależnych źródłach,\n"
     "• uważaj na nagłówki, które mocno grają na emocjach."
@@ -108,9 +101,9 @@ def _reviews_of(payload: dict[str, Any]) -> list[_Review]:
 
 def _review_lines(review: _Review) -> list[str]:
     meta = " · ".join(part for part in (review.publisher, review.date) if part)
-    lines = [f"{VERDICT_ICONS[review.verdict]} *{review.rating}* · {meta}"]
+    lines = [f"*{review.rating}* · {meta}"]
     if review.url:
-        lines.append(f"🔗 {review.url}")
+        lines.append(review.url)
     return lines
 
 
@@ -131,6 +124,36 @@ def _claim_blocks(result: ReadingResult) -> list[str]:
         if lines:
             blocks.append("\n".join(lines))
     return blocks
+
+
+MAX_TRUSTED_ARTICLES = 3
+MAX_TRUSTED_REFERENCES = 2
+
+
+def _trusted_sections(report: CheckReport) -> list[str]:
+    """Matching pages from whitelisted official sites and fact-checkers (no verdict)."""
+
+    trusted = report.trusted
+    hits = list(getattr(trusted, "hits", None) or [])
+    articles = [hit for hit in hits if hit.kind == "article"][:MAX_TRUSTED_ARTICLES]
+    references = [hit for hit in hits if hit.kind == "reference"][:MAX_TRUSTED_REFERENCES]
+    sections = []
+    if articles:
+        lines = ["*Oficjalne i zaufane źródła:*"]
+        for hit in articles:
+            date = hit.published_at.strftime("%d.%m.%Y") if hit.published_at else ""
+            meta = " · ".join(part for part in (_clip(hit.source_name, 60), date) if part)
+            lines.append(f"• {_clip(hit.title, 140)} · _{meta}_")
+            if _safe_url(hit.url):
+                lines.append(hit.url)
+        sections.append("\n".join(lines))
+    if references:
+        lines = ["*Sprawdź na bieżąco:*"]
+        lines.extend(
+            f"• {_clip(hit.source_name, 80)}: {hit.url}" for hit in references if _safe_url(hit.url)
+        )
+        sections.append("\n".join(lines))
+    return sections
 
 
 def _missing_key(report: CheckReport) -> bool:
@@ -195,7 +218,7 @@ def verdict_card(report: CheckReport) -> VerdictCard | None:
     )
 
     meta = " · ".join(part for part in (top.publisher, top.date) if part)
-    body = f"_„{_clip(subject, 300)}”_\n\n{VERDICT_ICONS[top.verdict]} *{top.rating}* — {meta}"
+    body = f"_„{_clip(subject, 300)}”_\n\n*{top.rating}* — {meta}"
     count = len(reviews)
     footer = f"SprawdzTo · {count} {_reviews_word(count)}"
     if report.demo:
@@ -222,23 +245,28 @@ def format_report(report: CheckReport, *, headline: bool = True) -> str:
 
     if results and len(failed) == len(results):
         sections = [
-            "⚠️ *Nie udało się sprawdzić*",
+            "*Nie udało się sprawdzić*",
             "_Baza weryfikacji jest teraz niedostępna. Spróbuj ponownie za chwilę._",
         ]
         if _missing_key(report):
             sections.append("_(Serwer nie ma ustawionego klucza GOOGLE_FACT_CHECK_API_KEY.)_")
+        sections.extend(_trusted_sections(report))
         return _with_notes("\n\n".join(sections), report)
 
     overall = overall_verdict(review.verdict for review in all_reviews.values())
-    sections = ["🔎 *Wynik sprawdzenia*", _OVERALL_HEADLINES[overall]]
+    sections = ["*Wynik sprawdzenia*", _OVERALL_HEADLINES[overall]]
     publishers = sorted({review.publisher for review in all_reviews.values()})
     if not headline:
-        sections = ["🔎 *Szczegóły sprawdzenia*"]
+        sections = ["*Szczegóły sprawdzenia*"]
     elif overall is OverallVerdict.NO_DATA:
         sections[-1] += (
             "\n_Nie ma tego w bazach redakcji fact-checkingowych. To nie znaczy, "
             "że informacja jest prawdziwa ani że jest fałszywa._"
         )
+        if any(hit.kind == "article" for hit in getattr(report.trusted, "hits", None) or []):
+            sections[-1] += (
+                "\n_Poniżej powiązane komunikaty z oficjalnych źródeł — porównaj je z wiadomością._"
+            )
     else:
         basis = f"_Na podstawie {len(all_reviews)} weryfikacji: {', '.join(publishers[:4])}"
         basis += " i innych._" if len(publishers) > 4 else "._"
@@ -247,7 +275,7 @@ def format_report(report: CheckReport, *, headline: bool = True) -> str:
         sections[-1] += "\n" + basis
 
     if report.analysis.category:
-        sections.append(f"📂 Temat: {report.analysis.category}")
+        sections.append(f"Temat: {report.analysis.category}")
 
     if report.searched_full_text:
         blocks = _claim_blocks(results[0]) if results else []
@@ -255,24 +283,26 @@ def format_report(report: CheckReport, *, headline: bool = True) -> str:
             sections.append("*Znalezione weryfikacje dla Twojej wiadomości:*")
             sections.extend(blocks)
         if results and results[0].request.metadata.get("truncated"):
-            footer.append("✂️ _Wiadomość była długa — przeszukałem jej pierwsze 1000 znaków._")
+            footer.append("_Wiadomość była długa — przeszukałem jej pierwsze 1000 znaków._")
     else:
         for index, result in enumerate(results, 1):
             heading = f"*{index}.* _„{_clip(result.request.query, 200)}”_"
             if _result_failed(result):
-                sections.append(f"{heading}\n⚠️ Nie udało się sprawdzić tego twierdzenia.")
+                sections.append(f"{heading}\nNie udało się sprawdzić tego twierdzenia.")
                 continue
             blocks = _claim_blocks(result)
             if not blocks:
-                sections.append(f"{heading}\n🔍 Brak weryfikacji tego twierdzenia.")
+                sections.append(f"{heading}\nBrak weryfikacji tego twierdzenia.")
                 continue
             sections.append("\n".join([heading, *blocks]))
 
+    sections.extend(_trusted_sections(report))
+
     if failed:
-        footer.append("⚠️ _Części zapytań nie udało się wykonać — wynik może być niepełny._")
+        footer.append("_Części zapytań nie udało się wykonać — wynik może być niepełny._")
     if all_reviews:
         footer.append(
-            "ℹ️ _Weryfikacje mogą dotyczyć podobnych, a nie identycznych twierdzeń. "
+            "_Weryfikacje mogą dotyczyć podobnych, a nie identycznych twierdzeń. "
             "Zanim coś udostępnisz, otwórz link i przeczytaj uzasadnienie._"
         )
     else:
@@ -285,9 +315,9 @@ def _with_notes(body: str, report: CheckReport) -> str:
     notes = []
     if report.analysis.security_warnings:
         notes.append(
-            "🛡️ _Wiadomość zawierała fragmenty przypominające polecenia dla bota. "
+            "_Wiadomość zawierała fragmenty przypominające polecenia dla bota. "
             "Potraktowałem je wyłącznie jako tekst do sprawdzenia._"
         )
     if report.demo:
-        notes.append("🧪 _Tryb demonstracyjny: przykładowe dane, a nie prawdziwa weryfikacja._")
+        notes.append("_Tryb demonstracyjny: przykładowe dane, a nie prawdziwa weryfikacja._")
     return "\n\n".join([body, *notes])

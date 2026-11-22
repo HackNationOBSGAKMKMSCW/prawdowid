@@ -1,6 +1,6 @@
 """Demo: ``python -m inputDataAnalysis [nazwa_przykładu ...]`` (z katalogu analysis/).
 
-Wymaga uzupełnionego ``analysis/inputDataAnalysis/.env``. Bez argumentów uruchamia wszystkie przykłady.
+Wymaga uzupełnionego głównego pliku ``.env``. Bez argumentów uruchamia wszystkie przykłady.
 """
 
 from __future__ import annotations

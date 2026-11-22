@@ -2,7 +2,7 @@
  * Kontrakt API między frontendem a backendem Prawdowida.
  *
  *   POST   /api/clarify            { turns } → ClarifyStep
- *   POST   /api/check              { text }  → CheckResponse
+ *   GET    /api/check?text=…       → CheckResponse
  *   POST   /api/check/{id}/report  { reason, comment? } → 204
  */
 
@@ -89,7 +89,7 @@ export interface TextAnalysis {
 
 export interface CheckResult {
   status: 'result';
-  /** Identyfikator sprawdzenia, potrzebny do zgłoszenia błędu i usunięcia danych. */
+  /** Identyfikator sprawdzenia, potrzebny do zgłoszenia błędu. */
   id?: string;
   input_type: 'text' | 'url';
   claims: Claim[];

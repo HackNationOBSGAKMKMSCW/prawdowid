@@ -27,6 +27,8 @@ class _ApiKeywordSchema(BaseModel):
 
 _MAX_KEYWORDS = 25
 _MAX_STATEMENTS = 40
+_MAX_SEARCH_QUERIES = 8
+_MAX_SEARCH_QUERY_CHARS = 120
 
 
 class _ApiAnalysisSchema(BaseModel):
@@ -43,6 +45,22 @@ class _ApiAnalysisSchema(BaseModel):
     context_reasoning: str = Field(default="", max_length=800)
     keywords: list[_ApiKeywordSchema] = Field(default_factory=list, max_length=_MAX_KEYWORDS)
     statements: list[str] = Field(max_length=_MAX_STATEMENTS)
+    # Krótkie frazy dla wyszukiwarek źródeł; ich brak lub śmieci nie unieważniają analizy.
+    search_queries: list[str] = Field(default_factory=list, max_length=_MAX_SEARCH_QUERIES)
+
+    @field_validator("search_queries", mode="before")
+    @classmethod
+    def _usable_search_queries(cls, value: object) -> object:
+        if not isinstance(value, list):
+            return []
+        queries: list[str] = []
+        for item in value:
+            if not isinstance(item, str) or not item.strip():
+                continue
+            query = " ".join(item.split())[:_MAX_SEARCH_QUERY_CHARS]
+            if query.lower() not in {existing.lower() for existing in queries}:
+                queries.append(query)
+        return queries[:_MAX_SEARCH_QUERIES]
 
     @field_validator("keywords", mode="before")
     @classmethod
@@ -428,6 +446,10 @@ class ProxyContextAnalyzer(BaseTextAnalyzer):
             "ZASADY EKSTRAKCJI MERYTORYCZNEJ (MAKSIMUM SZCZEGÓŁÓW, ZERO WODY):\n"
             "- W polu 'statements' wypisz jak najwięcej konkretnych, szczegółowych faktów, ustaleń, "
             "liczb, dat, podmiotów, miejsc, przyczyn, skutków i decyzji zawartych w tekście.\n"
+            "- Każde stwierdzenie zapisz jako SAMĄ TEZĘ w brzmieniu autora, w trybie oznajmującym "
+            "(np. 'Ziemia jest płaska.'), NIGDY jako opis tekstu: bez wstępów typu 'Tekst zawiera "
+            "twierdzenie, że', 'Autor twierdzi', 'W tekście', 'Pojawiło się pytanie'. Pytanie "
+            "zamień na sprawdzaną tezę ('Czy 5G roznosi wirusa?' -> '5G roznosi koronawirusa.').\n"
             "- Każde stwierdzenie powinno być zwarte, informacyjne i oparte wyłącznie na tekście (zachowuj "
             "konkretne dane zamiast ogólnych streszczeń typu 'artykuł opisuje sytuację').\n"
             "- BEZWZGLĘDNIE POMIJAJ informacje niemerytoryczne: wstępy/zajawki bez faktów, dygresje, "
@@ -440,14 +462,21 @@ class ProxyContextAnalyzer(BaseTextAnalyzer):
             f"3. Wyodrębnij maksymalnie {top_keywords} najistotniejszych merytorycznie pojęć/nazw/terminów "
             "(w mianowniku) wraz z konkretnym opisem ich roli w tekście.\n"
             "4. Wyciągnij szczegółowe, merytoryczne stwierdzenia (maksymalnie 40), pomijając szum informacyjny.\n"
-            "5. Zwróć WYŁĄCZNIE poprawny obiekt JSON o dokładnie takiej strukturze:\n"
+            "5. W polu 'search_queries' podaj od 2 do 8 krótkich fraz wyszukiwania (2-4 słowa, "
+            "mianownik, bez cudzysłowów, bez lat i liczb), którymi najłatwiej znaleźć sprawdzenie tych "
+            "tez na stronach urzędów i serwisów fact-checkingowych. Daj co najmniej jedną frazę na "
+            "każdą osobną tezę, zaczynając od najważniejszych. Gdy urzędy nazywają temat inaczej niż "
+            "tekst, dodaj też wariant urzędowy, np. 'płaca minimalna' i 'minimalne wynagrodzenie', "
+            "'800 plus' i 'Rodzina 800+', 'Ziemia jest płaska' i 'płaska Ziemia'.\n"
+            "6. Zwróć WYŁĄCZNIE poprawny obiekt JSON o dokładnie takiej strukturze:\n"
             "{\n"
             '  "category": "wybrana kategoria z listy",\n'
             '  "language_code": "pl",\n'
             '  "confidence": 0.95,\n'
             '  "context_reasoning": "konkretne uzasadnienie wyboru kategorii na podstawie faktów z tekstu",\n'
             '  "keywords": [{"term": "termin", "context_note": "konkretna rola w tekście"}],\n'
-            '  "statements": ["szczegółowy fakt 1 z danymi/kontekstem", "szczegółowy fakt 2"]\n'
+            '  "statements": ["szczegółowy fakt 1 z danymi/kontekstem", "szczegółowy fakt 2"],\n'
+            '  "search_queries": ["krótka fraza 1", "krótka fraza 2"]\n'
             "}"
         )
 
@@ -473,6 +502,7 @@ class ProxyContextAnalyzer(BaseTextAnalyzer):
                     {"role": "user", "content": user_payload},
                 ],
                 temperature=0.1,
+                reasoning_effort="none"
             )
             if not response.choices:
                 raise AnalysisError("The language model returned no choices.")
@@ -497,6 +527,11 @@ class ProxyContextAnalyzer(BaseTextAnalyzer):
             self._validate_output_security(parsed, security_warnings)
         )
 
+        # Zablokowana odpowiedź (canary) nie może sterować zapytaniami do zewnętrznych źródeł.
+        search_queries = parsed.search_queries
+        if not final_statements or self._SYSTEM_CANARY in " ".join(search_queries):
+            search_queries = []
+
         keyword_objects = [
             KeywordItem(term=item.term.strip(), context_note=item.context_note.strip())
             for item in parsed.keywords[:top_keywords]
@@ -514,6 +549,7 @@ class ProxyContextAnalyzer(BaseTextAnalyzer):
             context_reasoning=final_reasoning,
             keywords=keyword_objects,
             statements=final_statements,
+            search_queries=search_queries,
             total_sentences=len(raw_sentences),
             security_warnings=security_warnings,
         )

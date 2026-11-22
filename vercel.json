@@ -1,8 +1,22 @@
 {
-  "services": {
-    "frontend": { "root": "frontend/", "framework": "vite" }
-  },
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "installCommand": "npm ci --prefix frontend && npm ci --prefix admin_panel/frontend",
+  "buildCommand": "npm run build:live --prefix frontend && npm run build --prefix admin_panel/frontend -- --base=/admin/ && rm -rf dist && cp -r frontend/dist dist && cp -r admin_panel/frontend/dist dist/admin",
+  "outputDirectory": "dist",
   "rewrites": [
-    { "source": "/(.*)", "destination": { "service": "frontend" } }
+    {
+      "source": "/api/admin/:path*",
+      "destination": "http://100.101.180.103:5173/api/admin/:path*"
+    },
+    { "source": "/admin", "destination": "/admin/index.html" },
+    { "source": "/admin/:path*", "destination": "/admin/index.html" },
+    { "source": "/:path*", "destination": "/index.html" }
+  ],
+  "headers": [
+    {
+      "source": "/admin/config.json",
+      "headers": [{ "key": "Cache-Control", "value": "no-store" }]
+    }
   ]
 }

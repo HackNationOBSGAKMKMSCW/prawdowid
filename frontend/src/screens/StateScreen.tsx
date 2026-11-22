@@ -1,4 +1,5 @@
-import { useChecker, type StateKind } from '../lib/checker.ts';
+import type { ApiErrorCode } from '../api/client.ts';
+import { type FailureInfo, useChecker, type StateKind } from '../lib/checker.ts';
 
 interface StateContent {
   icon: string;
@@ -6,7 +7,99 @@ interface StateContent {
   title: string;
   body: string;
   action: string;
+  /** `edit` wraca do formularza z treścią (trzeba ją poprawić), `retry` ponawia sprawdzenie. */
+  then?: 'edit' | 'retry';
 }
+
+const LINK_ACTION = 'Popraw wiadomość';
+
+/** Komunikaty dla kodów błędów backendu. Brak wpisu = ogólne „Coś poszło nie tak”. */
+const FAILURES: Partial<Record<ApiErrorCode, StateContent>> = {
+  invalid_url: {
+    icon: '?',
+    tone: 'info',
+    title: 'Ten link wygląda na niepoprawny',
+    body: 'Wklej sam adres publicznej strony (zaczyna się od https://) albo sam tekst wiadomości — bez łączenia ich w jednym polu.',
+    action: LINK_ACTION,
+    then: 'edit',
+  },
+  unsafe_url: {
+    icon: '?',
+    tone: 'info',
+    title: 'Nie możemy otworzyć tego linku',
+    body: 'Sprawdzamy tylko publiczne strony internetowe. Wklej treść wiadomości zamiast linku.',
+    action: LINK_ACTION,
+    then: 'edit',
+  },
+  url_unavailable: {
+    icon: '?',
+    tone: 'info',
+    title: 'Nie możemy otworzyć tego linku',
+    body: 'Strona nie odpowiada albo adres ma błąd. Sprawdź link albo wklej treść artykułu.',
+    action: LINK_ACTION,
+    then: 'edit',
+  },
+  request_too_large: {
+    icon: '…',
+    tone: 'info',
+    title: 'Ta wiadomość jest za długa',
+    body: 'Wklej najważniejszy fragment — najwyżej 20 000 znaków.',
+    action: 'Skróć wiadomość',
+    then: 'edit',
+  },
+  invalid_request: {
+    icon: '?',
+    tone: 'info',
+    title: 'Nie możemy sprawdzić tej wiadomości',
+    body: 'Sprawdź, czy wiadomość nie jest pusta i nie zawiera samych znaków specjalnych.',
+    action: LINK_ACTION,
+    then: 'edit',
+  },
+  request_refused: {
+    icon: '!',
+    tone: 'warning',
+    title: 'Nie pomożemy w tej sprawie',
+    body: 'Sprawdzamy prawdziwość informacji. Nie odpowiadamy na prośby o instrukcje dotyczące broni, materiałów wybuchowych ani przemocy.',
+    action: 'Sprawdź coś innego',
+    then: 'edit',
+  },
+  user_blocked: {
+    icon: '!',
+    tone: 'warning',
+    title: 'Sprawdzanie jest czasowo wstrzymane',
+    body: 'Z tego połączenia przychodziły powtarzające się pytania o treści niebezpieczne. Jeśli to pomyłka, skontaktuj się z administratorem serwisu.',
+    action: 'Wróć na start',
+    then: 'edit',
+  },
+  analysis_busy: {
+    icon: '…',
+    tone: 'neutral',
+    title: 'Sprawdzamy teraz dużo wiadomości',
+    body: 'Wszystkie miejsca są zajęte. Spróbuj ponownie za minutę.',
+    action: 'Spróbuj jeszcze raz',
+  },
+  analysis_timeout: {
+    icon: '…',
+    tone: 'warning',
+    title: 'Sprawdzanie trwało za długo',
+    body: 'Źródła odpowiadały zbyt wolno. Spróbuj jeszcze raz za chwilę.',
+    action: 'Spróbuj jeszcze raz',
+  },
+  timeout: {
+    icon: '…',
+    tone: 'warning',
+    title: 'Sprawdzanie trwało za długo',
+    body: 'Nie dostaliśmy wyniku na czas. Spróbuj jeszcze raz za chwilę.',
+    action: 'Spróbuj jeszcze raz',
+  },
+  network: {
+    icon: '!',
+    tone: 'warning',
+    title: 'Brak połączenia',
+    body: 'Nie możemy połączyć się z serwisem Sprawdź.To. Sprawdź internet i spróbuj ponownie.',
+    action: 'Spróbuj jeszcze raz',
+  },
+};
 
 const CONTENT: Record<StateKind, StateContent> = {
   clarify: {
@@ -32,12 +125,12 @@ const CONTENT: Record<StateKind, StateContent> = {
   },
 };
 
-export default function StateScreen({ kind }: { kind: StateKind }) {
+export default function StateScreen({ kind, failure }: { kind: StateKind; failure?: FailureInfo }) {
   const { goStart, retry } = useChecker();
-  const content = CONTENT[kind];
+  const content = (kind === 'failure' && failure && FAILURES[failure.code]) || CONTENT[kind];
 
   const onAction = () => {
-    if (kind === 'clarify') goStart(false);
+    if (kind === 'clarify' || content.then === 'edit') goStart(false);
     else if (kind === 'out_of_scope') goStart(true);
     else retry();
   };
@@ -59,6 +152,11 @@ export default function StateScreen({ kind }: { kind: StateKind }) {
         {content.action}
       </button>
       <span className="note">To nie jest ocena Twojej wiadomości.</span>
+      {kind === 'failure' && failure?.requestId && (
+        <span className="note note--muted">
+          Numer zdarzenia: <span className="mono-id">{failure.requestId}</span>
+        </span>
+      )}
     </div>
   );
 }

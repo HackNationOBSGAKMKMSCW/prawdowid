@@ -2456,3 +2456,22 @@ html {
 .pill-toggle--icon:first-child:focus-visible .icon-tip {
   transform: translate(0, 0);
 }
+
+/* Identyfikator żądania na ekranie błędu (do zgłoszenia problemu). */
+.mono-id {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.9em;
+  overflow-wrap: anywhere;
+}
+
+/* Backend niedostępny (GET /api/health), tylko w trybie live. */
+.server-status {
+  margin: 0 0 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--c-line-strong);
+  border-left: 4px solid var(--c-error);
+  border-radius: 8px;
+  background: var(--c-accent-soft);
+  color: var(--c-text-body);
+  text-wrap: pretty;
+}

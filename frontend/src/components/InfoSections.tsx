@@ -1,7 +1,11 @@
 import { useId, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { FULL_SOURCE_LIST, WHATSAPP_NUMBER } from '../content/sources.ts';
+import { WHATSAPP_NUMBER } from '../content/sources.ts';
 import { VERDICT_ORDER, VERDICTS } from '../content/verdicts.ts';
+import { plural } from '../lib/format.ts';
+import { useTrustedSourceGroups } from '../lib/trustedSources.ts';
+
+const countLabel = (n: number) => `${n} ${plural(n, 'źródło', 'źródła', 'źródeł')}`;
 
 /**
  * Treści informacyjne używane w dwóch miejscach: w oknach otwieranych ze stopki
@@ -75,14 +79,38 @@ export function HowItWorksContent({ level }: { level: Level }) {
 }
 
 export function SourcesContent({ level }: { level: Level }) {
+  const list = useTrustedSourceGroups();
+  if (list.status === 'loading') {
+    return (
+      <p className="note note--muted" role="status">
+        Wczytuję listę źródeł…
+      </p>
+    );
+  }
+  if (list.status === 'error') {
+    return (
+      <p className="note" role="alert">
+        Nie udało się pobrać listy źródeł. Odśwież stronę za chwilę.
+      </p>
+    );
+  }
+  const { groups, demo } = list;
+  const total = groups.reduce((n, g) => n + g.sources.length, 0);
   return (
     <>
-      {FULL_SOURCE_LIST.map((group) => (
+      <p className="note note--muted">
+        {demo
+          ? 'Przykładowa lista (tryb demonstracyjny).'
+          : total
+            ? `Aktualna lista: ${countLabel(total)}.`
+            : 'Lista źródeł jest teraz pusta.'}
+      </p>
+      {groups.map((group) => (
         <Section key={group.id} level={level} title={group.name}>
           <p className="panel__text">{group.why}</p>
           <ul className="plain-list">
             {group.sources.map((source) => (
-              <li key={source.name} className="source-groups__item">
+              <li key={`${source.name}-${source.url ?? ''}`} className="source-groups__item">
                 <strong className="source-groups__name">
                   {source.url ? (
                     <a href={source.url} target="_blank" rel="noopener noreferrer">
@@ -137,7 +165,7 @@ export function HelpContent({ onShowSources }: { onShowSources?: () => void }) {
       q: 'Co znaczy „Brak wystarczających dowodów”?',
       a: 'Nie znaleźliśmy dość informacji w wiarygodnych źródłach. Wtedy nie zgadujemy. To nie znaczy, że wiadomość jest fałszywa ani że jest prawdziwa.',
     },
-    { q: 'Czy muszę się logować?', a: 'Nie. Prawdowid jest za darmo i bez logowania.' },
+    { q: 'Czy muszę się logować?', a: 'Nie. Sprawdź.To jest za darmo i bez logowania.' },
     {
       q: 'Co dzieje się z moją wiadomością?',
       a: 'Używamy jej tylko do sprawdzenia wyniku.',

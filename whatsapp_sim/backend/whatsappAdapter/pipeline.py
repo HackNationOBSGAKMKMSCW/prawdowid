@@ -1,7 +1,15 @@
-"""Fact-check pipelines used by the bot: the real packages or canned demo data."""
+"""Pipelines used by the bot.
+
+* ``VerificationPipeline`` (tryb ``live``, domyślny): dokładnie ta sama weryfikacja co
+  ``GET /api/check`` na stronie (``verification`` -> ``api_adapter.to_check_response``),
+* ``LivePipeline`` (tryb ``factcheck``): szybkie wyszukiwanie tylko w Google Fact Check,
+* ``DemoPipeline`` (tryb ``demo``): przykładowe dane bez sieci i kluczy.
+"""
 
 import asyncio
+import os
 import re
+import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -27,6 +35,8 @@ class CheckReport:
     results: list[ReadingResult]
     searched_full_text: bool = False
     demo: bool = False
+    # trustedSources.TrustedSearchReport (whitelisted official sites), when searched.
+    trusted: Any = None
 
 
 # Called with a stage name and a count: ("searching", n) once statements are
@@ -48,13 +58,25 @@ async def _report(progress: Progress | None, stage: str, count: int) -> None:
 Analyze = Callable[[str], Awaitable[AnalysisDataContainer]]
 ReadStatements = Callable[[AnalysisDataContainer], Awaitable[list[ReadingResult]]]
 ReadFullText = Callable[[AnalysisDataContainer], Awaitable[ReadingResult]]
+SearchTrusted = Callable[[AnalysisDataContainer], Awaitable[Any]]
 
 
-class LivePipeline:
-    """Run ``textAnalysis`` and ``apiReading`` exactly as the main app does.
+@dataclass(frozen=True)
+class VerifiedReport:
+    """Result of the website's verification flow, rendered for WhatsApp."""
 
-    Extracted statements are searched one by one. A message with no factual
-    statements (often a plain question) is searched as a whole instead.
+    text: str
+    # api_models.CheckResponse: exactly what the website shows for the same input.
+    response: Any
+    statements: list[str]
+    demo: bool = False
+
+
+class VerificationPipeline:
+    """Run the same verification as the website (``GET /api/check``).
+
+    Claims, articles, trusted sites, manipulation and date checks, the model's verdict
+    per claim and the known-disinformation database: one result, two channels.
     """
 
     mode = "live"
@@ -62,10 +84,69 @@ class LivePipeline:
     def __init__(
         self,
         *,
+        start: Callable[[str], Any] | None = None,
+        validate_url: Callable[[str], Awaitable[str]] | None = None,
+        check_timeout: float | None = None,
+    ) -> None:
+        self._start = start
+        self._validate_url = validate_url
+        self.check_timeout = (
+            check_timeout
+            if check_timeout is not None
+            else float(os.getenv("CHECK_TIMEOUT_SECONDS", "360"))
+        )
+
+    async def check(self, text: str, progress: Progress | None = None) -> VerifiedReport:
+        from api_adapter import to_check_response
+        from api_routes import _is_bare_url
+
+        input_text, input_type = text, "text"
+        if _is_bare_url(text):
+            validate = self._validate_url
+            if validate is None:
+                from api_routes import _validate_public_url as validate
+            input_text, input_type = await validate(text.strip()), "url"
+
+        start = self._start
+        if start is None:
+            from verification import start
+        job = start(input_text)
+        try:
+            evidence = await job.evidence
+            statements = list((evidence.data or {}).get("statements") or [])
+            if evidence.status == "ok":
+                await _report(progress, "assessing", len(statements))
+            report = await job.report()
+        finally:
+            job.cancel()
+        response = to_check_response(report, result_id=uuid.uuid4().hex, input_type=input_type)
+        return VerifiedReport(text=input_text, response=response, statements=statements)
+
+
+class LivePipeline:
+    """Fast fact-check-only mode (``SPRAWDZTO_MODE=factcheck``): textAnalysis + apiReading.
+
+    Extracted statements are searched one by one. A message with no factual
+    statements (often a plain question) is searched as a whole instead.
+    """
+
+    mode = "factcheck"
+    check_timeout = 90.0
+
+    def __init__(
+        self,
+        *,
         analyze: Analyze | None = None,
         read_statements: ReadStatements | None = None,
         read_full_text: ReadFullText | None = None,
+        search_trusted: SearchTrusted | None = None,
     ) -> None:
+        # Injected fakes (tests) opt out of the live whitelist search unless given one.
+        if search_trusted is None and analyze is read_statements is read_full_text is None:
+            import trustedSources
+
+            search_trusted = trustedSources.run
+        self._search_trusted = search_trusted
         if analyze is None or read_statements is None or read_full_text is None:
             import apiReading
             import textAnalysis
@@ -81,11 +162,27 @@ class LivePipeline:
         analysis = await self._analyze(text)
         statements = [statement for statement in analysis.statements if statement.strip()]
         await _report(progress, "searching", len(statements))
-        if statements:
-            results = await self._read_statements(analysis)
-            return CheckReport(analysis=analysis, results=results)
-        result = await self._read_full_text(analysis)
-        return CheckReport(analysis=analysis, results=[result], searched_full_text=True)
+        trusted_task = (
+            asyncio.ensure_future(self._search_trusted(analysis)) if self._search_trusted else None
+        )
+        try:
+            if statements:
+                results = await self._read_statements(analysis)
+                searched_full_text = False
+            else:
+                results = [await self._read_full_text(analysis)]
+                searched_full_text = True
+        except BaseException:
+            if trusted_task is not None:
+                trusted_task.cancel()
+            raise
+        trusted = await trusted_task if trusted_task is not None else None
+        return CheckReport(
+            analysis=analysis,
+            results=results,
+            searched_full_text=searched_full_text,
+            trusted=trusted,
+        )
 
 
 @dataclass(frozen=True)
@@ -232,6 +329,7 @@ class DemoPipeline:
     """
 
     mode = "demo"
+    check_timeout = 90.0
 
     def __init__(self, *, delay_seconds: float = 2.0) -> None:
         self.delay_seconds = delay_seconds

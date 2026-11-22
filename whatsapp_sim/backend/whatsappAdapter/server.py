@@ -4,38 +4,59 @@
 answers with the Cloud API message bodies the bot would send back. The real
 WhatsApp transport would instead POST those bodies to the Graph API.
 
-``POST /api/clarify`` runs the same clarification loop for the website (``web.py``).
+The endpoints are part of the website API (``backend/server.py`` includes
+:func:`create_router`), so one backend serves both channels. ``create_app`` is the
+standalone adapter (``python -m whatsappAdapter``), e.g. for the offline demo.
+
+``POST /api/clarify`` runs the bot's clarification loop for the website (``web.py``);
+:func:`create_router` serves it next to ``/api/whatsapp/*``.
 """
 
 import asyncio
+import contextlib
 import json
+import logging
 import os
 from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any
 
-from fastapi import Body, FastAPI, HTTPException
+from dotenv import load_dotenv
+from fastapi import APIRouter, Body, FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 from observability import ObservabilityMiddleware
 from pydantic import ValidationError
+from trustedSources.api import router as trusted_sources_router
 
+from .admin_bridge import monitor_from_environment
 from .bot import BOT_NAME, SprawdzToBot
 from .clarification import Clarifier, DemoClarifier, LiveClarifier
 from .cloud_api import parse_webhook
-from .pipeline import DemoPipeline, FactCheckPipeline, LivePipeline
+from .pipeline import DemoPipeline, FactCheckPipeline, LivePipeline, VerificationPipeline
 from .web import clarify_router
+
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+load_dotenv(PROJECT_ROOT / ".env", override=False)
+load_dotenv(PROJECT_ROOT / "backend" / ".env", override=False)
 
 MODE_ENV = "SPRAWDZTO_MODE"
 CLARIFY_ENV = "SPRAWDZTO_CLARIFY"
 MAX_PAYLOAD_MESSAGES = 10
+WARM_ENV = "TRUSTED_SOURCES_WARM"
+logger = logging.getLogger(__name__)
 
 
 def pipeline_from_environment() -> FactCheckPipeline:
+    """``live`` (default): the website's verification; ``factcheck``: fact-checks only."""
     mode = os.getenv(MODE_ENV, "live").strip().lower()
     if mode == "demo":
         return DemoPipeline()
+    if mode == "factcheck":
+        return LivePipeline()
     if mode != "live":
-        raise ValueError(f"{MODE_ENV} must be 'live' or 'demo'")
-    return LivePipeline()
+        raise ValueError(f"{MODE_ENV} must be 'live', 'factcheck' or 'demo'")
+    return VerificationPipeline()
 
 
 def clarifier_from_environment(pipeline: FactCheckPipeline) -> Clarifier | None:
@@ -46,48 +67,120 @@ def clarifier_from_environment(pipeline: FactCheckPipeline) -> Clarifier | None:
     return DemoClarifier() if pipeline.mode == "demo" else LiveClarifier()
 
 
-def create_app(bot: SprawdzToBot | None = None) -> FastAPI:
-    if bot is None:
-        pipeline = pipeline_from_environment()
-        bot = SprawdzToBot(pipeline, clarifier=clarifier_from_environment(pipeline))
-    app = FastAPI(title="SprawdzTo WhatsApp adapter", docs_url="/api/whatsapp/docs")
-    app.add_middleware(ObservabilityMiddleware, skip_paths=("/api/whatsapp/health",))
-    # The website asks with the same clarifier (live model or demo rules) as the bot.
-    app.include_router(clarify_router(lambda: bot.clarifier, timeout=bot.clarify_timeout))
+def bot_from_environment(monitor: Any = None) -> SprawdzToBot:
+    """``monitor``: monitor panelu admina z tego samego procesu (``server.py``); bez niego
+    monitor z ustawień (``ADMIN_MONITOR``)."""
+    pipeline = pipeline_from_environment()
+    return SprawdzToBot(
+        pipeline,
+        clarifier=clarifier_from_environment(pipeline),
+        monitor=monitor or monitor_from_environment(),
+    )
 
-    @app.get("/api/whatsapp/health")
+
+def create_router(bot: SprawdzToBot | None = None, *, monitor: Any = None) -> APIRouter:
+    """``/api/whatsapp/*`` and ``/api/clarify``; without ``bot`` it is built on the first
+    request."""
+    router = APIRouter(prefix="/api/whatsapp", tags=["whatsapp"])
+    state: dict[str, SprawdzToBot] = {}
+    if bot is not None:
+        state["bot"] = bot
+
+    def current_bot() -> SprawdzToBot:
+        if "bot" not in state:
+            state["bot"] = bot_from_environment(monitor)
+        return state["bot"]
+
+    @router.get("/health")
     async def health() -> dict[str, Any]:
-        return {"status": "ok", "mode": bot.mode, "contact": {"name": BOT_NAME}}
+        return {"status": "ok", "mode": current_bot().mode, "contact": {"name": BOT_NAME}}
 
-    @app.post("/api/whatsapp/webhook", response_model=None)
+    @router.post("/webhook", response_model=None)
     async def webhook(
         payload: dict[str, Any] = Body(...),  # noqa: B008
         stream: bool = False,
     ) -> dict[str, Any] | StreamingResponse:
-        try:
-            entries = payload.get("entry") or []
-            count = sum(
-                len((change.get("value") or {}).get("messages") or [])
-                for entry in entries
-                if isinstance(entry, dict)
-                for change in entry.get("changes") or []
-                if isinstance(change, dict)
-            )
-        except (AttributeError, TypeError):
-            raise HTTPException(status_code=422, detail="invalid webhook payload") from None
-        if count > MAX_PAYLOAD_MESSAGES:
-            raise HTTPException(status_code=413, detail="too many messages in one payload")
-        try:
-            parse_webhook(payload)
-        except ValidationError:
-            raise HTTPException(status_code=422, detail="invalid webhook payload") from None
+        _validate_payload(payload)
+        active = current_bot()
         if stream:
             return StreamingResponse(
-                _stream_events(bot, payload), media_type="application/x-ndjson"
+                _stream_events(active, payload), media_type="application/x-ndjson"
             )
-        return {"messages": await bot.handle_webhook(payload)}
+        return {"messages": await active.handle_webhook(payload)}
 
+    # The website asks with the same clarifier (model or demo rules) as the bot.
+    combined = APIRouter()
+    combined.include_router(router)
+    combined.include_router(
+        clarify_router(
+            lambda: current_bot().clarifier,
+            timeout=bot.clarify_timeout if bot is not None else 20.0,
+        )
+    )
+    return combined
+
+
+def _validate_payload(payload: dict[str, Any]) -> None:
+    try:
+        entries = payload.get("entry") or []
+        count = sum(
+            len((change.get("value") or {}).get("messages") or [])
+            for entry in entries
+            if isinstance(entry, dict)
+            for change in entry.get("changes") or []
+            if isinstance(change, dict)
+        )
+    except (AttributeError, TypeError):
+        raise HTTPException(status_code=422, detail="invalid webhook payload") from None
+    if count > MAX_PAYLOAD_MESSAGES:
+        raise HTTPException(status_code=413, detail="too many messages in one payload")
+    try:
+        parse_webhook(payload)
+    except ValidationError:
+        raise HTTPException(status_code=422, detail="invalid webhook payload") from None
+
+
+def create_app(bot: SprawdzToBot | None = None) -> FastAPI:
+    """Standalone adapter (``python -m whatsappAdapter``)."""
+    bot = bot or bot_from_environment()
+
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+        task = None
+        if bot.mode in {"live", "factcheck"} and os.getenv(WARM_ENV, "true").lower() not in {
+            "0",
+            "false",
+            "no",
+        }:
+            task = asyncio.create_task(_warm_trusted_sources())
+        try:
+            yield
+        finally:
+            if task is not None and not task.done():
+                task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await task
+
+    app = FastAPI(
+        title="SprawdzTo WhatsApp adapter", docs_url="/api/whatsapp/docs", lifespan=lifespan
+    )
+    app.add_middleware(ObservabilityMiddleware, skip_paths=("/api/whatsapp/health",))
+    app.include_router(trusted_sources_router)
+    app.include_router(create_router(bot))
     return app
+
+
+async def _warm_trusted_sources() -> None:
+    """Detect new whitelist entries and prefetch listing/feed pages in the background."""
+
+    import trustedSources
+
+    try:
+        logger.info("trusted sources warmed: %s", await trustedSources.warm())
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        logger.exception("trusted source warm-up failed")
 
 
 async def _stream_events(bot: SprawdzToBot, payload: dict[str, Any]) -> AsyncIterator[str]:

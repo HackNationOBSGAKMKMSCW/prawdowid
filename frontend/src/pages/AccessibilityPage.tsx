@@ -5,7 +5,7 @@ export default function AccessibilityPage() {
   return (
     <InfoPage
       title="Deklaracja dostępności"
-      lead="Chcemy, żeby z Prawdowida mógł korzystać każdy, także osoby z niepełnosprawnościami i osoby starsze."
+      lead="Chcemy, żeby każdy mógł korzystać ze Sprawdź.To, także osoby z niepełnosprawnościami i osoby starsze."
     >
       <AccessibilityContent level={2} />
     </InfoPage>

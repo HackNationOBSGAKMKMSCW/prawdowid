@@ -14,7 +14,10 @@ class CandidateLink:
     """A discovered link with its trust tier retained until quota selection."""
 
     url: str
-    source: Literal["fact_check", "user_text"]
+    source: Literal["fact_check", "trusted_source", "user_text"]
+    # What the link source already knows (search result title, institution name).
+    title: str | None = None
+    publisher: str | None = None
 
 
 @dataclass(frozen=True)
@@ -27,6 +30,9 @@ class RawArticle:
     date: str | None = None
     page_url: str | None = None
     resolved_page_url: str | None = None
+    site_name: str | None = None
+    description: str | None = None
+    language: str | None = None
 
 
 class LinkSource(Protocol):

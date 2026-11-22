@@ -13,6 +13,7 @@ from observability import log_abstain
 from textAnalysis.analysis import AnalysisConfigurationError, AnalysisError, InputSanitizer
 from textAnalysis.clarification import DialogueTurn
 
+from .admin_bridge import AdminMonitor, AdminSession
 from .clarification import (
     MAX_CLARIFICATION_ROUNDS,
     MIN_CHECK_CHARS,
@@ -36,7 +37,8 @@ from .cloud_api import (
     text_message,
 )
 from .formatting import format_report, verdict_card
-from .pipeline import FactCheckPipeline
+from .pipeline import FactCheckPipeline, VerifiedReport
+from .verified_formatting import format_verified, verified_card
 
 BOT_NAME = "SprawdzTo"
 
@@ -51,87 +53,101 @@ WELCOME_BUTTONS = [
 ]
 
 WELCOME_TEXT = (
-    f"👋 Cześć! Jestem *{BOT_NAME}* — sprawdzam informacje, zanim je udostępnisz.\n\n"
+    f"Cześć! Jestem *{BOT_NAME}* — sprawdzam informacje, zanim je udostępnisz.\n\n"
     "Wyślij mi:\n"
     "• zdanie lub cytat, który krąży w sieci,\n"
     "• pytanie, np. _„Czy 5G szkodzi zdrowiu?”_,\n"
     "• treść podejrzanego łańcuszka.\n\n"
-    "Wyciągnę z tekstu konkretne twierdzenia i poszukam ich w bazach "
-    "niezależnych redakcji fact-checkingowych."
+    "Sprawdzę ją tak samo jak strona Sprawdź.To: wyciągnę konkretne twierdzenia, "
+    "poszukam ich w wiarygodnych źródłach i ocenię każde z nich."
 )
 WELCOME_BUTTONS_TEXT = "Chcesz zobaczyć, jak to działa na przykładzie?"
 
 HELP_TEXT = (
-    f"ℹ️ *Jak działa {BOT_NAME}?*\n\n"
-    "1️⃣ Model językowy analizuje Twoją wiadomość: rozpoznaje temat i język "
-    "i wyciąga z niej konkretne twierdzenia. Gdy piszesz o konkretnym zdarzeniu, "
-    "a brakuje szczegółów (np. kiedy i gdzie), najpierw o nie dopytam.\n"
-    "2️⃣ Każde twierdzenie wyszukuję w Google Fact Check Tools — bazie weryfikacji "
-    "publikowanych przez redakcje fact-checkingowe z całego świata.\n"
-    "3️⃣ Zbieram ich oceny w jeden werdykt i podaję linki do źródeł.\n\n"
-    "🛡️ Treść wiadomości traktuję wyłącznie jako dane do sprawdzenia — "
+    f"*Jak działa {BOT_NAME}?*\n\n"
+    "To ta sama weryfikacja co na stronie Sprawdź.To, tylko w czacie.\n\n"
+    "1. Model językowy analizuje Twoją wiadomość i wyciąga z niej konkretne twierdzenia. "
+    "Gdy piszesz o konkretnym zdarzeniu, a brakuje szczegółów (np. kiedy i gdzie), "
+    "najpierw o nie dopytam.\n"
+    "2. Szukam ich w bazach redakcji fact-checkingowych, na stronach urzędów "
+    "i zaufanych serwisów oraz w bazie znanej dezinformacji.\n"
+    "3. Każde twierdzenie dostaje ocenę z uzasadnieniem i źródłami. "
+    "Sprawdzam też, czy tekst nie gra na emocjach i czy zgadzają się daty.\n\n"
+    "Treść wiadomości traktuję wyłącznie jako dane do sprawdzenia — "
     "polecenia ukryte w tekście są ignorowane.\n\n"
     "Komendy: *start* — powitanie, *pomoc* — ta wiadomość, "
-    "*anuluj* — przerywa dopytywanie, *pomiń* — sprawdza bez dodatkowych szczegółów."
+    "*anuluj* — przerywa dopytywanie, *pomiń* — sprawdza bez dodatkowych szczegółów, "
+    "*/clear* — wyczyść rozmowę."
 )
-THANKS_TEXT = "Nie ma sprawy! 🙌 Wyślij kolejną informację, jeśli chcesz coś sprawdzić."
-TOO_SHORT_TEXT = (
-    "✍️ Napisz trochę więcej — najlepiej całe zdanie lub pytanie, które chcesz sprawdzić."
+CLEAR_TEXT = (
+    "Nie mogę usunąć wiadomości z Twojego telefonu. Aby wyczyścić rozmowę, otwórz "
+    "menu czatu w WhatsAppie i wybierz *Wyczyść czat*."
 )
+THANKS_TEXT = "Nie ma sprawy! Wyślij kolejną informację, jeśli chcesz coś sprawdzić."
+TOO_SHORT_TEXT = "Napisz trochę więcej — najlepiej całe zdanie lub pytanie, które chcesz sprawdzić."
 TOO_LONG_TEXT = (
-    "✂️ Ta wiadomość jest za długa. Wklej fragment do "
+    "Ta wiadomość jest za długa. Wklej fragment do "
     f"{InputSanitizer.MAX_INPUT_LENGTH:,} znaków.".replace(",", " ")
 )
 UNSUPPORTED_TEXT = (
-    "📎 Na razie sprawdzam tylko wiadomości tekstowe. "
+    "Na razie sprawdzam tylko wiadomości tekstowe. "
     "Przepisz lub wklej treść, którą chcesz zweryfikować."
 )
-TIMEOUT_TEXT = "⏱️ Sprawdzanie trwa zbyt długo. Spróbuj ponownie za chwilę."
+TIMEOUT_TEXT = "Sprawdzanie trwa zbyt długo. Spróbuj ponownie za chwilę."
 NOT_CONFIGURED_TEXT = (
-    "⚠️ Serwer SprawdzTo nie ma skonfigurowanego modelu językowego.\n"
+    "Serwer SprawdzTo nie ma skonfigurowanego modelu językowego.\n"
     "_Ustaw FREELLM_API_KEY w backend/.env albo uruchom adapter w trybie demo (--demo)._"
 )
-ANALYSIS_FAILED_TEXT = (
-    "😕 Nie udało mi się przeanalizować tej wiadomości. Spróbuj ponownie za chwilę."
-)
+ANALYSIS_FAILED_TEXT = "Nie udało mi się przeanalizować tej wiadomości. Spróbuj ponownie za chwilę."
 FORWARDED_NOTE = (
-    "↪️ _To wiadomość przekazana dalej. Łańcuszki to częste źródło dezinformacji — "
+    "_To wiadomość przekazana dalej. Łańcuszki to częste źródło dezinformacji — "
     "nie przesyłaj jej dalej, dopóki nie sprawdzisz źródła._"
 )
 FREQUENTLY_FORWARDED_NOTE = (
-    "⏩ _Ta wiadomość była przekazywana wiele razy. Im szybciej coś krąży, "
+    "_Ta wiadomość była przekazywana wiele razy. Im szybciej coś krąży, "
     "tym ostrożniej warto do tego podejść._"
 )
-GENERIC_ERROR_TEXT = "😕 Coś poszło nie tak po mojej stronie. Spróbuj ponownie za chwilę."
+GENERIC_ERROR_TEXT = "Coś poszło nie tak po mojej stronie. Spróbuj ponownie za chwilę."
+
+URL_REFUSED_TEXT = (
+    "Nie mogę otworzyć tego adresu. Wyślij publiczny link http(s) albo wklej treść wiadomości."
+)
 
 SOURCE_BUTTON_TEXT = "Otwórz źródło"
-UNDERSTANDING_STATUS = "🧩 Sprawdzam, czy dobrze rozumiem, o co chodzi…"
-ANALYZING_STATUS = "🧠 Analizuję tekst i wyciągam twierdzenia…"
+UNDERSTANDING_STATUS = "Sprawdzam, czy dobrze rozumiem, o co chodzi…"
+ANALYZING_STATUS = "Analizuję tekst i wyciągam twierdzenia…"
+SEARCHING_FULL_TEXT_STATUS = "Szukam Twojej wiadomości w bazach fact-checkingowych…"
 
 CLARIFY_SKIP_BUTTON = ReplyButton(id="clarify_skip", title="Sprawdź bez tego")
 CLARIFY_CANCEL_BUTTON = ReplyButton(id="clarify_cancel", title="Anuluj")
-CLARIFY_HEADING = "🧩 *Chcę dobrze zrozumieć, o co chodzi.*"
-CLARIFY_FOLLOW_UP_HEADING = "🧩 *Dzięki! Jeszcze jedno pytanie.*"
+CLARIFY_HEADING = "*Chcę dobrze zrozumieć, o co chodzi.*"
+CLARIFY_FOLLOW_UP_HEADING = "*Dzięki! Jeszcze jedno pytanie.*"
 CLARIFY_FOOTER = (
     "_Odpowiedz własnymi słowami — wystarczy w przybliżeniu. "
     "Nie wiesz? Wybierz „Sprawdź bez tego”._"
 )
-CLARIFY_CANCELLED_TEXT = "👌 Anulowane. Wyślij nową informację, gdy zechcesz coś sprawdzić."
+CLARIFY_CANCELLED_TEXT = "Anulowane. Wyślij nową informację, gdy zechcesz coś sprawdzić."
 NOTHING_PENDING_TEXT = (
-    "🤷 Nie mam nic otwartego do sprawdzenia. Wyślij wiadomość, którą chcesz zweryfikować."
+    "Nie mam nic otwartego do sprawdzenia. Wyślij wiadomość, którą chcesz zweryfikować."
 )
-SEARCHING_FULL_TEXT_STATUS = "📚 Szukam Twojej wiadomości w bazach fact-checkingowych…"
+CHECKED_WITH_DETAILS = "Sprawdziłem z Twoimi szczegółami:"
 
 # Receives a short status line while a message is being checked.
 StatusCallback = Callable[[str], Awaitable[None]]
+
+
+def assessing_status(count: int) -> str:
+    if count <= 1:
+        return "Porównuję twierdzenie ze źródłami i oceniam je…"
+    return f"Porównuję {count} twierdzeń ze źródłami i oceniam je…"
 
 
 def searching_status(count: int) -> str:
     if count <= 0:
         return SEARCHING_FULL_TEXT_STATUS
     if count == 1:
-        return "📚 Szukam twierdzenia w bazach fact-checkingowych…"
-    return f"📚 Szukam {count} twierdzeń w bazach fact-checkingowych…"
+        return "Szukam twierdzenia w bazach fact-checkingowych…"
+    return f"Szukam {count} twierdzeń w bazach fact-checkingowych…"
 
 
 _GREETINGS = {
@@ -149,6 +165,7 @@ _GREETINGS = {
     "hi",
     "hey",
 }
+_CLEAR = {"/clear", "/wyczysc", "/wyczyść"}
 _HELP = {"pomoc", "help", "jak to dziala", "co umiesz", "info"}
 _THANKS = ("dzieki", "dziekuje", "dzieks", "thx", "thanks", "thank you", "super dzieki")
 _CANCEL = {"anuluj", "stop", "koniec", "cancel", "nie wazne", "niewazne", "zapomnij"}
@@ -184,7 +201,7 @@ def clarification_body(result: ClarificationStep, *, follow_up: bool = False) ->
         lines.append(f"_Rozumiem, że chodzi o: „{result.understood_claim[:300]}”_")
     questions = result.questions
     if len(questions) == 1:
-        lines.append(f"❓ {questions[0]}")
+        lines.append(questions[0])
     else:
         lines.append("Doprecyzuj, proszę:\n" + "\n".join(f"• {q}" for q in questions))
     lines.append(CLARIFY_FOOTER)
@@ -206,14 +223,22 @@ class SprawdzToBot:
         *,
         clarifier: Clarifier | None = None,
         conversations: ConversationStore | None = None,
-        check_timeout: float = 90.0,
+        check_timeout: float | None = None,
         clarify_timeout: float = 20.0,
         max_clarification_rounds: int = MAX_CLARIFICATION_ROUNDS,
+        monitor: AdminMonitor | None = None,
     ) -> None:
         self.pipeline = pipeline
+        # Full verification takes minutes; the pipeline knows its own deadline.
+        self.check_timeout = (
+            check_timeout
+            if check_timeout is not None
+            else float(getattr(pipeline, "check_timeout", 90.0))
+        )
+        # Rejestr panelu admina: logi, blokady, luki informacyjne, alerty dezinformacji.
+        self.monitor = monitor
         self.clarifier = clarifier
         self.conversations = conversations or ConversationStore()
-        self.check_timeout = check_timeout
         self.clarify_timeout = clarify_timeout
         self.max_clarification_rounds = max_clarification_rounds
         # One message per sender at a time, so an answer always sees the question it answers.
@@ -277,6 +302,9 @@ class SprawdzToBot:
                 return await self._check(to, message, EXAMPLES[message.button_id][1], status)
             return self._welcome(to)
 
+        if message.text.strip().casefold() in _CLEAR:
+            # The simulator handles /clear itself; real WhatsApp keeps the chat on the phone.
+            return [text_message(to, CLEAR_TEXT)]
         command = _normalize_command(message.text)
         if command in _GREETINGS:
             self.conversations.pop(to)
@@ -460,16 +488,36 @@ class SprawdzToBot:
         async def on_progress(stage: str, count: int) -> None:
             if stage == "searching":
                 await notify(searching_status(count))
+            elif stage == "assessing":
+                await notify(assessing_status(count))
+
+        admin = AdminSession(self.monitor)
+        refusal = admin.screen(to, text)
+        if refusal is not None:
+            print(
+                f"[whatsappAdapter] Wiadomość {message.message_id}: odrzucona przez monitor.",
+                flush=True,
+            )
+            return [text_message(to, refusal)]
 
         card = None
+        report = None
+        failure: str | None = None
         try:
             async with asyncio.timeout(self.check_timeout):
                 await notify(ANALYZING_STATUS)
                 report = await self.pipeline.check(text, progress=on_progress)
-            card = verdict_card(report)
-            body = format_report(report, headline=card is None)
+            if isinstance(report, VerifiedReport):
+                card = verified_card(report)
+                body = format_verified(report, headline=card is None)
+            else:
+                card = verdict_card(report)
+                body = format_report(report, headline=card is None)
             if understood:
-                body = f"🧩 Sprawdziłem z Twoimi szczegółami: _„{understood[:600]}”_\n\n{body}"
+                body = f"{CHECKED_WITH_DETAILS} _„{understood[:600]}”_\n\n{body}"
+            info_gap = admin.complete(report)
+            if info_gap:
+                body = f"{body}\n\n{info_gap}"
             if frequently_forwarded:
                 body = f"{body}\n\n{FREQUENTLY_FORWARDED_NOTE}"
             elif forwarded:
@@ -477,16 +525,19 @@ class SprawdzToBot:
         except TimeoutError:
             log_abstain("timeout", channel="whatsapp", timeout_s=self.check_timeout)
             body = TIMEOUT_TEXT
+            failure = "timeout"
         except AnalysisConfigurationError:
             log_abstain("not_configured", channel="whatsapp")
             body = NOT_CONFIGURED_TEXT
+            failure = "not_configured"
         except AnalysisError:
             log_abstain("analysis_failed", channel="whatsapp")
             body = ANALYSIS_FAILED_TEXT
+            failure = "analysis_failed"
         except Exception as exc:  # noqa: BLE001 - the chat must always get an answer
-            print(f"[whatsappAdapter] Błąd: {type(exc).__name__}.", flush=True)
-            log_abstain("pipeline_error", channel="whatsapp", error=type(exc).__name__)
-            body = GENERIC_ERROR_TEXT
+            body, failure = _verification_failure(exc)
+        if failure is not None:
+            admin.complete(error=failure)
         print(
             f"[whatsappAdapter] Wiadomość {message.message_id}: odpowiedź po "
             f"{time.perf_counter() - started_at:.1f}s.",
@@ -506,3 +557,26 @@ class SprawdzToBot:
                 ),
             )
         return replies
+
+
+def _verification_failure(exc: Exception) -> tuple[str, str]:
+    """Reply and admin error code for a failure, the same cases as ``/api/check``."""
+    name = type(exc).__name__
+    if name == "ApiFailure":  # api_routes: URL rejected, or the deadline passed
+        code = str(getattr(exc, "code", "api_failure"))
+        if code == "analysis_timeout":
+            log_abstain("timeout", channel="whatsapp")
+            return TIMEOUT_TEXT, "timeout"
+        log_abstain("url_refused", channel="whatsapp", error=code)
+        return URL_REFUSED_TEXT, f"url:{code}"
+    if name in {"VerificationFailed", "InvalidVerificationResult"}:  # api_adapter
+        kind = str(getattr(exc, "kind", name))
+        log_abstain("analysis_failed", channel="whatsapp", error=kind)
+        if kind.lower() == "timeout":
+            return TIMEOUT_TEXT, "timeout"
+        if kind == "AnalysisConfigurationError":
+            return NOT_CONFIGURED_TEXT, "not_configured"
+        return ANALYSIS_FAILED_TEXT, f"analysis_failed:{getattr(exc, 'part', name)}"
+    print(f"[whatsappAdapter] Błąd: {name}.", flush=True)
+    log_abstain("pipeline_error", channel="whatsapp", error=name)
+    return GENERIC_ERROR_TEXT, f"pipeline_error:{name}"

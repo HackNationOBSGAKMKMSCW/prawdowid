@@ -1,3 +1,4 @@
+import json
 from datetime import UTC, datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -222,3 +223,40 @@ async def test_analyzer_still_rejects_missing_statements() -> None:
     with pytest.raises(AnalysisError):
         await analyzer.analyze("Tekst.")
     await analyzer.aclose()
+
+
+def _analyzer_returning(payload: str) -> ProxyContextAnalyzer:
+    create = AsyncMock(
+        return_value=SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content=payload))]
+        )
+    )
+    client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+    return ProxyContextAnalyzer(client=client)  # type: ignore[arg-type]
+
+
+@pytest.mark.asyncio
+async def test_search_queries_are_cleaned_deduplicated_and_limited() -> None:
+    queries = ["  flat   earth ", "Flat earth", "", 7, *[f"query {index}" for index in range(10)]]
+    payload = (
+        '{"category":"Ogólne / Inne","confidence":0.8,"statements":["Earth is flat."],'
+        f'"search_queries":{json.dumps(queries)}}}'
+    )
+    result = await _analyzer_returning(payload).analyze("Earth is flat.")
+
+    assert result.search_queries == ["flat earth", *[f"query {index}" for index in range(7)]]
+
+
+@pytest.mark.asyncio
+async def test_search_queries_default_to_empty_and_are_dropped_on_canary_leak() -> None:
+    plain = await _analyzer_returning(
+        '{"category":"Ogólne / Inne","confidence":0.8,"statements":["A claim."]}'
+    ).analyze("A claim.")
+    assert plain.search_queries == []
+
+    canary = ProxyContextAnalyzer._SYSTEM_CANARY
+    leaked = await _analyzer_returning(
+        '{"category":"Ogólne / Inne","confidence":0.8,"statements":["A claim."],'
+        f'"search_queries":["{canary}"]}}'
+    ).analyze("A claim.")
+    assert leaked.search_queries == []

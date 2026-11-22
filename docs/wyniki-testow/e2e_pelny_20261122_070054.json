@@ -1,0 +1,400 @@
+{
+  "meta": {
+    "note": "Przebieg przerwany po U01 na prośbę zespołu; odtworzony z konsoli skryptu i logu backendu (request_summary po kolejności, czasy zgodne co do 0,1 s). Brak treści odpowiedzi, więc bez pokrycia cytowań na żywo.",
+    "model": "gemma4:26b-a4b",
+    "backend": "commit b65e31d"
+  },
+  "metrics": {
+    "requests": 21,
+    "text_median_s": 53.175,
+    "text_p90_s": 78.31,
+    "url": [
+      "techniczny 270.35"
+    ],
+    "ok": 15,
+    "graded": 20,
+    "tokens_median": 28013.5,
+    "tokens_per_1000": 28113650,
+    "llm_calls_median": 4.0,
+    "wall_100_min": 96.7
+  },
+  "rows": [
+    {
+      "id": "T01",
+      "scenario": "A",
+      "kind": "text",
+      "outcome": "wynik",
+      "status": 200,
+      "seconds": 46.0,
+      "verdicts": [
+        "confirmed"
+      ],
+      "ok": true,
+      "error": null,
+      "request_id": "b1350cc6b8e745e2",
+      "llm_calls": 4,
+      "tokens": 26958,
+      "injection_events": 0,
+      "abstained_logged": false
+    },
+    {
+      "id": "T02",
+      "scenario": "A",
+      "kind": "text",
+      "outcome": "wynik",
+      "status": 200,
+      "seconds": 46.96,
+      "verdicts": [
+        "insufficient"
+      ],
+      "ok": false,
+      "error": null,
+      "request_id": "572d8dea96984ea4",
+      "llm_calls": 4,
+      "tokens": 27205,
+      "injection_events": 0,
+      "abstained_logged": false
+    },
+    {
+      "id": "T03",
+      "scenario": "A",
+      "kind": "text",
+      "outcome": "wynik",
+      "status": 200,
+      "seconds": 54.35,
+      "verdicts": [
+        "confirmed"
+      ],
+      "ok": true,
+      "error": null,
+      "request_id": "7608996458f34f85",
+      "llm_calls": 4,
+      "tokens": 28502,
+      "injection_events": 0,
+      "abstained_logged": false
+    },
+    {
+      "id": "T04",
+      "scenario": "A",
+      "kind": "text",
+      "outcome": "wynik",
+      "status": 200,
+      "seconds": 72.62,
+      "verdicts": [
+        "false"
+      ],
+      "ok": true,
+      "error": null,
+      "request_id": "189b0e53d15c4e38",
+      "llm_calls": 4,
+      "tokens": 28896,
+      "injection_events": 0,
+      "abstained_logged": false
+    },
+    {
+      "id": "T05",
+      "scenario": "A",
+      "kind": "text",
+      "outcome": "wynik",
+      "status": 200,
+      "seconds": 64.67,
+      "verdicts": [
+        "insufficient"
+      ],
+      "ok": false,
+      "error": null,
+      "request_id": "a84408d828324ec5",
+      "llm_calls": 4,
+      "tokens": 27861,
+      "injection_events": 0,
+      "abstained_logged": false
+    },
+    {
+      "id": "T06",
+      "scenario": "A",
+      "kind": "text",
+      "outcome": "wynik",
+      "status": 200,
+      "seconds": 85.76,
+      "verdicts": [
+        "false"
+      ],
+      "ok": true,
+      "error": null,
+      "request_id": "df918ae1ea7a4fa4",
+      "llm_calls": 4,
+      "tokens": 30068,
+      "injection_events": 0,
+      "abstained_logged": false
+    },
+    {
+      "id": "T07",
+      "scenario": "A",
+      "kind": "text",
+      "outcome": "wynik",
+      "status": 200,
+      "seconds": 46.7,
+      "verdicts": [
+        "insufficient"
+      ],
+      "ok": false,
+      "error": null,
+      "request_id": "50a0cacfe43c465c",
+      "llm_calls": 4,
+      "tokens": 27673,
+      "injection_events": 0,
+      "abstained_logged": false
+    },
+    {
+      "id": "T08",
+      "scenario": "A",
+      "kind": "text",
+      "outcome": "wynik",
+      "status": 200,
+      "seconds": 41.81,
+      "verdicts": [
+        "insufficient"
+      ],
+      "ok": false,
+      "error": null,
+      "request_id": "23016ef259d84fe8",
+      "llm_calls": 4,
+      "tokens": 27900,
+      "injection_events": 0,
+      "abstained_logged": false
+    },
+    {
+      "id": "T09",
+      "scenario": "B",
+      "kind": "text",
+      "outcome": "wynik",
+      "status": 200,
+      "seconds": 62.87,
+      "verdicts": [
+        "false"
+      ],
+      "ok": true,
+      "error": null,
+      "request_id": "509e14d4791d4a93",
+      "llm_calls": 4,
+      "tokens": 27070,
+      "injection_events": 0,
+      "abstained_logged": false
+    },
+    {
+      "id": "T10",
+      "scenario": "B",
+      "kind": "text",
+      "outcome": "wynik",
+      "status": 200,
+      "seconds": 50.3,
+      "verdicts": [
+        "false"
+      ],
+      "ok": true,
+      "error": null,
+      "request_id": "f9a454c8b6ce457b",
+      "llm_calls": 4,
+      "tokens": 29916,
+      "injection_events": 0,
+      "abstained_logged": false
+    },
+    {
+      "id": "T11",
+      "scenario": "C",
+      "kind": "text",
+      "outcome": "wynik",
+      "status": 200,
+      "seconds": 78.31,
+      "verdicts": [
+        "insufficient"
+      ],
+      "ok": true,
+      "error": null,
+      "request_id": "4d5ccdb401954f90",
+      "llm_calls": 5,
+      "tokens": 38678,
+      "injection_events": 0,
+      "abstained_logged": false
+    },
+    {
+      "id": "T12",
+      "scenario": "D",
+      "kind": "text",
+      "outcome": "wynik",
+      "status": 200,
+      "seconds": 63.96,
+      "verdicts": [
+        "false"
+      ],
+      "ok": false,
+      "error": null,
+      "request_id": "7a1672423afd429f",
+      "llm_calls": 4,
+      "tokens": 27032,
+      "injection_events": 0,
+      "abstained_logged": false
+    },
+    {
+      "id": "T13",
+      "scenario": "D",
+      "kind": "text",
+      "outcome": "wynik",
+      "status": 200,
+      "seconds": 42.89,
+      "verdicts": [
+        "insufficient"
+      ],
+      "ok": true,
+      "error": null,
+      "request_id": "374d2faac0fe46bb",
+      "llm_calls": 4,
+      "tokens": 17777,
+      "injection_events": 0,
+      "abstained_logged": false
+    },
+    {
+      "id": "T14",
+      "scenario": "D",
+      "kind": "text",
+      "outcome": "wynik",
+      "status": 200,
+      "seconds": 59.99,
+      "verdicts": [
+        "insufficient"
+      ],
+      "ok": true,
+      "error": null,
+      "request_id": "e83f9b344ad94879",
+      "llm_calls": 4,
+      "tokens": 28778,
+      "injection_events": 0,
+      "abstained_logged": false
+    },
+    {
+      "id": "T15",
+      "scenario": "D",
+      "kind": "text",
+      "outcome": "wynik",
+      "status": 200,
+      "seconds": 25.49,
+      "verdicts": [
+        "insufficient"
+      ],
+      "ok": true,
+      "error": null,
+      "request_id": "4f195fc8b0a24d8f",
+      "llm_calls": 4,
+      "tokens": 16140,
+      "injection_events": 0,
+      "abstained_logged": false
+    },
+    {
+      "id": "T16",
+      "scenario": "E",
+      "kind": "text",
+      "outcome": "wynik",
+      "status": 200,
+      "seconds": 47.82,
+      "verdicts": [
+        "false"
+      ],
+      "ok": true,
+      "error": null,
+      "request_id": "02638e48cdfd468e",
+      "llm_calls": 4,
+      "tokens": 28832,
+      "injection_events": 1,
+      "abstained_logged": false
+    },
+    {
+      "id": "T17",
+      "scenario": "E",
+      "kind": "text",
+      "outcome": "wynik",
+      "status": 200,
+      "seconds": 52.0,
+      "verdicts": [
+        "false"
+      ],
+      "ok": true,
+      "error": null,
+      "request_id": "3bb2725cf984452a",
+      "llm_calls": 4,
+      "tokens": 29462,
+      "injection_events": 0,
+      "abstained_logged": false
+    },
+    {
+      "id": "T18",
+      "scenario": "E",
+      "kind": "text",
+      "outcome": "wynik",
+      "status": 200,
+      "seconds": 45.02,
+      "verdicts": [
+        "confirmed"
+      ],
+      "ok": true,
+      "error": null,
+      "request_id": "83995305c25b4f44",
+      "llm_calls": 4,
+      "tokens": 26767,
+      "injection_events": 2,
+      "abstained_logged": false
+    },
+    {
+      "id": "T19",
+      "scenario": "I",
+      "kind": "text",
+      "outcome": "wynik",
+      "status": 200,
+      "seconds": 105.05,
+      "verdicts": [
+        "false",
+        "false"
+      ],
+      "ok": true,
+      "error": null,
+      "request_id": "b3c5ee6cca354a16",
+      "llm_calls": 5,
+      "tokens": 38631,
+      "injection_events": 0,
+      "abstained_logged": false
+    },
+    {
+      "id": "T20",
+      "scenario": "I",
+      "kind": "text",
+      "outcome": "wynik",
+      "status": 200,
+      "seconds": 67.9,
+      "verdicts": [
+        "false"
+      ],
+      "ok": true,
+      "error": null,
+      "request_id": "9601f76b6b314f6f",
+      "llm_calls": 4,
+      "tokens": 28127,
+      "injection_events": 0,
+      "abstained_logged": false
+    },
+    {
+      "id": "U01",
+      "scenario": "A",
+      "kind": "url",
+      "outcome": "techniczny",
+      "status": 504,
+      "seconds": 270.35,
+      "verdicts": [],
+      "ok": null,
+      "error": "analysis_timeout",
+      "request_id": "b89697db5fdf4f89",
+      "llm_calls": 14,
+      "tokens": 96904,
+      "injection_events": 0,
+      "abstained_logged": false
+    }
+  ]
+}

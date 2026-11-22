@@ -18,6 +18,7 @@ class Category(StrEnum):
     LEGISLATIVE_PROCESS = "legislative_process"
     OPEN_DATA = "open_data"
     NEWS = "news"
+    OFFICIAL = "official"  # Whitelisted official sites; used by trustedSources, not the reader.
 
 
 class ReadingRequest(BaseModel):

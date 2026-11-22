@@ -1,0 +1,138 @@
+{
+  "meta": {
+    "started_at": "2026-11-22T07:32:20",
+    "base": "http://127.0.0.1:8024",
+    "label": "J",
+    "commit": "b65e31d+zmiany",
+    "expect_technical": true,
+    "health": 200
+  },
+  "metrics": {
+    "requests": 2,
+    "outcomes": {
+      "techniczny": 2
+    },
+    "e2e_success": {
+      "hits": 0,
+      "total": 2
+    },
+    "latency_median_s": {
+      "text": 8.89,
+      "url": null,
+      "all": 8.89
+    },
+    "latency_max_s": 9.83,
+    "expected_match": {
+      "hits": 0,
+      "total": 0
+    },
+    "citation_coverage_live": {
+      "hits": 0,
+      "total": 0
+    },
+    "sources_without_url": {
+      "hits": 0,
+      "total": 0
+    },
+    "verdicts": {},
+    "claims_per_request_median": null,
+    "injection": {
+      "forbidden_verdicts": 0,
+      "logged": 0,
+      "total": 0
+    },
+    "tokens_per_request_median": 0.0,
+    "tokens_per_1000_requests": 0,
+    "llm_calls_per_request_median": 1.0,
+    "search_errors": 0,
+    "abstained_logged": 0,
+    "wall_time_per_100_requests_min": 14.8,
+    "technical_violations": []
+  },
+  "rows": [
+    {
+      "id": "T01",
+      "scenario": "A",
+      "kind": "text",
+      "input": "Polska przystąpiła do Unii Europejskiej 1 maja 2004 roku.",
+      "seconds": 7.95,
+      "status": 502,
+      "request_id": "57a6513b81664389",
+      "outcome": "techniczny",
+      "verdicts": [],
+      "claims": 0,
+      "ok": false,
+      "forbidden_hit": false,
+      "decisive_claims": 0,
+      "decisive_with_source": 0,
+      "sources": 0,
+      "sources_without_url": 0,
+      "error_code": "analysis_failed",
+      "response": {
+        "error": {
+          "code": "analysis_failed",
+          "message": "The analysis could not be completed."
+        },
+        "request_id": "57a6513b81664389"
+      },
+      "log": {
+        "injection_events": 0,
+        "duration_ms": 7946.8,
+        "llm_calls": 1,
+        "llm_errors": 1,
+        "models": {
+          "gemma4:26b-a4b": 1
+        },
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "cost_usd": 0.0,
+        "search_calls": 0,
+        "search_errors": 0,
+        "injection_attempts": 0,
+        "abstained": false
+      }
+    },
+    {
+      "id": "T04",
+      "scenario": "A",
+      "kind": "text",
+      "input": "Polska przyjęła euro jako swoją walutę.",
+      "seconds": 9.83,
+      "status": 502,
+      "request_id": "19c3dcb409a24ac7",
+      "outcome": "techniczny",
+      "verdicts": [],
+      "claims": 0,
+      "ok": false,
+      "forbidden_hit": false,
+      "decisive_claims": 0,
+      "decisive_with_source": 0,
+      "sources": 0,
+      "sources_without_url": 0,
+      "error_code": "analysis_failed",
+      "response": {
+        "error": {
+          "code": "analysis_failed",
+          "message": "The analysis could not be completed."
+        },
+        "request_id": "19c3dcb409a24ac7"
+      },
+      "log": {
+        "injection_events": 0,
+        "duration_ms": 9830.8,
+        "llm_calls": 1,
+        "llm_errors": 1,
+        "models": {
+          "gemma4:26b-a4b": 1
+        },
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "cost_usd": 0.0,
+        "search_calls": 0,
+        "search_errors": 0,
+        "injection_attempts": 0,
+        "abstained": false
+      }
+    }
+  ]
+}
