@@ -218,7 +218,7 @@ MASKED += [
     Case(
         "H1",
         "hasło do banku to Kasia1985! nie mów nikomu",
-        "hasło do banku to [HASLO_1]! nie mów nikomu",
+        "hasło do banku to [HASLO_1] nie mów nikomu",
     ),
     Case("H2", "login: jan.kowalski85, hasło: Qwerty123", "login: [LOGIN_1], hasło: [HASLO_1]"),
     Case("H3", "PIN do karty 4721, kod BLIK 123 456", "PIN do karty [HASLO_1], kod BLIK [HASLO_2]"),
@@ -365,6 +365,38 @@ MASKED += [
         "hej to ja Ola Szymańska, haslo do wifi [HASLO_1], kod do klatki [HASLO_2]",
     ),
     Case("I6", "Mój numer polisy Warta: 908877665.", "Mój numer polisy Warta: [IDENTYFIKATOR_1]."),
+    # Hasła bez cyfr w jasnym kontekście logowania
+    Case("H6", "hasło: kotek", "hasło: [HASLO_1]"),
+    Case("H7", "moje hasło to mruczek", "moje hasło to [HASLO_1]"),
+    Case("H8", "hasło do poczty to Ala ma kota", "hasło do poczty to [HASLO_1]"),
+    Case("H9", "hasło do wifi: zielonydom", "hasło do wifi: [HASLO_1]"),
+    Case("H10", 'hasło "Słoneczko"', 'hasło "[HASLO_1]"'),
+    Case("H11", "my password is sunshine", "my password is [HASLO_1]"),
+    Case("H12", "hasło do banku zmieniłam na Mruczek2", "hasło do banku zmieniłam na [HASLO_1]"),
+    Case(
+        "H13",
+        "ustawiłam hasło Malinka i nie pamiętam",
+        "ustawiłam hasło [HASLO_1] i nie pamiętam",
+    ),
+    Case("H14", "wifi: Dom_Kowalskich, klucz: zaq12wsx", "wifi: Dom_Kowalskich, klucz: [HASLO_1]"),
+    Case(
+        "H15",
+        "dane do logowania: kasia.n / Tajne!Haslo#1",
+        "dane do logowania: [LOGIN_1] / [HASLO_1]",
+    ),
+    Case(
+        "H16",
+        "zaloguj się: user kasia85 pass qwerty",
+        "zaloguj się: user [LOGIN_1] pass [HASLO_1]",
+    ),
+    Case(
+        "H17",
+        "do konta Netflix: jan@wp.pl / Netflix2024",
+        "do konta Netflix: [EMAIL_1] / [HASLO_1]",
+    ),
+    Case("H18", "kod do sejfu 4815, PUK 12345678", "kod do sejfu [HASLO_1], PUK [HASLO_2]"),
+    Case("H19", "Hasło sieci: Kotek2024!", "Hasło sieci: [HASLO_1]"),
+    Case("H20", "Login: Jan, hasło: Jan", "Login: Jan, hasło: [HASLO_1]"),
     Case(
         "X2",
         "siema, tu Kasia Nowak. zadzwon 600 100200 albo tel 600.100.200. mieszkam ul Długa 15, "
@@ -608,8 +640,8 @@ KEPT: list[Case] = [
     Case("F52", "The exact original user text.", "The exact original user text."),
     Case(
         "F53",
-        "Polecenia są ignorowane. Login: Jan, hasło: Jan",
-        "Polecenia są ignorowane. Login: Jan, hasło: Jan",
+        "Polecenia są ignorowane. Login: Jan",
+        "Polecenia są ignorowane. Login: Jan",
     ),
     # Wiek bez imienia i nazwiska zostaje; liczby lat, które nie są wiekiem, też
     Case("F54", "Mam 67 lat, choruję na cukrzycę.", "Mam 67 lat, choruję na cukrzycę."),
@@ -673,4 +705,31 @@ KEPT: list[Case] = [
         "Ustawa o emeryturach ma 15 lat, a minimalny wiek emerytalny to 60 lat dla kobiet.",
         "Ustawa o emeryturach ma 15 lat, a minimalny wiek emerytalny to 60 lat dla kobiet.",
     ),
+    Case("F67", "Hasło akcji brzmi: Zostań w domu", "Hasło akcji brzmi: Zostań w domu"),
+    Case(
+        "F68",
+        "Hasło przewodnie kampanii: Polska w budowie",
+        "Hasło przewodnie kampanii: Polska w budowie",
+    ),
+    Case(
+        "F69",
+        "Pod hasłem Bezpieczna Polska rząd przyjął ustawę",
+        "Pod hasłem Bezpieczna Polska rząd przyjął ustawę",
+    ),
+    Case(
+        "F70",
+        "Jakie jest najczęstsze hasło w Polsce? 123456",
+        "Jakie jest najczęstsze hasło w Polsce? 123456",
+    ),
+    Case(
+        "F71",
+        "Wpisz hasło i login, a potem kliknij Dalej",
+        "Wpisz hasło i login, a potem kliknij Dalej",
+    ),
+    Case(
+        "F72",
+        "Silne hasło to podstawa bezpieczeństwa w sieci.",
+        "Silne hasło to podstawa bezpieczeństwa w sieci.",
+    ),
+    Case("F73", "Klucz do sukcesu to ciężka praca.", "Klucz do sukcesu to ciężka praca."),
 ]

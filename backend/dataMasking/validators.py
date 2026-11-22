@@ -76,3 +76,51 @@ def looks_like_handle(value: str) -> bool:
 def looks_like_password(value: str) -> bool:
     """Hasło ma cyfrę albo znak specjalny – „hasło wyborcze” nie."""
     return any(ch.isdigit() or ch in "!@#$%^&*?_+=" for ch in value)
+
+
+_STOPWORDS = {
+    "i",
+    "a",
+    "do",
+    "na",
+    "w",
+    "z",
+    "ze",
+    "jest",
+    "to",
+    "nie",
+    "się",
+    "sie",
+    "oraz",
+    "że",
+    "the",
+    "is",
+    "brzmi",
+    "jakie",
+    "jaki",
+    "lub",
+    "albo",
+    "ale",
+    "bo",
+    "też",
+    "tez",
+    "mi",
+    "ci",
+    "go",
+    "jej",
+    "jego",
+    "mu",
+    "tak",
+    "już",
+    "juz",
+    "było",
+    "bylo",
+    "być",
+    "byc",
+}
+
+
+def not_stopword(value: str) -> bool:
+    """Hasło to nie spójnik ani zaimek („Wpisz hasło i login” – „i” nie jest hasłem)."""
+    first = value.split()[0].strip("\"'„”“").casefold() if value.split() else ""
+    return len(value.strip()) >= 3 and first not in _STOPWORDS

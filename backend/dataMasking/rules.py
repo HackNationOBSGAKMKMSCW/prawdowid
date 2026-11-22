@@ -90,6 +90,34 @@ _AGE = (
     r"kadencji|kredytu|umowy|więzienia|wiezienia|odsiadki|wyroku|ważności|waznosci))"
     r"|\d{1,3}(?=\s*(?:[,.;!?)]|$))"
 )
+# Hasła
+_PW_KEYWORD = r"(?i:hasło|haslo|hasła|hasla|hasłem|haslem|password|passwd|pwd|pass)(?!\w)"
+_PW_POSSESSIVE = (
+    r"(?i:moje|moja|twoje|jego|jej|nasze|wasze|swoje|nowe|stare|aktualne|my|your|our)\s+"
+)
+_PW_QUALIFIER_WORDS = (
+    r"sieci|wifi|wi-fi|routera|konta|poczty|maila|banku|komputera|telefonu|laptopa|admina|"
+    r"administratora|użytkownika|uzytkownika|logowania"
+)
+# „do poczty”, „do konta Netflix”, „sieci”, „do wifi”
+_PW_QUALIFIER_REQ = (
+    rf"(?:\s+(?i:do|od|dla|na)\s+[\w\-]+(?:\s+[{_UPPER}][\w\-]*)?|\s+(?i:{_PW_QUALIFIER_WORDS}))"
+)
+_PW_QUALIFIER = rf"{_PW_QUALIFIER_REQ}?"
+# Po czym następuje wartość: dwukropek, „to”, „jest”, „zmieniłam na”, cudzysłów.
+_PW_INTRO_STRONG = (
+    r"(?:\s*[:=]\s*|\s*(?=[\"„“])|\s+(?i:zmienił\w*|zmienil\w*|ustawił\w*|ustawil\w*)\s+(?i:na)\s+)"
+)
+_PW_INTRO_ANY = rf"(?:{_PW_INTRO_STRONG}|\s+(?i:to|jest|is|brzmi)\s*:?\s*)"
+_PW_END = (
+    r"\s*(?:[,;)\n]|[.!?](?:\s|$)|$)|\s+(?i:i|a|ale|oraz|bo|lecz|albo|lub|nie|żeby|zeby|"
+    r"więc|wiec|ani|nikomu|zapisz\w*|pamiętaj\w*|pamietaj\w*)(?!\w)"
+)
+# Wartość: w cudzysłowie albo do czterech słów do końca zdania lub spójnika.
+_PW_VALUE = (
+    r"(?:[\"„“'](?P<w>[^\"”'\n]{1,60})[\"”']"
+    rf"|(?P<v>[^\s,;\"„“]+(?:\s+[^\s,;.!?]+){{0,3}}?)[.!?]?(?={_PW_END}))"
+)
 # „w maju 1985”
 _MONTHS_IN = (
     "styczniu|lutym|marcu|kwietniu|maju|czerwcu|lipcu|sierpniu|wrześniu|wrzesniu|"
@@ -178,6 +206,11 @@ _CAR_WORDS = _kw(
     r"mazd\w*|hond\w*|nissan\w*|volvo|citroen\w*|citroën\w*|dacia|dacii|tesl\w*|suzuki|"
     r"mitsubishi|lexus\w*|porsche|jeep\w*|mini|cupr\w*|alf\w*\s+romeo|land\s+rover\w*|"
     r"kombi|sedan\w*|hatchback\w*|suv\w*"
+)
+_LOGIN_CONTEXT = _kw(
+    r"logowani\w*|login\w*|zaloguj\w*|dane\s+do\s+kont\w*|kont[oa]\s+\w+|konta|dostęp\w*|"
+    r"dostep\w*|hasł\w*|hasl\w*|password|netflix|spotify|allegro|facebook\w*|gmail\w*|"
+    r"bankowoś\w*|bankowos\w*"
 )
 _MOBILE = rf"[4-8]\d{{2}}(?:{_S}\d){{6}}"
 _LANDLINE = rf"\(?[1-9]\d\)?{_S}\d{{3}}{_S}\d{{2}}{_S}\d{{2}}"
@@ -508,6 +541,83 @@ RULES: tuple[Rule, ...] = (
         _c(r"(?<!\w)[A-Z]{1,2}\d[A-Z\d]?\s\d[A-Z]{2}(?!\w)"),
         priority=11,
     ),
+    # Hasło w jasnym kontekście logowania – maskowane zawsze, także bez cyfr:
+    # „hasło: kotek”, „moje hasło to mruczek”, „hasło do poczty to Ala ma kota”,
+    # „hasło do wifi: zielonydom”, „hasło "Słoneczko"”, „hasło do banku zmieniłam na X”.
+    # Slogany zostają, bo między „hasło” a wartością stoi inne słowo
+    # („Hasło wyborcze PiS to…”, „Hasło akcji brzmi: …”).
+    Rule(
+        "HASLO",
+        _c(
+            rf"(?<!\w)(?:{_PW_POSSESSIVE}{_PW_KEYWORD}{_PW_QUALIFIER}{_PW_INTRO_ANY}"
+            rf"|{_PW_KEYWORD}{_PW_QUALIFIER_REQ}{_PW_INTRO_ANY}"
+            rf"|{_PW_KEYWORD}{_PW_INTRO_STRONG})"
+            rf"{_PW_VALUE}"
+        ),
+        priority=1,
+        validate=v.not_stopword,
+        inside_urls=True,
+    ),
+    # „hasło to mruczek”, „ustawiłam hasło Malinka” – jedno słowo, a po nim koniec zdania
+    # albo spójnik; „hasło to podstawa bezpieczeństwa” (kilka słów) zostaje.
+    Rule(
+        "HASLO",
+        _c(
+            rf"(?<!\w)(?:{_PW_KEYWORD}\s+(?i:to|jest|is)\s+"
+            r"|(?i:ustawił\w*|ustawil\w*|zmienił\w*|zmienil\w*|nadał\w*|nadal\w*|wymyślił\w*|"
+            rf"wymyslil\w*)\s+(?:(?i:sobie|nowe|stare)\s+)?{_PW_KEYWORD}{_PW_QUALIFIER}\s+(?:(?i:na)\s+)?)"
+            rf"(?P<v>[^\s,;\"'„”“]{{3,40}}?)[.!?]?(?={_PW_END})"
+        ),
+        priority=1,
+        validate=v.not_stopword,
+    ),
+    # Para login/hasło: „dane do logowania: kasia.n / Tajne!Haslo#1”, „Netflix: jan@wp.pl / X”.
+    Rule(
+        "HASLO",
+        _c(r"(?<=\S)\s*/\s*(?P<v>[^\s/]{4,40}?)(?=[\s,;]|[.!?](?:\s|$)|$)"),
+        priority=2,
+        keyword=_LOGIN_CONTEXT,
+        keyword_mode=Keyword.REQUIRED,
+        validate=v.not_stopword,
+    ),
+    Rule(
+        "LOGIN",
+        _c(r"(?<![\w.@])(?P<v>[\w.\-]{3,40})\s*/\s*[^\s/]{4,40}"),
+        priority=2,
+        keyword=_LOGIN_CONTEXT,
+        keyword_mode=Keyword.REQUIRED,
+        validate=v.not_stopword,
+    ),
+    # „zaloguj się: user kasia85 pass qwerty”
+    Rule(
+        "LOGIN",
+        _c(r"(?<!\w)(?i:user|login|usr)\s+(?P<v>[\w.\-@]{3,40})(?!\w)"),
+        priority=1,
+        keyword=_kw(r"zaloguj\w*|logowani\w*|pass|password|hasło|haslo|hasła|hasla"),
+        keyword_mode=Keyword.REQUIRED,
+        keyword_after=True,
+        validate=v.not_stopword,
+    ),
+    Rule(
+        "HASLO",
+        _c(
+            r"(?<!\w)(?i:user|login|usr|użytkownik|uzytkownik)\s*:?\s*\S+\s*,?\s*"
+            r"(?i:pass|password|pwd|hasło|haslo)\s*:?\s*"
+            r"(?P<v>[^\s,;]{3,40}?)(?=[\s,;]|[.!?](?:\s|$)|$)"
+        ),
+        priority=1,
+        validate=v.not_stopword,
+    ),
+    # Klucz do wifi: „klucz: zaq12wsx”, „klucz sieci: …”, „WPA: …”.
+    Rule(
+        "HASLO",
+        _c(
+            r"(?<!\w)(?i:klucz(?:\s+(?:sieci|wifi|wi-fi|zabezpieczeń|zabezpieczen))?|wpa2?|psk)"
+            r"\s*[:=]\s*(?P<v>[^\s,;]{3,63}?)(?=[\s,;]|[.!?](?:\s|$)|$)"
+        ),
+        priority=1,
+        validate=v.not_stopword,
+    ),
     # Hasło, PIN, kod CVV: tylko gdy wygląda jak hasło (cyfra albo znak specjalny),
     # żeby nie łapać „hasła wyborczego”.
     Rule(
@@ -524,7 +634,8 @@ RULES: tuple[Rule, ...] = (
     Rule(
         "HASLO",
         _c(
-            r"(?<!\w)(?i:pin\w*|kod\s+pin|cvv2?|cvc2?|kod\s+(?:cvv|cvc|blik\w*|dostępu|dostepu|"
+            r"(?<!\w)(?i:pin\w*|puk\d?|kod\s+(?:pin|puk)\d?|cvv2?|cvc2?|kod\s+(?:cvv|cvc|blik\w*|dostępu|dostepu|"
+            r"zabezpieczając\w*|zabezpieczajac\w*|odblokowania|jednorazow\w*|do\s+\w+|"
             r"weryfikacyjn\w*|sms\w*|autoryzacyjn\w*|do\s+(?:drzwi|bramy|klatki|furtki|domofonu))|"
             r"domofon\w*)(?:\s+(?i:to|do\s+\w+|jest))?\s*[:=\-]?\s*"
             r"(?P<v>\d(?:[ \-]?\d){1,7})(?!\w)"
