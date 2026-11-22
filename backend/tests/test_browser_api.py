@@ -156,3 +156,22 @@ def test_feedback_migration_is_shared_and_idempotent():
     sql = path.read_text(encoding="utf-8")
     assert sql.count("CREATE TABLE IF NOT EXISTS") == 2
     assert "CREATE TABLE api" not in sql
+
+
+def test_failed_stage_is_logged_without_the_text(caplog):
+    async def failing(text: str) -> dict:
+        data = report()
+        data["evidence"] = {
+            "status": "error",
+            "error": {"kind": "AnalysisConfigurationError", "message": "Set FREELLM_API_KEY"},
+        }
+        return data
+
+    app = create_app(store=FakeStore(), verification_runner=failing)
+    with TestClient(app) as test_client, caplog.at_level("WARNING", logger="api_routes"):
+        response = test_client.get("/api/check", params={"text": "Tajna treść wiadomości"})
+    assert response.status_code == 502
+    assert response.json()["error"]["code"] == "analysis_failed"
+    logged = " ".join(record.getMessage() for record in caplog.records)
+    assert "part=evidence kind=AnalysisConfigurationError" in logged
+    assert "Tajna" not in logged
