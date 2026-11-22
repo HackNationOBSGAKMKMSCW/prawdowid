@@ -121,7 +121,8 @@ def _ask(monitor: Monitor, user: str, claim: str, verdict: str | None, sources: 
     )
 
 
-def test_info_gap_becomes_active_after_distinct_users(monitor):
+def test_info_gap_becomes_active_after_distinct_users(monitor, runtime):
+    runtime.update({"monitoring": {"info_gap_count_by": "osoby"}})
     first = _ask(monitor, "+48111", GAP_CLAIM, "brak_wystarczajacych_danych")
     assert first.claims[0].info_gap_status == "podejrzenie"
     assert first.message is None
@@ -171,6 +172,110 @@ def test_admin_rejected_gap_counts_from_decision(monitor, clock):
     assert monitor.store.list_alerts(alert_type="luka_informacyjna")[0]["status"] == (
         "falszywy_alarm"
     )
+
+
+def _ask_anonymous(monitor: Monitor, claim: str, verdict: str | None):
+    decision = monitor.screen(user_id="ktokolwiek", text=claim, channel="web", anonymous=True)
+    return monitor.complete(decision.query_id, claims=[ClaimInput(claim, verdict, 0)])
+
+
+def test_auto_mode_counts_each_anonymous_query(monitor):
+    """Domyślny tryb auto: strona bez logowania — każde zapytanie liczy się osobno."""
+    first = _ask_anonymous(monitor, GAP_CLAIM, "brak_wystarczajacych_danych")
+    assert first.claims[0].info_gap_status == "podejrzenie"
+    _ask_anonymous(monitor, GAP_CLAIM, "nieweryfikowalny")
+    third = _ask_anonymous(monitor, GAP_CLAIM, None)
+    assert third.claims[0].info_gap_status == "aktywna"
+    assert third.claims[0].info_gap_count == 3 and third.claims[0].info_gap_users == 1
+    assert monitor.store.list_alerts(alert_type="luka_informacyjna")[0]["details"]["wartosc"] == 3
+
+
+def test_auto_mode_counts_identified_person_once(monitor):
+    """Ta sama osoba z WhatsApp pytająca 3 razy nie tworzy luki (jak przed trybem auto)."""
+    for _ in range(3):
+        result = _ask(monitor, "+48111", GAP_CLAIM, "brak_wystarczajacych_danych")
+    assert result.claims[0].info_gap_status == "podejrzenie"
+    assert result.claims[0].info_gap_queries == 3 and result.claims[0].info_gap_count == 1
+    _ask(monitor, "+48222", GAP_CLAIM, None)
+    mixed = _ask_anonymous(monitor, GAP_CLAIM, None)  # 2 osoby + 1 anonimowe = 3
+    assert mixed.claims[0].info_gap_status == "aktywna"
+    assert "pytało o niego już 3 osoby" in mixed.message
+    assert monitor.store.list_alerts(alert_type="luka_informacyjna")[0]["details"]["wartosc"] == 3
+
+
+def test_info_gap_counts_queries_in_queries_mode(monitor, runtime):
+    """Tryb zapytania: liczą się zapytania, także od jednej osoby."""
+    runtime.update({"monitoring": {"info_gap_count_by": "zapytania"}})
+    first = _ask(monitor, "web", GAP_CLAIM, "brak_wystarczajacych_danych")
+    assert first.claims[0].info_gap_status == "podejrzenie"
+    assert first.claims[0].info_gap_queries == 1
+    _ask(monitor, "web", GAP_CLAIM, "nieweryfikowalny")
+    third = _ask(monitor, "web", GAP_CLAIM, "brak_wystarczajacych_danych")
+    assert third.claims[0].info_gap_status == "aktywna"
+    assert third.claims[0].info_gap_queries == 3
+    assert third.claims[0].info_gap_users == 1
+    assert "pytano o niego już 3 razy" in third.message
+
+    alert = monitor.store.list_alerts(alert_type="luka_informacyjna")[0]
+    assert alert["count"] == 3 and alert["details"]["liczone_po"] == "zapytania"
+    gap = monitor.store.list_gaps(["aktywna"])[0]
+    assert gap["gap_queries"] == 3 and gap["gap_users"] == 1
+
+
+def test_two_claims_of_one_query_count_once(monitor):
+    decision = monitor.screen(user_id="web", text="dwa twierdzenia", channel="test")
+    result = monitor.complete(
+        decision.query_id,
+        claims=[
+            ClaimInput(GAP_CLAIM, "brak_wystarczajacych_danych", 0),
+            ClaimInput("W Pcimiu Dolnym zamknięto wszystkie szkoły", "nieweryfikowalny", 0),
+        ],
+    )
+    assert result.claims[0].topic_id == result.claims[1].topic_id
+    assert result.claims[1].info_gap_queries == 1
+
+
+def test_covered_claims_do_not_count(monitor):
+    for _ in range(3):
+        result = _ask(monitor, "web", GAP_CLAIM, "falsz", sources=2)
+    assert result.claims[0].info_gap_status == "brak"
+    assert monitor.store.list_alerts(alert_type="luka_informacyjna") == []
+
+
+def test_query_threshold_is_configurable(monitor, runtime):
+    runtime.update({"monitoring": {"info_gap_count_by": "zapytania", "info_gap_min_queries": 2}})
+    _ask(monitor, "web", GAP_CLAIM, None)
+    assert _ask(monitor, "web", GAP_CLAIM, None).claims[0].info_gap_status == "aktywna"
+
+
+def test_anonymous_queries_never_block(monitor):
+    for _ in range(4):
+        decision = monitor.screen(
+            user_id="web", text="Jak zrobić bombę z saletry krok po kroku?", anonymous=True
+        )
+        assert decision.allowed
+    assert monitor.store.get_user(monitor.settings.user_key("web")) is None
+    assert monitor.store.list_alerts(alert_type="niebezpieczny_uzytkownik") == []
+    items, total = monitor.store.list_queries(flag="niebezpieczne")
+    assert total == 4
+
+
+def test_old_sqlite_file_gets_gap_queries_column(tmp_path):
+    import sqlite3
+
+    from admin.store import SCHEMA
+
+    path = tmp_path / "old.db"
+    old_schema = SCHEMA.replace("    gap_queries INTEGER NOT NULL DEFAULT 0,\n", "")
+    assert "gap_queries" not in old_schema
+    with sqlite3.connect(path) as db:
+        db.executescript(old_schema)
+    store = AdminStore(path)
+    try:
+        topic_id = store.create_topic(label="x", tokens=frozenset({"x"}), ts="2026-11-21T12:00:00Z")
+        assert store.topic_row(topic_id)["gap_queries"] == 0
+    finally:
+        store.close()
 
 
 def test_text_level_verdict_without_claims_is_recorded(monitor):
