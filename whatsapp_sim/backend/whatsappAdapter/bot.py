@@ -7,14 +7,24 @@ import time
 import unicodedata
 import weakref
 from collections.abc import Awaitable, Callable
-from dataclasses import replace
 from typing import Any
 
 from observability import log_abstain
 from textAnalysis.analysis import AnalysisConfigurationError, AnalysisError, InputSanitizer
-from textAnalysis.clarification import ClarificationResult, DialogueTurn, combined_claim
+from textAnalysis.clarification import DialogueTurn
 
-from .clarification import Clarifier, ConversationStore, PendingClarification
+from .clarification import (
+    MAX_CLARIFICATION_ROUNDS,
+    MIN_CHECK_CHARS,
+    ClarificationStep,
+    Clarifier,
+    ConversationStore,
+    PendingClarification,
+    guarded,
+    has_answers,
+    next_step,
+    skip_claim,
+)
 from .cloud_api import (
     IncomingKind,
     IncomingMessage,
@@ -29,11 +39,6 @@ from .formatting import format_report, verdict_card
 from .pipeline import FactCheckPipeline
 
 BOT_NAME = "SprawdzTo"
-MIN_CHECK_CHARS = 8
-# How many times the bot may ask for details before it checks what it has.
-MAX_CLARIFICATION_ROUNDS = 2
-# Longer messages (articles, chain messages) carry enough statements to search directly.
-MAX_CLARIFY_CHARS = 600
 
 EXAMPLES: dict[str, tuple[str, str]] = {
     "example_vaccines": ("Szczepionki a autyzm", "Czy to prawda, że szczepionki powodują autyzm?"),
@@ -171,7 +176,7 @@ def _normalize_command(text: str) -> str:
     return " ".join(ascii_text.split())
 
 
-def clarification_body(result: ClarificationResult, *, follow_up: bool = False) -> str:
+def clarification_body(result: ClarificationStep, *, follow_up: bool = False) -> str:
     """The question message: how the bot understood the claim and what it needs."""
 
     lines = [CLARIFY_FOLLOW_UP_HEADING if follow_up else CLARIFY_HEADING]
@@ -310,84 +315,33 @@ class SprawdzToBot:
 
     # --- clarification loop ---------------------------------------------------------------
 
-    def _wants_clarification(self, text: str) -> bool:
-        candidate = text.strip()
-        return (
-            self.clarifier is not None
-            and len(candidate) <= MAX_CLARIFY_CHARS
-            and not candidate.startswith(("http://", "https://"))
-        )
-
-    async def _assess(
-        self,
-        message: IncomingMessage,
-        turns: list[DialogueTurn],
-        round_index: int,
-        status: StatusCallback | None,
-    ) -> ClarificationResult | None:
-        """Ask the clarifier; any failure means "check what we have" (never blocks)."""
+    def _assessor(self, message: IncomingMessage, status: StatusCallback | None):
+        async def on_call() -> None:
+            if status is not None:
+                await status(UNDERSTANDING_STATUS)
 
         assert self.clarifier is not None
-        if status is not None:
-            with contextlib.suppress(Exception):
-                await status(UNDERSTANDING_STATUS)
-        try:
-            async with asyncio.timeout(self.clarify_timeout):
-                return await self.clarifier.assess(
-                    turns, round_index=round_index, max_rounds=self.max_clarification_rounds
-                )
-        except Exception as exc:  # noqa: BLE001 - clarification is optional
-            print(
-                f"[whatsappAdapter] Wiadomość {message.message_id}: pomijam doprecyzowanie "
-                f"({type(exc).__name__}).",
-                flush=True,
-            )
-            return None
-
-    def _ask(
-        self,
-        to: str,
-        message: IncomingMessage,
-        pending: PendingClarification,
-        result: ClarificationResult,
-    ) -> list[dict[str, Any]]:
-        body = clarification_body(result, follow_up=pending.rounds > 0)
-        question = "\n".join(result.questions)
-        self.conversations.put(
-            to,
-            PendingClarification(
-                turns=(*pending.turns, DialogueTurn("bot", question)),
-                rounds=pending.rounds + 1,
-                understood_claim=result.understood_claim,
-                resolved_claim=result.resolved_claim,
-                forwarded=pending.forwarded,
-                frequently_forwarded=pending.frequently_forwarded,
-            ),
+        return guarded(
+            self.clarifier,
+            timeout=self.clarify_timeout,
+            max_rounds=self.max_clarification_rounds,
+            on_call=on_call,
+            label=f"Wiadomość {message.message_id}: ",
         )
-        print(
-            f"[whatsappAdapter] Wiadomość {message.message_id}: dopytuję o szczegóły "
-            f"(runda {pending.rounds + 1}, brakuje: {', '.join(result.missing) or '?'}).",
-            flush=True,
-        )
-        return [button_message(to, body, [CLARIFY_SKIP_BUTTON, CLARIFY_CANCEL_BUTTON])]
 
     async def _start(
         self, to: str, message: IncomingMessage, status: StatusCallback | None
     ) -> list[dict[str, Any]]:
         """A new message: ask for details when it is too vague, otherwise check it."""
 
-        if not self._wants_clarification(message.text):
+        if self.clarifier is None:
             return await self._check(to, message, message.text, status)
-        pending = PendingClarification(
-            turns=(DialogueTurn("user", message.text),),
-            rounds=0,
-            forwarded=message.forwarded,
-            frequently_forwarded=message.frequently_forwarded,
+        step = await next_step(
+            self._assessor(message, status),
+            [DialogueTurn("user", message.text)],
+            max_rounds=self.max_clarification_rounds,
         )
-        result = await self._assess(message, list(pending.turns), 1, status)
-        if result is not None and result.needs_clarification and result.questions:
-            return self._ask(to, message, pending, result)
-        return await self._check(to, message, message.text, status)
+        return await self._apply(to, message, step, status, origin=None)
 
     async def _continue(
         self,
@@ -398,35 +352,58 @@ class SprawdzToBot:
     ) -> list[dict[str, Any]]:
         """The user answered a question: ask again, or check the completed claim."""
 
-        answered = pending.with_answer(message.text)
-        result = await self._assess(message, list(answered.turns), pending.rounds + 1, status)
-        if result is None:
-            # No model verdict on the answer: check every user message joined together.
-            self.conversations.pop(to)
-            fallback = replace(answered, resolved_claim=combined_claim(answered.turns))
-            return await self._check_pending(to, message, fallback, status)
-        if result.new_topic:
-            # Not an answer but a new message: drop the old thread and start over.
-            self.conversations.pop(to)
-            if len(message.text.strip()) < MIN_CHECK_CHARS:
-                return [text_message(to, TOO_SHORT_TEXT)]
-            return await self._start(to, message, status)
-        if (
-            result.needs_clarification
-            and result.questions
-            and not result.user_declined
-            and pending.rounds < self.max_clarification_rounds
-        ):
-            return self._ask(
-                to, message, replace(answered, resolved_claim=result.resolved_claim), result
-            )
-        self.conversations.pop(to)
-        completed = replace(
-            answered,
-            understood_claim=result.understood_claim or answered.understood_claim,
-            resolved_claim=result.resolved_claim or answered.resolved_claim,
+        step = await next_step(
+            self._assessor(message, status),
+            [*pending.turns, DialogueTurn("user", message.text)],
+            max_rounds=self.max_clarification_rounds,
         )
-        return await self._check_pending(to, message, completed, status)
+        return await self._apply(to, message, step, status, origin=pending)
+
+    async def _apply(
+        self,
+        to: str,
+        message: IncomingMessage,
+        step: ClarificationStep,
+        status: StatusCallback | None,
+        *,
+        origin: PendingClarification | None,
+    ) -> list[dict[str, Any]]:
+        # Forward flags belong to the first message of the conversation.
+        source = origin if origin is not None and not step.new_topic else None
+        forwarded = source.forwarded if source else message.forwarded
+        frequently = source.frequently_forwarded if source else message.frequently_forwarded
+
+        if step.action == "too_short":
+            self.conversations.pop(to)
+            return [text_message(to, TOO_SHORT_TEXT)]
+        if step.action == "ask":
+            pending = PendingClarification(
+                turns=(*step.turns, step.question_turn()),
+                rounds=step.rounds + 1,
+                understood_claim=step.understood_claim,
+                resolved_claim=step.resolved_claim,
+                forwarded=forwarded,
+                frequently_forwarded=frequently,
+            )
+            self.conversations.put(to, pending)
+            print(
+                f"[whatsappAdapter] Wiadomość {message.message_id}: dopytuję o szczegóły "
+                f"(runda {pending.rounds}, brakuje: {', '.join(step.missing) or '?'}).",
+                flush=True,
+            )
+            body = clarification_body(step, follow_up=step.rounds > 0)
+            return [button_message(to, body, [CLARIFY_SKIP_BUTTON, CLARIFY_CANCEL_BUTTON])]
+
+        self.conversations.pop(to)
+        return await self._check(
+            to,
+            message,
+            step.claim,
+            status,
+            forwarded=forwarded,
+            frequently_forwarded=frequently,
+            understood=step.claim if step.with_details else None,
+        )
 
     async def _check_pending(
         self,
@@ -435,11 +412,9 @@ class SprawdzToBot:
         pending: PendingClarification,
         status: StatusCallback | None,
     ) -> list[dict[str, Any]]:
-        """Check the claim gathered in a clarification conversation."""
+        """The user skipped the questions: check what the conversation has so far."""
 
-        answered = any(turn.role == "user" for turn in pending.turns[1:])
-        claim = pending.resolved_claim if answered else ""
-        claim = claim or combined_claim(pending.turns)
+        claim = skip_claim(pending.turns, pending.resolved_claim)
         return await self._check(
             to,
             message,
@@ -447,7 +422,7 @@ class SprawdzToBot:
             status,
             forwarded=pending.forwarded,
             frequently_forwarded=pending.frequently_forwarded,
-            understood=claim if answered else None,
+            understood=claim if has_answers(pending.turns) else None,
         )
 
     # --- fact check -----------------------------------------------------------------------

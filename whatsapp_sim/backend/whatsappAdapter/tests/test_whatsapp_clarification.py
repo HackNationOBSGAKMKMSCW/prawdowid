@@ -10,7 +10,6 @@ from whatsappAdapter.bot import (
     CLARIFY_CANCEL_BUTTON,
     CLARIFY_CANCELLED_TEXT,
     CLARIFY_SKIP_BUTTON,
-    MAX_CLARIFY_CHARS,
     NOTHING_PENDING_TEXT,
     TOO_SHORT_TEXT,
     UNDERSTANDING_STATUS,
@@ -18,6 +17,7 @@ from whatsappAdapter.bot import (
     SprawdzToBot,
 )
 from whatsappAdapter.clarification import (
+    MAX_CLARIFY_CHARS,
     ConversationStore,
     DemoClarifier,
     LiveClarifier,
@@ -420,3 +420,74 @@ def test_webhook_in_demo_mode_asks_and_then_checks(monkeypatch) -> None:
 
     assert question_text(question).startswith("🧩 *Chcę dobrze zrozumieć")
     assert "Sprawdziłem z Twoimi szczegółami" in bodies(answer)[0]
+
+
+def website_client(clarifier=None):
+    pytest.importorskip("fastapi")
+    from fastapi.testclient import TestClient
+    from whatsappAdapter.server import create_app
+
+    bot = SprawdzToBot(DemoPipeline(delay_seconds=0), clarifier=clarifier)
+    return TestClient(create_app(bot))
+
+
+def test_website_endpoint_runs_the_loop_without_server_state() -> None:
+    client = website_client(DemoClarifier())
+
+    first = client.post("/api/clarify", json={"turns": [{"role": "user", "text": DRONE}]})
+    asked = first.json()
+    assert first.status_code == 200
+    assert asked["status"] == "ask"
+    assert asked["missing"] == ["czas", "miejsce"]
+    assert asked["skip_claim"] == DRONE
+    assert asked["turns"][-1]["role"] == "bot"
+
+    turns = [*asked["turns"], {"role": "user", "text": "wczoraj koło Rzeszowa"}]
+    done_step = client.post("/api/clarify", json={"turns": turns}).json()
+    assert done_step["status"] == "check"
+    assert done_step["with_details"] is True
+    assert done_step["claim"] == "Spadł dron w Polsce. Szczegóły: wczoraj koło Rzeszowa."
+
+
+def test_website_endpoint_checks_general_claims_and_handles_a_disabled_loop() -> None:
+    general = {"turns": [{"role": "user", "text": "Woda wrze w temperaturze 100 stopni."}]}
+
+    with_loop = website_client(DemoClarifier()).post("/api/clarify", json=general).json()
+    without_loop = (
+        website_client(None)
+        .post("/api/clarify", json={"turns": [{"role": "user", "text": DRONE}]})
+        .json()
+    )
+
+    assert with_loop["status"] == "check" and with_loop["with_details"] is False
+    assert with_loop["claim"] == general["turns"][0]["text"]
+    assert without_loop == {**without_loop, "status": "check", "claim": DRONE}
+
+
+@pytest.mark.parametrize(
+    "turns",
+    [
+        [],
+        [{"role": "bot", "text": "Kiedy?"}, {"role": "user", "text": "wczoraj"}],
+        [{"role": "user", "text": DRONE}, {"role": "bot", "text": "Kiedy?"}],
+        [
+            {"role": "user", "text": DRONE},
+            {"role": "bot", "text": "x" * 1001},
+            {"role": "user", "text": "a"},
+        ],
+        [{"role": "user", "text": "x"}] * 6,
+        [{"role": "system", "text": "x"}],
+    ],
+)
+def test_website_endpoint_rejects_malformed_conversations(turns) -> None:
+    response = website_client(DemoClarifier()).post("/api/clarify", json={"turns": turns})
+
+    assert response.status_code == 422
+
+
+def test_website_endpoint_falls_back_to_a_check_when_the_model_fails() -> None:
+    client = website_client(ScriptedClarifier(RuntimeError("llm down")))
+
+    step = client.post("/api/clarify", json={"turns": [{"role": "user", "text": DRONE}]}).json()
+
+    assert step["status"] == "check" and step["claim"] == DRONE

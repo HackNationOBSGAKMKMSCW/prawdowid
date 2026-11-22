@@ -388,6 +388,40 @@ a:focus-visible {
   font: 700 19px var(--font);
 }
 
+/* ---------- Pytania o szczegóły ---------- */
+
+.question__understood {
+  margin: 0;
+  padding: 16px 20px;
+  border-left: 6px solid var(--c-navy);
+  border-radius: var(--radius-control);
+  background: var(--c-surface);
+  font-size: 19px;
+  line-height: 1.5;
+  text-wrap: pretty;
+}
+
+.question__understood-label {
+  font-weight: 700;
+}
+
+.question__list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.question__item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  font: 700 21px/1.4 var(--font);
+}
+
+.question__item .dot {
+  margin-top: 2px;
+}
+
 /* ---------- Przyciski ---------- */
 
 .btn-primary {

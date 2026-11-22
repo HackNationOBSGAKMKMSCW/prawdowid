@@ -1,6 +1,7 @@
 /**
  * Kontrakt API między frontendem a backendem Prawdowida.
  *
+ *   POST   /api/clarify            { turns } → ClarifyStep
  *   POST   /api/check              { text }  → CheckResponse
  *   POST   /api/check/{id}/report  { reason, comment? } → 204
  */
@@ -108,3 +109,35 @@ export interface CheckOutOfScope {
 }
 
 export type CheckResponse = CheckResult | CheckClarify | CheckOutOfScope;
+
+/** Jedna wypowiedź w rozmowie doprecyzowującej: wiadomość lub odpowiedź użytkownika albo pytania. */
+export interface ClarifyTurn {
+  role: 'user' | 'bot';
+  text: string;
+}
+
+/**
+ * Krok pętli doprecyzowania (`POST /api/clarify`).
+ *
+ * - `ask` – pokaż `questions`; z odpowiedzią odeślij `turns` + `{ role: 'user', text }`.
+ * - `check` – sprawdź `claim` przez `/api/check`.
+ * - `too_short` – nowa wiadomość jest za krótka.
+ */
+export interface ClarifyStep {
+  status: 'ask' | 'check' | 'too_short';
+  /** Cała rozmowa do odesłania z następną odpowiedzią (z pytaniami przy `ask`). */
+  turns: ClarifyTurn[];
+  questions: string[];
+  /** Kody brakujących szczegółów: czas, miejsce, podmiot, zrodlo, szczegoly. */
+  missing: string[];
+  /** Jak rozumiemy twierdzenie na tym etapie. */
+  understood_claim: string;
+  /** Twierdzenie do sprawdzenia przy `check`. */
+  claim: string;
+  /** Co sprawdzić, gdy użytkownik pominie pytania. */
+  skip_claim: string;
+  /** `claim` zawiera szczegóły z odpowiedzi użytkownika. */
+  with_details: boolean;
+  /** Odpowiedź była nową, niezwiązaną wiadomością; poprzednie pytania przepadły. */
+  new_topic: boolean;
+}

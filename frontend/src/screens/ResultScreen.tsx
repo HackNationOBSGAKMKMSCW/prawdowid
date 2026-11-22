@@ -9,7 +9,13 @@ import { buildResultView } from '../lib/result.ts';
 import { shareLink } from '../lib/share.ts';
 import { usePageSpeechText, useSpeech } from '../lib/speech.ts';
 
-export default function ResultScreen({ result }: { result: CheckResult }) {
+interface ResultScreenProps {
+  result: CheckResult;
+  /** Twierdzenie z odpowiedziami na pytania doprecyzowujące, gdy o nie dopytywaliśmy. */
+  checked?: string;
+}
+
+export default function ResultScreen({ result, checked }: ResultScreenProps) {
   const { input, goStart } = useChecker();
   const announce = useAnnounce();
   const view = useMemo(() => buildResultView(result), [result]);
@@ -23,7 +29,7 @@ export default function ResultScreen({ result }: { result: CheckResult }) {
   usePageSpeechText(view.readAloud);
 
   const onShare = async () => {
-    const ok = await shareLink(input);
+    const ok = await shareLink(checked ?? input);
     if (ok) {
       setCopied(true);
       announce('Link skopiowany.');
@@ -40,6 +46,13 @@ export default function ResultScreen({ result }: { result: CheckResult }) {
         </h1>
         <p className="lead">{view.summary}</p>
       </div>
+
+      {checked && (
+        <p className="question__understood">
+          <span className="question__understood-label">Sprawdziliśmy z Twoimi szczegółami:</span>{' '}
+          <q>{checked}</q>
+        </p>
+      )}
 
       <button
         type="button"

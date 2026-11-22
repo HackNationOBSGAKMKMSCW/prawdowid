@@ -51,14 +51,15 @@ W dev Vite przekierowuje `/api` na `http://127.0.0.1:8000`.
 
 ## Ekrany
 
-| Ekran                | Kiedy                                                                         |
-| -------------------- | ----------------------------------------------------------------------------- |
-| Start                | formularz, „Jak to działa”, legenda werdyktów, grupy źródeł                   |
-| Sprawdzamy…          | w trakcie zapytania                                                           |
-| Wynik                | karty zdań (werdykt, wyjaśnienie, źródła) i karty analizy (daty, manipulacja) |
-| Napisz trochę więcej | backend zwrócił `clarify`                                                     |
-| Tego nie sprawdzamy  | backend zwrócił `out_of_scope`                                                |
-| Coś poszło nie tak   | błąd sieci, błąd HTTP albo limit czasu (90 s)                                 |
+| Ekran                   | Kiedy                                                                         |
+| ----------------------- | ----------------------------------------------------------------------------- |
+| Start                   | formularz, „Jak to działa”, legenda werdyktów, grupy źródeł                   |
+| Sprawdzamy…             | w trakcie zapytania                                                           |
+| Doprecyzuj, o co chodzi | wiadomość o konkretnym zdarzeniu bez szczegółów (`/api/clarify` → `ask`)      |
+| Wynik                   | karty zdań (werdykt, wyjaśnienie, źródła) i karty analizy (daty, manipulacja) |
+| Napisz trochę więcej    | backend zwrócił `clarify`                                                     |
+| Tego nie sprawdzamy     | backend zwrócił `out_of_scope`                                                |
+| Coś poszło nie tak      | błąd sieci, błąd HTTP albo limit czasu (90 s)                                 |
 
 Podstrony: `/zrodla` (pełna lista źródeł), `/pomoc`, `/deklaracja-dostepnosci`.
 
@@ -68,6 +69,44 @@ Link `/?q=<tekst>` od razu sprawdza podany tekst – z tego korzysta przycisk
 ## Kontrakt API
 
 Typy są w [`src/api/types.ts`](src/api/types.ts).
+
+### `POST /api/clarify` – pętla doprecyzowania
+
+Zanim strona sprawdzi krótką wiadomość, pyta backend, czy wiadomo, o co chodzi.
+„Czy naprawdę spadł dron w Polsce?” dotyczy konkretnego zdarzenia, ale nie mówi
+kiedy ani gdzie, więc strona najpierw pokazuje pytania. Odpowiedzi łączą się z
+pierwszą wiadomością w jedno twierdzenie, które dopiero trafia do `/api/check`.
+To ta sama logika co w bocie WhatsApp (`whatsapp_sim/backend/whatsappAdapter/clarification.py`).
+
+Rozmowa żyje w przeglądarce: każde zapytanie niesie wszystkie dotychczasowe wypowiedzi,
+serwer niczego nie przechowuje.
+
+```jsonc
+// zapytanie: pierwsza wiadomość, potem odesłane `turns` + odpowiedź użytkownika
+{ "turns": [{ "role": "user", "text": "Czy naprawdę spadł dron w Polsce?" }] }
+
+// odpowiedź
+{
+  "status": "ask",                  // ask | check | too_short
+  "turns": [ … , { "role": "bot", "text": "Kiedy…?\nGdzie…?" } ],   // odeślij z odpowiedzią
+  "questions": ["Kiedy mniej więcej to się stało?", "Gdzie to było?"],
+  "missing": ["czas", "miejsce"],
+  "understood_claim": "W Polsce spadł dron.",
+  "claim": "",                      // przy "check": twierdzenie dla /api/check
+  "skip_claim": "Czy naprawdę spadł dron w Polsce?",   // przy „Sprawdź bez tego”
+  "with_details": false,            // claim zawiera odpowiedzi użytkownika
+  "new_topic": false                // odpowiedź była nową wiadomością, wątek zaczęty od nowa
+}
+```
+
+- Najwyżej 2 rundy pytań; długie wiadomości (ponad 600 znaków) i linki od razu dostają `check`.
+- Błąd lub brak odpowiedzi `/api/clarify` (limit 25 s) nie blokuje sprawdzenia:
+  strona sprawdza to, co już wie.
+- Przykłady z paska DEMO omijają pytania. W trybie `mock` pytania zadają reguły
+  z [`src/api/mockClarify.ts`](src/api/mockClarify.ts) (te same co w trybie demo bota),
+  np. wpisz „Czy na prawdę spadł dron w Polsce?”.
+- Wynik po dopytaniu pokazuje „Sprawdziliśmy z Twoimi szczegółami: …”, a „Udostępnij wynik”
+  udostępnia to pełne twierdzenie.
 
 ### `POST /api/check`
 

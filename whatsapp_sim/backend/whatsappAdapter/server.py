@@ -1,8 +1,10 @@
-"""HTTP endpoints of the WhatsApp adapter, used by the browser simulator.
+"""HTTP endpoints of the WhatsApp adapter, used by the browser simulator and the website.
 
 ``POST /api/whatsapp/webhook`` accepts a WhatsApp Cloud API webhook payload and
 answers with the Cloud API message bodies the bot would send back. The real
 WhatsApp transport would instead POST those bodies to the Graph API.
+
+``POST /api/clarify`` runs the same clarification loop for the website (``web.py``).
 """
 
 import asyncio
@@ -20,6 +22,7 @@ from .bot import BOT_NAME, SprawdzToBot
 from .clarification import Clarifier, DemoClarifier, LiveClarifier
 from .cloud_api import parse_webhook
 from .pipeline import DemoPipeline, FactCheckPipeline, LivePipeline
+from .web import clarify_router
 
 MODE_ENV = "SPRAWDZTO_MODE"
 CLARIFY_ENV = "SPRAWDZTO_CLARIFY"
@@ -49,6 +52,8 @@ def create_app(bot: SprawdzToBot | None = None) -> FastAPI:
         bot = SprawdzToBot(pipeline, clarifier=clarifier_from_environment(pipeline))
     app = FastAPI(title="SprawdzTo WhatsApp adapter", docs_url="/api/whatsapp/docs")
     app.add_middleware(ObservabilityMiddleware, skip_paths=("/api/whatsapp/health",))
+    # The website asks with the same clarifier (live model or demo rules) as the bot.
+    app.include_router(clarify_router(lambda: bot.clarifier, timeout=bot.clarify_timeout))
 
     @app.get("/api/whatsapp/health")
     async def health() -> dict[str, Any]:

@@ -1,5 +1,6 @@
 import { mockCheck, type Scenario } from './mock.ts';
-import type { CheckResponse } from './types.ts';
+import { mockClarify } from './mockClarify.ts';
+import type { CheckResponse, ClarifyStep, ClarifyTurn } from './types.ts';
 
 /**
  * `mock` – odpowiedzi przykładowe, bez backendu (domyślnie).
@@ -52,6 +53,25 @@ export function checkMessage(text: string, options: CheckOptions = {}): Promise<
     method: 'POST',
     body: JSON.stringify({ text }),
     signal: withTimeout(options.signal, CHECK_TIMEOUT_MS),
+  });
+}
+
+/** Dopytanie jest dodatkiem: po tym czasie sprawdzamy to, co już wiemy. */
+const CLARIFY_TIMEOUT_MS = 25_000;
+
+/**
+ * Krok pętli doprecyzowania: czy dopytać o szczegóły (kiedy, gdzie…), czy już sprawdzać.
+ * Rozmowa żyje w przeglądarce, serwer niczego nie przechowuje.
+ */
+export function clarifyMessage(
+  turns: ClarifyTurn[],
+  options: { signal?: AbortSignal } = {},
+): Promise<ClarifyStep> {
+  if (API_MODE === 'mock') return mockClarify(turns, options.signal);
+  return request<ClarifyStep>('/clarify', {
+    method: 'POST',
+    body: JSON.stringify({ turns }),
+    signal: withTimeout(options.signal, CLARIFY_TIMEOUT_MS),
   });
 }
 

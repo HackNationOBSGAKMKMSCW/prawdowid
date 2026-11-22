@@ -88,6 +88,7 @@ the start page opens this view with the typed message ready to send
 | `GET` | `/api/whatsapp/health` | `{"status": "ok", "mode": "live" \| "demo"}` |
 | `POST` | `/api/whatsapp/webhook` | Cloud API webhook in, `{"messages": [...]}` out |
 | `POST` | `/api/whatsapp/webhook?stream=true` | Same, as NDJSON: `status` events while checking, then `messages` |
+| `POST` | `/api/clarify` | Website: one step of the clarification loop (`ask` / `check` / `too_short`) |
 
 Supported incoming message types: `text`, `interactive` (`button_reply`,
 `list_reply`), `button`, and `request_welcome` (sent by the simulator when the
@@ -117,6 +118,11 @@ chat opens). Other types get a "text only" reply.
 - Message text is never printed to the console; only message IDs and timings.
 
 ## Clarification loop
+
+The loop works the same in WhatsApp and on the website: both channels use
+`next_step` from `whatsappAdapter/clarification.py`. The website calls
+`POST /api/clarify` (`whatsappAdapter/web.py`) and keeps the conversation in the
+browser; see the contract in [`frontend/README.md`](../frontend/README.md).
 
 A message such as _„Czy naprawdę spadł dron w Polsce?”_ is about one specific
 event, but says neither when nor where. Searching it as it is would match any

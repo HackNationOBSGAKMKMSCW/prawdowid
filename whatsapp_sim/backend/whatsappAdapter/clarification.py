@@ -1,11 +1,18 @@
-"""Clarification loop state: what the bot asked and what the user answered so far.
+"""Clarification loop shared by the WhatsApp bot and the website.
 
 A vague message about a specific event ("Czy naprawdę spadł dron w Polsce?") makes the
-bot ask for details (time, place) before searching fact checks. The open conversation is
-kept per sender in ``ConversationStore`` until the user answers, skips, cancels, or the
-entry expires. Only the text needed to finish that conversation is kept, in memory.
+assistant ask for details (time, place) before searching fact checks.
+
+- ``next_step`` decides one step of the loop from the conversation so far: ask more
+  questions or check a claim. Both channels use it, so they behave the same.
+- WhatsApp keeps the open conversation per sender in ``ConversationStore`` until the
+  user answers, skips, cancels, or the entry expires (in memory only).
+- The website keeps the conversation in the browser and sends it to ``POST /api/clarify``
+  with every answer, so the server stores nothing.
 """
 
+import asyncio
+import contextlib
 import re
 import time
 import unicodedata
@@ -13,7 +20,7 @@ from collections import OrderedDict
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime
-from typing import Protocol
+from typing import Literal, Protocol
 
 from textAnalysis.clarification import (
     MAX_QUESTIONS,
@@ -24,6 +31,12 @@ from textAnalysis.clarification import (
 
 DEFAULT_TTL_SECONDS = 15 * 60
 DEFAULT_MAX_ENTRIES = 10_000
+# How many times the assistant may ask for details before it checks what it has.
+MAX_CLARIFICATION_ROUNDS = 2
+# Longer messages (articles, chain messages) carry enough statements to search directly.
+MAX_CLARIFY_CHARS = 600
+MIN_CHECK_CHARS = 8
+DEFAULT_CLARIFY_TIMEOUT = 20.0
 
 
 @dataclass(frozen=True)
@@ -37,15 +50,6 @@ class PendingClarification:
     forwarded: bool = False
     frequently_forwarded: bool = False
     updated_at: float = field(default=0.0, compare=False)
-
-    @property
-    def best_claim(self) -> str:
-        """The most complete version of the claim known so far."""
-
-        return self.resolved_claim or combined_claim(self.turns)
-
-    def with_answer(self, text: str) -> "PendingClarification":
-        return replace(self, turns=(*self.turns, DialogueTurn("user", text)))
 
 
 class ConversationStore:
@@ -122,6 +126,151 @@ class LiveClarifier:
         self, turns: Sequence[DialogueTurn], *, round_index: int, max_rounds: int
     ) -> ClarificationResult:
         return await self._assess(turns, round_index=round_index, max_rounds=max_rounds)
+
+
+# --- one step of the loop -----------------------------------------------------------------
+
+# Called with the conversation and the round number; None means "no answer, go on".
+AssessTurns = Callable[[Sequence[DialogueTurn], int], Awaitable[ClarificationResult | None]]
+
+
+def should_clarify(text: str) -> bool:
+    """Only short messages are worth asking about; links and long texts are checked as is."""
+
+    candidate = text.strip()
+    return len(candidate) <= MAX_CLARIFY_CHARS and not candidate.startswith(("http://", "https://"))
+
+
+def _user_texts(turns: Sequence[DialogueTurn]) -> list[str]:
+    return [turn.text for turn in turns if turn.role == "user" and turn.text.strip()]
+
+
+def has_answers(turns: Sequence[DialogueTurn]) -> bool:
+    """True when the user wrote anything after the first message."""
+
+    return len(_user_texts(turns)) > 1
+
+
+def skip_claim(turns: Sequence[DialogueTurn], resolved_claim: str = "") -> str:
+    """What to check when the loop ends: the details given so far, or the first message."""
+
+    if has_answers(turns):
+        return resolved_claim or combined_claim(turns)
+    texts = _user_texts(turns)
+    return texts[0] if texts else ""
+
+
+@dataclass(frozen=True)
+class ClarificationStep:
+    """The next move: ask (``questions``), check (``claim``) or reject a too short message."""
+
+    action: Literal["ask", "check", "too_short"]
+    # The conversation this step belongs to; a new topic starts a fresh one.
+    turns: tuple[DialogueTurn, ...]
+    questions: tuple[str, ...] = ()
+    missing: tuple[str, ...] = ()
+    understood_claim: str = ""
+    resolved_claim: str = ""
+    claim: str = ""
+    # The claim includes the user's answers (shown as "checked with your details").
+    with_details: bool = False
+    new_topic: bool = False
+
+    @property
+    def rounds(self) -> int:
+        """Questions asked so far in ``turns``."""
+
+        return sum(turn.role == "bot" for turn in self.turns)
+
+    @property
+    def skip_claim(self) -> str:
+        return skip_claim(self.turns, self.resolved_claim)
+
+    def question_turn(self) -> DialogueTurn:
+        return DialogueTurn("bot", "\n".join(self.questions))
+
+
+async def next_step(
+    assess: AssessTurns,
+    turns: Sequence[DialogueTurn],
+    *,
+    max_rounds: int = MAX_CLARIFICATION_ROUNDS,
+    min_chars: int = MIN_CHECK_CHARS,
+) -> ClarificationStep:
+    """Decide what to do with the conversation so far (first message, questions, answers)."""
+
+    turns = tuple(turns)
+    texts = _user_texts(turns)
+    if not texts:
+        raise ValueError("the conversation needs a user message")
+    answered = len(texts) > 1
+    if not answered and not should_clarify(texts[0]):
+        return ClarificationStep("check", turns, claim=texts[0])
+
+    asked = sum(turn.role == "bot" for turn in turns)
+    result = await assess(turns, asked + 1)
+
+    if result is not None and result.new_topic and answered:
+        # Not an answer but a new message: drop the old thread and start over.
+        fresh = (DialogueTurn("user", texts[-1]),)
+        if len(texts[-1].strip()) < min_chars:
+            return ClarificationStep("too_short", fresh, new_topic=True)
+        step = await next_step(assess, fresh, max_rounds=max_rounds, min_chars=min_chars)
+        return replace(step, new_topic=True)
+
+    if result is None:
+        claim = skip_claim(turns, combined_claim(turns))
+        return ClarificationStep("check", turns, claim=claim, with_details=answered)
+
+    if (
+        result.needs_clarification
+        and result.questions
+        and not result.user_declined
+        and asked < max_rounds
+    ):
+        return ClarificationStep(
+            "ask",
+            turns,
+            questions=tuple(result.questions),
+            missing=tuple(result.missing),
+            understood_claim=result.understood_claim,
+            resolved_claim=result.resolved_claim,
+        )
+    return ClarificationStep(
+        "check",
+        turns,
+        understood_claim=result.understood_claim,
+        resolved_claim=result.resolved_claim,
+        claim=skip_claim(turns, result.resolved_claim),
+        with_details=answered,
+    )
+
+
+def guarded(
+    clarifier: Clarifier,
+    *,
+    timeout: float = DEFAULT_CLARIFY_TIMEOUT,
+    max_rounds: int = MAX_CLARIFICATION_ROUNDS,
+    on_call: Callable[[], Awaitable[None]] | None = None,
+    label: str = "",
+) -> AssessTurns:
+    """Wrap a clarifier so errors and timeouts become None: the loop never blocks a check."""
+
+    async def assess(turns: Sequence[DialogueTurn], round_index: int) -> ClarificationResult | None:
+        if on_call is not None:
+            with contextlib.suppress(Exception):
+                await on_call()
+        try:
+            async with asyncio.timeout(timeout):
+                return await clarifier.assess(turns, round_index=round_index, max_rounds=max_rounds)
+        except Exception as exc:  # noqa: BLE001 - clarification is optional
+            print(
+                f"[clarification] {label}pomijam doprecyzowanie ({type(exc).__name__}).",
+                flush=True,
+            )
+            return None
+
+    return assess
 
 
 # --- demo ---------------------------------------------------------------------------------

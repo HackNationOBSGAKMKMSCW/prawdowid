@@ -264,7 +264,9 @@ export function SpeechProvider({ autoRead, onToggleAutoRead, children }: SpeechP
   }, [speaking, stop]);
 
   // Klucz bieżącego widoku: inna strona albo inny ekran sprawdzania.
-  const view = `${pathname}|${screen.name}|${screen.name === 'result' ? screen.runId : ''}`;
+  const step =
+    screen.name === 'result' ? screen.runId : screen.name === 'question' ? screen.round : '';
+  const view = `${pathname}|${screen.name}|${step}`;
 
   // Zmiana strony lub ekranu przerywa czytanie poprzedniej treści.
   useEffect(() => () => stop(), [view, stop]);
