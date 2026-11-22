@@ -143,6 +143,8 @@ export const DEFAULT_RECIPIENT_ROLE: Record<AlertType, Role> = {
   incident_match: 'analyst',
   source_status: 'moderator',
   system: 'admin',
+  disinformation: 'analyst',
+  dangerous_user: 'moderator',
 };
 
 /** An alert as computed from current data — before status and notifications are applied. */

@@ -11,6 +11,8 @@ ADMIN_API_TOKEN=<długi-losowy-token> uvicorn admin.api:create_app --factory --p
 # dokumentacja: http://localhost:8100/api/admin/docs
 ```
 
+Frontend panelu jest w `admin_panel/frontend` (`npm run dev`, proxy na port 8100); loguje się tym samym tokenem.
+
 Każde żądanie poza `/api/admin/health` wymaga nagłówka `Authorization: Bearer <ADMIN_API_TOKEN>`.
 Bez tokenu panel odpowiada 503, czyli jest wyłączony, a nie otwarty dla wszystkich.
 Nagłówek `X-Admin-User` jest opcjonalny i trafia do audytu zmian konfiguracji.

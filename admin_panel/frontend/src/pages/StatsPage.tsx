@@ -1,11 +1,11 @@
 import { useState } from 'react';
-import { getApi } from '../api/index.ts';
+import { getApi, supports } from '../api/index.ts';
 import type { Verdict } from '../api/types.ts';
 import { BarList, StackedBar, TimeSeriesChart } from '../components/charts.tsx';
 import { channelLabel, VERDICT } from '../components/labels.ts';
 import { Async, Card, Kpi, PageHeader, Tabs } from '../components/ui.tsx';
 import { useAsync } from '../hooks/useAsync.ts';
-import { fmtDateTime, fmtDuration, fmtInt, fmtPct, fmtPln, fmtTime } from '../utils/format.ts';
+import { fmtDateTime, fmtDuration, fmtInt, fmtPct, fmtPln, fmtTime, plural } from '../utils/format.ts';
 
 const RANGES = [
   { value: '24', label: '24 h' },
@@ -42,7 +42,20 @@ export default function StatsPage() {
                 hint={`${fmtInt(s.abstained)} zapytań`}
               />
               <Kpi icon="refresh" label="Typowy czas odpowiedzi" value={fmtDuration(s.medianLatencyMs)} hint={`najwolniejsze 5%: ${fmtDuration(s.p95LatencyMs)}`} />
-              <Kpi icon="cpu" label="Koszt 1000 sprawdzeń" value={fmtPln(s.costPer1000Pln)} hint={`łącznie ${fmtPln(s.costTotalPln)} (szacunek)`} />
+              {supports('checkCost') ? (
+                <Kpi icon="cpu" label="Koszt 1000 sprawdzeń" value={fmtPln(s.costPer1000Pln)} hint={`łącznie ${fmtPln(s.costTotalPln)} (szacunek)`} />
+              ) : (
+                <Kpi icon="users" label="Użytkownicy" value={fmtInt(s.users ?? 0)} hint={`${s.blockedUsers ?? 0} zablokowanych teraz`} />
+              )}
+              {s.dangerousQueries !== undefined && (
+                <Kpi
+                  icon="alert"
+                  label="Treści niebezpieczne"
+                  value={fmtInt(s.dangerousQueries)}
+                  tone={s.dangerousQueries ? 'warning' : undefined}
+                  hint={`${fmtInt(s.refused ?? 0)} zapytań odrzuconych`}
+                />
+              )}
             </div>
 
             <div className="grid-2-1">
@@ -56,7 +69,11 @@ export default function StatsPage() {
                   ]}
                 />
                 <div className="chart-foot muted small">
-                  Błędy techniczne: {s.technicalErrors} (nie są werdyktem) · Odparte próby manipulacji: {s.injectionsBlocked}
+                  Błędy techniczne: {s.technicalErrors} (nie są werdyktem) ·{' '}
+                  {s.refused === undefined
+                    ? `Odparte próby manipulacji: ${s.injectionsBlocked}`
+                    : `Odrzucone (blokada lub treść wysokiego ryzyka): ${s.refused}`}
+                  {s.pending ? ` · W toku lub przerwane: ${s.pending}` : ''}
                 </div>
               </Card>
 
@@ -77,7 +94,14 @@ export default function StatsPage() {
         )}
       </Async>
 
-      <Card title="Najczęstsze tematy pytań" subtitle="Grupy podobnych zapytań, liczone od początku okresu przechowywania.">
+      <Card
+        title={supports('clusters') ? 'Najczęstsze tematy pytań' : 'Tematy bez rozstrzygnięcia'}
+        subtitle={
+          supports('clusters')
+            ? 'Grupy podobnych zapytań, liczone od początku okresu przechowywania.'
+            : 'Tematy, o które pytano, a system nie znalazł rozstrzygnięcia (luki i podejrzenia luk), według liczby twierdzeń.'
+        }
+      >
         <Async state={clusters}>
           {(list) => (
             <BarList
@@ -85,7 +109,7 @@ export default function StatsPage() {
                 .sort((a, b) => b.total - a.total)
                 .slice(0, 8)
                 .map((c) => ({ key: c.id, label: c.label, value: c.total }))}
-              format={(v) => `${v} zapytań`}
+              format={(v) => `${v} ${supports('clusters') ? 'zapytań' : plural(v, ['twierdzenie', 'twierdzenia', 'twierdzeń'])}`}
             />
           )}
         </Async>

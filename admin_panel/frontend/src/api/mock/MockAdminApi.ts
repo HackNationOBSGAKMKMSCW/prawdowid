@@ -7,11 +7,23 @@
  * the example data is regenerated.
  */
 import { can, type Permission } from '../../auth/permissions.ts';
-import { type AdminApi, ApiError } from '../AdminApi.ts';
+import { type AdminApi, ApiError, unsupported } from '../AdminApi.ts';
 import type {
   Alert,
   AlertQuery,
   AlertRules,
+  AlertType,
+  ApiCapabilities,
+  AvailableModels,
+  CheckFlag,
+  ConfigChange,
+  EndUser,
+  EndUserDetail,
+  Feature,
+  PurgeResult,
+  RuntimeConfig,
+  TechEvent,
+  TechSummary,
   AlertStatus,
   AssignmentPatch,
   AuditEntry,
@@ -143,9 +155,49 @@ const percentile = (values: number[], p: number) => {
   return sorted[Math.min(sorted.length - 1, Math.floor((p / 100) * sorted.length))];
 };
 
+const MOCK_FEATURES: Feature[] = [
+  'cases',
+  'clusters',
+  'sources',
+  'providers',
+  'channels',
+  'privacy',
+  'securityEvents',
+  'alertRules',
+  'staffUsers',
+  'deleteCheck',
+  'checkCost',
+  'channelFilter',
+  'quality',
+];
+const MOCK_ALERT_TYPES: AlertType[] = [
+  'information_gap',
+  'query_surge',
+  'high_risk',
+  'prompt_injection',
+  'incident_match',
+  'source_status',
+  'system',
+];
+const MOCK_FLAGS: CheckFlag[] = [
+  'prompt_injection',
+  'high_risk',
+  'pii_masked',
+  'archival_material',
+  'incident_match',
+  'source_status_warning',
+  'conflicting_sources',
+];
+
 export class MockAdminApi implements AdminApi {
   readonly mode = 'mock' as const;
   readonly target = 'dane przykładowe w przeglądarce';
+  readonly capabilities: ApiCapabilities = {
+    features: new Set(MOCK_FEATURES),
+    alertTypes: MOCK_ALERT_TYPES,
+    checkFlags: MOCK_FLAGS,
+    checkOutcomes: ['technical_error', 'needs_clarification'],
+  };
   private state: MockState;
   private checks: CheckRecord[];
   private security: SecurityEvent[];
@@ -844,5 +896,41 @@ export class MockAdminApi implements AdminApi {
   async listAudit(): Promise<AuditEntry[]> {
     this.require('audit:read');
     return this.delay(this.state.audit);
+  }
+
+  // ── backend/admin only: not part of the demo data ─────────────────────────
+
+  listEndUsers(): Promise<EndUser[]> {
+    return Promise.reject(unsupported('Użytkownicy serwisu'));
+  }
+  getEndUser(): Promise<EndUserDetail> {
+    return Promise.reject(unsupported('Użytkownicy serwisu'));
+  }
+  blockEndUser(): Promise<EndUser> {
+    return Promise.reject(unsupported('Blokada użytkownika'));
+  }
+  unblockEndUser(): Promise<EndUser> {
+    return Promise.reject(unsupported('Blokada użytkownika'));
+  }
+  updateGapStatus(): Promise<QueryCluster> {
+    return Promise.reject(unsupported('Stan luki informacyjnej'));
+  }
+  getRuntimeConfig(): Promise<RuntimeConfig> {
+    return Promise.reject(unsupported('Konfiguracja backendu'));
+  }
+  updateRuntimeConfig(): Promise<{ changes: ConfigChange[]; config: RuntimeConfig }> {
+    return Promise.reject(unsupported('Konfiguracja backendu'));
+  }
+  listAvailableModels(): Promise<AvailableModels> {
+    return Promise.reject(unsupported('Lista modeli'));
+  }
+  listTechEvents(): Promise<{ file: string; items: TechEvent[] }> {
+    return Promise.reject(unsupported('Logi techniczne'));
+  }
+  getTechSummary(): Promise<TechSummary> {
+    return Promise.reject(unsupported('Logi techniczne'));
+  }
+  purgeOldData(): Promise<PurgeResult> {
+    return Promise.reject(unsupported('Retencja danych'));
   }
 }

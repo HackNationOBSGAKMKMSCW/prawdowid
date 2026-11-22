@@ -13,7 +13,7 @@ import { DEFAULT_ENDPOINTS, type EndpointMap } from './api/endpoints.ts';
 export type DataSource = 'mock' | 'http';
 
 export interface AdminConfig {
-  /** `mock` = example data generated in the browser, `http` = real admin API. */
+  /** `http` = real admin API (`backend/admin`), `mock` = example data generated in the browser. */
   dataSource: DataSource;
   /** Absolute URL or a path relative to the panel's origin, e.g. `/api/admin`. */
   apiBaseUrl: string;
@@ -25,10 +25,10 @@ export interface AdminConfig {
 }
 
 const DEFAULTS: AdminConfig = {
-  dataSource: 'mock',
+  dataSource: 'http',
   apiBaseUrl: '/api/admin',
   requestTimeoutMs: 20_000,
-  environmentLabel: 'demo',
+  environmentLabel: 'backend',
   endpoints: DEFAULT_ENDPOINTS,
 };
 

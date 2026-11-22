@@ -23,6 +23,8 @@ export type Permission =
   | 'users:read'
   | 'users:write'
   | 'audit:read'
+  | 'endusers:read'
+  | 'endusers:write'
   | 'export';
 
 const COMMON: Permission[] = [
@@ -37,6 +39,7 @@ const COMMON: Permission[] = [
   'sources:read',
   'security:read',
   'rules:read',
+  'endusers:read',
   'export',
 ];
 
@@ -58,9 +61,10 @@ export const ROLE_PERMISSIONS: Record<Role, ReadonlySet<Permission>> = {
     'users:read',
     'users:write',
     'audit:read',
+    'endusers:write',
   ]),
   analyst: new Set<Permission>([...COMMON, 'sources:write', 'models:read', 'settings:read']),
-  moderator: new Set<Permission>([...COMMON]),
+  moderator: new Set<Permission>([...COMMON, 'endusers:write']),
 };
 
 export function can(user: Pick<User, 'role'> | null | undefined, permission: Permission): boolean {

@@ -5,6 +5,7 @@ import type {
   CheckFlag,
   CheckOutcome,
   EvidenceStrength,
+  GapStatus,
   Health,
   InputKind,
   PipelineRole,
@@ -40,6 +41,8 @@ export const OUTCOME: Record<CheckOutcome, { label: string; tone: Tone }> = {
   abstained: { label: 'Wstrzymano się', tone: 'neutral' },
   technical_error: { label: 'Błąd techniczny', tone: 'warning' },
   needs_clarification: { label: 'Prośba o doprecyzowanie', tone: 'muted' },
+  refused: { label: 'Odrzucone', tone: 'serious' },
+  pending: { label: 'W toku', tone: 'muted' },
 };
 
 export const STRENGTH: Record<EvidenceStrength, string> = {
@@ -47,6 +50,7 @@ export const STRENGTH: Record<EvidenceStrength, string> = {
   moderate: 'Umiarkowana',
   weak: 'Słaba',
   none: 'Brak',
+  unknown: '—',
 };
 
 export const INPUT_KIND: Record<InputKind, string> = { text: 'Tekst', url: 'Adres URL', image: 'Obraz' };
@@ -59,6 +63,10 @@ export const FLAG: Record<CheckFlag, { label: string; tone: Tone }> = {
   incident_match: { label: 'Znany incydent', tone: 'info' },
   source_status_warning: { label: 'Status źródła', tone: 'warning' },
   conflicting_sources: { label: 'Źródła sprzeczne', tone: 'warning' },
+  no_evidence: { label: 'Brak danych', tone: 'neutral' },
+  information_gap: { label: 'Luka informacyjna', tone: 'serious' },
+  disinformation: { label: 'Możliwa dezinformacja', tone: 'critical' },
+  refused: { label: 'Odrzucone', tone: 'serious' },
 };
 
 export const ALERT_TYPE: Record<AlertType, { label: string; short: string }> = {
@@ -69,7 +77,28 @@ export const ALERT_TYPE: Record<AlertType, { label: string; short: string }> = {
   incident_match: { label: 'Znany incydent (kontekst)', short: 'Incydent' },
   source_status: { label: 'Status źródła', short: 'Źródło' },
   system: { label: 'Problem techniczny', short: 'System' },
+  disinformation: { label: 'Możliwy atak dezinformacyjny', short: 'Dezinformacja' },
+  dangerous_user: { label: 'Niebezpieczny użytkownik', short: 'Użytkownik' },
 };
+
+export const GAP_STATUS: Record<GapStatus, { label: string; tone: Tone }> = {
+  suspected: { label: 'Podejrzenie', tone: 'muted' },
+  active: { label: 'Aktywna', tone: 'serious' },
+  in_progress: { label: 'W uzupełnianiu', tone: 'warning' },
+  closed: { label: 'Zamknięta', tone: 'good' },
+  rejected: { label: 'Odrzucona', tone: 'muted' },
+};
+
+/** Dangerous-content categories from backend/admin/safety.py. */
+export const SAFETY_CATEGORY: Record<string, string> = {
+  terroryzm: 'terroryzm',
+  materialy_wybuchowe: 'materiały wybuchowe',
+  bron: 'broń',
+  bron_masowego_razenia: 'broń masowego rażenia',
+  przemoc_masowa: 'przemoc masowa',
+};
+
+export const safetyLabel = (id: string) => SAFETY_CATEGORY[id] ?? id.replace(/_/g, ' ');
 
 export const SEVERITY: Record<Severity, { label: string; tone: Tone }> = {
   critical: { label: 'Krytyczny', tone: 'critical' },
@@ -179,6 +208,7 @@ export const CHANNEL_LABEL: Record<string, string> = {
   whatsapp: 'WhatsApp',
   sms: 'SMS',
   panel: 'Panel',
+  api: 'API',
 };
 
 export const channelLabel = (id: string) => CHANNEL_LABEL[id] ?? id;

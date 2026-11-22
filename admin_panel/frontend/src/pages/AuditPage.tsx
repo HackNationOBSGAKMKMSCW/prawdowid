@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { getApi } from '../api/index.ts';
+import { getApi, supports } from '../api/index.ts';
 import { useAuth } from '../auth/AuthContext.tsx';
 import { Icon } from '../components/icons.tsx';
 import { Async, Card, EmptyState, PageHeader, SearchInput } from '../components/ui.tsx';
@@ -20,7 +20,11 @@ export default function AuditPage() {
     <>
       <PageHeader
         title="Dziennik audytu"
-        description="Kto, kiedy i co zmienił: modele, źródła, reguły, sprawy, użytkownicy, logowania."
+        description={
+          supports('runtimeConfig')
+            ? 'Kto, kiedy i co zmienił w konfiguracji backendu: modele, źródła danych, klucze API (tylko końcówka) i progi reguł.'
+            : 'Kto, kiedy i co zmienił: modele, źródła, reguły, sprawy, użytkownicy, logowania.'
+        }
         actions={
           can('export') && (
             <button

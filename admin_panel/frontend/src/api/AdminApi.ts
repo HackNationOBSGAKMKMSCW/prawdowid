@@ -1,6 +1,19 @@
 import type {
   Alert,
   AlertQuery,
+  ApiCapabilities,
+  AvailableModels,
+  ConfigChange,
+  EndUser,
+  EndUserDetail,
+  EndUserFilter,
+  GapStatus,
+  PurgeResult,
+  RuntimeConfig,
+  RuntimeConfigPatch,
+  TechEvent,
+  TechEventQuery,
+  TechSummary,
   AlertRules,
   AlertStatus,
   AssignmentPatch,
@@ -39,8 +52,11 @@ export interface AdminApi {
   readonly mode: 'mock' | 'http';
   /** Where requests go — shown in the UI so operators know what they are looking at. */
   readonly target: string;
+  /** What this source supports; the panel hides views and actions it cannot serve. */
+  readonly capabilities: ApiCapabilities;
 
-  setToken(token: string | null): void;
+  /** `actor` is the signed-in person's name, sent to the backend for the audit log. */
+  setToken(token: string | null, actor?: string): void;
   /** Called when the backend rejects the session (HTTP 401). */
   onUnauthorized(handler: () => void): void;
 
@@ -52,7 +68,7 @@ export interface AdminApi {
   getDashboard(rangeHours: number): Promise<DashboardStats>;
 
   listAlerts(query?: AlertQuery): Promise<Alert[]>;
-  updateAlert(id: string, patch: { status: AlertStatus }): Promise<Alert>;
+  updateAlert(id: string, patch: { status: AlertStatus; note?: string }): Promise<Alert>;
   /** Opens a moderator case, or attaches the alert to the existing case of the same group. */
   escalateAlert(id: string, assigneeId?: string): Promise<ModeratorCase>;
 
@@ -99,6 +115,36 @@ export interface AdminApi {
   updateUser(id: string, patch: { role?: Role; active?: boolean }): Promise<User>;
 
   listAudit(): Promise<AuditEntry[]>;
+
+  // ── Features of the real backend (backend/admin) ──────────────────────────
+  // Gated by `capabilities.features`; sources without them reject the call.
+
+  /** `endUsers`: people who write to the service, by pseudonym. */
+  listEndUsers(filter?: EndUserFilter): Promise<EndUser[]>;
+  getEndUser(key: string): Promise<EndUserDetail>;
+  /** `hours: null` blocks with no end date. */
+  blockEndUser(key: string, hours: number | null, reason?: string): Promise<EndUser>;
+  unblockEndUser(key: string): Promise<EndUser>;
+
+  /** `gapLifecycle`: move an information gap through its states. */
+  updateGapStatus(clusterId: string, status: GapStatus, note?: string): Promise<QueryCluster>;
+
+  /** `runtimeConfig`: models, data APIs, keys and alert thresholds, changed without a restart. */
+  getRuntimeConfig(): Promise<RuntimeConfig>;
+  updateRuntimeConfig(patch: RuntimeConfigPatch): Promise<{ changes: ConfigChange[]; config: RuntimeConfig }>;
+  listAvailableModels(): Promise<AvailableModels>;
+
+  /** `techEvents`: observability log lines and their summary. */
+  listTechEvents(query?: TechEventQuery): Promise<{ file: string; items: TechEvent[] }>;
+  getTechSummary(sinceHours?: number): Promise<TechSummary>;
+
+  /** `retention`: delete stored queries older than N days (default: retention setting). */
+  purgeOldData(olderThanDays?: number): Promise<PurgeResult>;
+}
+
+/** Error for a feature the data source does not have. */
+export function unsupported(what: string): ApiError {
+  return new ApiError(`${what}: niedostępne w tym źródle danych.`, 501);
 }
 
 /** Error with a user-facing Polish message and the HTTP status, if any. */

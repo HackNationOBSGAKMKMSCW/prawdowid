@@ -1,6 +1,8 @@
 /**
- * Domain types shared by every data source (mock and HTTP). They mirror the
- * schemas in `admin_panel/openapi.yaml`; change both together.
+ * Domain types shared by every data source. The mock follows
+ * `admin_panel/openapi.yaml`; the HTTP client maps the real backend
+ * (`backend/admin`) onto the same types in `api/backend/mappers.ts`.
+ * Types that exist only in the real backend are at the end of this file.
  */
 
 export type ISODate = string;
@@ -34,9 +36,18 @@ export type Verdict = 'confirmed' | 'false' | 'misleading' | 'insufficient' | 'n
  * How a check ended. Only `verdict` and `abstained` are substantive results:
  * a technical failure or a request for clarification is never a verdict.
  */
-export type CheckOutcome = 'verdict' | 'abstained' | 'technical_error' | 'needs_clarification';
+export type CheckOutcome =
+  | 'verdict'
+  | 'abstained'
+  | 'technical_error'
+  | 'needs_clarification'
+  /** Not processed: blocked user or a high-risk request (backend/admin). */
+  | 'refused'
+  /** Still being checked. */
+  | 'pending';
 
-export type EvidenceStrength = 'strong' | 'moderate' | 'weak' | 'none';
+/** `unknown` = the data source does not report evidence strength. */
+export type EvidenceStrength = 'strong' | 'moderate' | 'weak' | 'none' | 'unknown';
 
 export type InputKind = 'text' | 'url' | 'image';
 
@@ -47,7 +58,11 @@ export type CheckFlag =
   | 'archival_material'
   | 'incident_match'
   | 'source_status_warning'
-  | 'conflicting_sources';
+  | 'conflicting_sources'
+  | 'no_evidence'
+  | 'information_gap'
+  | 'disinformation'
+  | 'refused';
 
 export interface Evidence {
   id: string;
@@ -64,12 +79,17 @@ export interface Evidence {
 export interface ClaimResult {
   id: string;
   text: string;
-  verdict: Verdict;
+  /** `null` = no verdict (e.g. analysis error). */
+  verdict: Verdict | null;
   strength: EvidenceStrength;
   rationale: string;
   evidence: Evidence[];
   /** What could not be established — filled in when the system abstains. */
   missing?: string;
+  /** Number of sources found, when the backend reports a count but not the items. */
+  sourcesCount?: number | null;
+  /** Topic (query cluster) the claim was grouped into. */
+  topicId?: string;
 }
 
 export interface CheckRecord {
@@ -92,6 +112,11 @@ export interface CheckRecord {
   tokens: number;
   costPln: number;
   errorMessage?: string;
+  /** Pseudonymised end user (HMAC) and their masked id, e.g. `***456`. */
+  userKey?: string;
+  userLabel?: string;
+  sourcesCount?: number | null;
+  requestId?: string | null;
 }
 
 export interface CheckQuery {
@@ -143,12 +168,19 @@ export interface QueryCluster {
   isInformationGap: boolean;
   isSurging: boolean;
   caseId?: string;
+  /** Information-gap lifecycle, when the backend manages it (backend/admin). */
+  gapStatus?: GapStatus;
+  gapNote?: string;
+  gapSince?: ISODate;
+  gapUpdatedAt?: ISODate;
 }
 
 export interface ClusterQuery {
   onlyGaps?: boolean;
   onlySurging?: boolean;
   search?: string;
+  /** Counts only: the source may skip per-cluster details (series, samples). */
+  light?: boolean;
 }
 
 // ── Alerts and warnings ─────────────────────────────────────────────────────
@@ -160,7 +192,11 @@ export type AlertType =
   | 'prompt_injection'
   | 'incident_match'
   | 'source_status'
-  | 'system';
+  | 'system'
+  /** Many different people ask about a claim rated false (backend/admin). */
+  | 'disinformation'
+  /** One user repeatedly asks for dangerous content (backend/admin). */
+  | 'dangerous_user';
 
 export type Severity = 'critical' | 'high' | 'medium' | 'low';
 
@@ -197,6 +233,12 @@ export interface Alert {
   notified: Notification[];
   /** Role the rules recommend notifying when nobody is assigned to the alert type. */
   recommendedRole?: Role;
+  /** Number of related queries when the backend reports a count instead of ids. */
+  queryCount?: number;
+  /** End user the alert is about (`dangerous_user`). */
+  userKey?: string;
+  /** Admin's note from the last status change. */
+  note?: string;
 }
 
 export interface AlertQuery {
@@ -503,6 +545,13 @@ export interface DashboardStats {
   informationGaps: number;
   quality: QualityMetric[];
   qualityEvaluatedAt?: ISODate;
+  /** Only from backend/admin: distinct end users, refused and dangerous queries, blocks. */
+  users?: number;
+  refused?: number;
+  dangerousQueries?: number;
+  blockedUsers?: number;
+  /** Queries still in progress. */
+  pending?: number;
 }
 
 // ── Audit ───────────────────────────────────────────────────────────────────
@@ -514,4 +563,200 @@ export interface AuditEntry {
   action: string;
   target: string;
   detail?: string;
+}
+
+// ── Only in the real backend (backend/admin) ───────────────────────────────
+
+/**
+ * Optional parts of the panel. Each data source declares what it supports;
+ * navigation, routes and page sections are hidden for missing features.
+ */
+export type Feature =
+  // example contract (admin_panel/openapi.yaml), implemented by the mock
+  | 'cases'
+  | 'clusters'
+  | 'sources'
+  | 'providers'
+  | 'channels'
+  | 'privacy'
+  | 'securityEvents'
+  | 'alertRules'
+  | 'staffUsers'
+  | 'deleteCheck'
+  | 'checkCost'
+  | 'channelFilter'
+  | 'quality'
+  // backend/admin
+  | 'endUsers'
+  | 'gapLifecycle'
+  | 'runtimeConfig'
+  | 'techEvents'
+  | 'retention';
+
+export interface ApiCapabilities {
+  features: ReadonlySet<Feature>;
+  /** Alert types this source can produce (filters list only these). */
+  alertTypes: readonly AlertType[];
+  /** Check flags this source can filter by. */
+  checkFlags: readonly CheckFlag[];
+  /** Non-verdict outcomes this source can filter by. */
+  checkOutcomes: readonly CheckOutcome[];
+}
+
+/** Information-gap lifecycle in backend/admin (`podejrzenie` → … → `zamknieta`). */
+export type GapStatus = 'suspected' | 'active' | 'in_progress' | 'closed' | 'rejected';
+
+/** A person who writes to the service (e.g. the WhatsApp bot), known only by a pseudonym. */
+export interface EndUser {
+  key: string;
+  /** Masked identifier, e.g. `***456`. */
+  label: string;
+  firstSeen: ISODate;
+  lastSeen: ISODate;
+  queries: number;
+  /** Queries classified as dangerous content (medium or high risk). */
+  dangerous: number;
+  blockedUntil: ISODate | null;
+  blockReason: string | null;
+  blocked: boolean;
+  /** Blocked with no end date. */
+  permanent: boolean;
+}
+
+export interface EndUserDetail extends EndUser {
+  totalQueries: number;
+  recentQueries: CheckRecord[];
+  alerts: Alert[];
+}
+
+export type EndUserFilter = 'all' | 'flagged' | 'blocked';
+
+/** Overrides kept in `runtime_config.json`; `null` = value from `.env`. Keys mirror backend/admin/runtime.py. */
+export interface LlmSettings {
+  model: string | null;
+  text_analysis_model: string | null;
+  base_url: string | null;
+  timeout_s: number | null;
+  max_retries: number | null;
+}
+
+export interface ApiSettings {
+  disabled_clients: string[] | null;
+  article_scraping_enabled: boolean | null;
+  article_extractor: 'local' | 'diffbot' | null;
+}
+
+export interface MonitoringSettings {
+  info_gap_min_users: number;
+  info_gap_window_hours: number;
+  disinfo_min_users: number;
+  disinfo_window_hours: number;
+  dangerous_alert_after: number;
+  dangerous_block_after: number;
+  dangerous_window_hours: number;
+  dangerous_block_hours: number;
+  auto_block: boolean;
+  refuse_high_risk: boolean;
+  retention_days: number;
+}
+
+export type SecretName = 'freellm_api_key' | 'google_fact_check_api_key' | 'diffbot_api_token';
+
+export interface SecretState {
+  /** Set in the panel (runtime_config.json), not only in `.env`. */
+  overridden: boolean;
+  /** The backend has a value (from either source). */
+  set: boolean;
+  /** Last characters only, e.g. `****abcd`. The key itself never reaches the browser. */
+  mask: string | null;
+}
+
+export interface RuntimeConfig {
+  llm: LlmSettings;
+  apis: ApiSettings;
+  monitoring: MonitoringSettings;
+  secrets: Record<SecretName, SecretState>;
+  /** Environment variable → value the backend uses now (secrets masked). */
+  effective: Record<string, string | null>;
+  /** apiReading clients that can be switched off. */
+  apiClients: string[];
+  /** Where the backend stores the overrides. */
+  file: string;
+}
+
+export interface RuntimeConfigPatch {
+  llm?: Partial<LlmSettings>;
+  apis?: Partial<ApiSettings>;
+  monitoring?: Partial<MonitoringSettings>;
+  /** Write-only; `null` removes the override (back to `.env`). */
+  secrets?: Partial<Record<SecretName, string | null>>;
+}
+
+export interface ConfigChange {
+  field: string;
+  old: unknown;
+  new: unknown;
+}
+
+export interface AvailableModels {
+  baseUrl: string | null;
+  current?: string | null;
+  models: string[];
+  error?: string;
+}
+
+/** One line of the observability log (`backend/logs/app.jsonl`). */
+export interface TechEvent {
+  id: string;
+  at: ISODate;
+  level: string;
+  event: string;
+  requestId?: string;
+  /** Every other field of the log line. */
+  fields: Record<string, unknown>;
+}
+
+export interface TechEventQuery {
+  event?: string;
+  level?: string;
+  requestId?: string;
+  sinceHours?: number;
+  limit?: number;
+}
+
+/** `observability.report.summarize()` as returned by `GET /events/summary`. */
+export interface TechSummary {
+  requests: {
+    count: number;
+    failed: number;
+    abstained: number;
+    duration_ms_p50: number | null;
+    duration_ms_p95: number | null;
+    cost_usd_total: number;
+    cost_usd_avg: number | null;
+    cost_incomplete: number;
+  };
+  llm: {
+    latency_ms_p50: number | null;
+    latency_ms_p95: number | null;
+    by_model: Record<
+      string,
+      { calls: number; errors: number; prompt_tokens: number; completion_tokens: number; cost_usd: number }
+    >;
+  };
+  search: {
+    calls: number;
+    errors: Record<string, number>;
+    latency_ms_p95: number | null;
+    empty_evidence: Record<string, number>;
+  };
+  prompt_injection: { by_kind: Record<string, number>; by_source: Record<string, number> };
+  abstain: Record<string, number>;
+  stages_ms_p50: Record<string, number | null>;
+  error_lines: number;
+}
+
+export interface PurgeResult {
+  before: ISODate;
+  deleted: { queries: number; claims: number };
 }

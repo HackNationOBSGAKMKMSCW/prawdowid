@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
-import { getApi } from '../api/index.ts';
+import { getApi, supports } from '../api/index.ts';
+import type { Feature } from '../api/types.ts';
 import { useAuth } from '../auth/AuthContext.tsx';
 import type { Permission } from '../auth/permissions.ts';
 import { getConfig } from '../config.ts';
@@ -13,6 +14,8 @@ interface NavItem {
   icon: IconName;
   permission: Permission;
   counter?: keyof Counts;
+  /** Shown only when the data source supports this part of the panel. */
+  feature?: Feature;
 }
 
 export const NAV: { section: string; items: NavItem[] }[] = [
@@ -28,25 +31,29 @@ export const NAV: { section: string; items: NavItem[] }[] = [
     items: [
       { to: '/alerts', label: 'Alerty i ostrzeżenia', icon: 'bell', permission: 'alerts:read', counter: 'alerts' },
       { to: '/gaps', label: 'Luki informacyjne', icon: 'gap', permission: 'clusters:read', counter: 'gaps' },
-      { to: '/repeated', label: 'Powtarzające się zapytania', icon: 'repeat', permission: 'clusters:read' },
-      { to: '/security', label: 'Bezpieczeństwo', icon: 'shield', permission: 'security:read' },
+      { to: '/repeated', label: 'Powtarzające się zapytania', icon: 'repeat', permission: 'clusters:read', feature: 'clusters' },
+      { to: '/security', label: 'Bezpieczeństwo', icon: 'shield', permission: 'security:read', feature: 'securityEvents' },
+      { to: '/end-users', label: 'Użytkownicy serwisu', icon: 'users', permission: 'endusers:read', feature: 'endUsers', counter: 'blocked' },
+      { to: '/logs', label: 'Logi techniczne', icon: 'shield', permission: 'security:read', feature: 'techEvents' },
     ],
   },
   {
     section: 'Obsługa',
     items: [
-      { to: '/cases', label: 'Sprawy moderatora', icon: 'folder', permission: 'cases:read', counter: 'cases' },
+      { to: '/cases', label: 'Sprawy moderatora', icon: 'folder', permission: 'cases:read', counter: 'cases', feature: 'cases' },
       { to: '/checks', label: 'Historia weryfikacji', icon: 'history', permission: 'checks:read' },
     ],
   },
   {
     section: 'Konfiguracja',
     items: [
-      { to: '/sources', label: 'Katalog źródeł', icon: 'database', permission: 'sources:read' },
-      { to: '/models', label: 'Modele AI', icon: 'cpu', permission: 'models:read' },
-      { to: '/rules', label: 'Reguły alertów', icon: 'sliders', permission: 'rules:read' },
-      { to: '/settings', label: 'Kanały i prywatność', icon: 'settings', permission: 'settings:read' },
-      { to: '/users', label: 'Użytkownicy', icon: 'users', permission: 'users:read' },
+      { to: '/sources', label: 'Katalog źródeł', icon: 'database', permission: 'sources:read', feature: 'sources' },
+      { to: '/models', label: 'Modele AI', icon: 'cpu', permission: 'models:read', feature: 'providers' },
+      { to: '/runtime', label: 'Modele i źródła danych', icon: 'cpu', permission: 'models:read', feature: 'runtimeConfig' },
+      { to: '/rules', label: 'Reguły alertów', icon: 'sliders', permission: 'rules:read', feature: 'alertRules' },
+      { to: '/thresholds', label: 'Reguły i progi', icon: 'sliders', permission: 'rules:read', feature: 'runtimeConfig' },
+      { to: '/settings', label: 'Kanały i prywatność', icon: 'settings', permission: 'settings:read', feature: 'channels' },
+      { to: '/users', label: 'Użytkownicy', icon: 'users', permission: 'users:read', feature: 'staffUsers' },
       { to: '/audit', label: 'Dziennik audytu', icon: 'audit', permission: 'audit:read' },
     ],
   },
@@ -57,6 +64,7 @@ interface Counts {
   critical: number;
   gaps: number;
   cases: number;
+  blocked: number;
 }
 
 const CountsContext = createContext<() => void>(() => {});
@@ -106,15 +114,17 @@ export default function Layout() {
   const refreshCounts = useCallback(() => {
     Promise.all([
       can('alerts:read') ? api.listAlerts({ status: 'open' }) : Promise.resolve([]),
-      can('clusters:read') ? api.listClusters({ onlyGaps: true }) : Promise.resolve([]),
-      can('cases:read') ? api.listCases({ status: 'open' }) : Promise.resolve([]),
+      can('clusters:read') ? api.listClusters({ onlyGaps: true, light: true }) : Promise.resolve([]),
+      can('cases:read') && supports('cases') ? api.listCases({ status: 'open' }) : Promise.resolve([]),
+      can('endusers:read') && supports('endUsers') ? api.listEndUsers('blocked') : Promise.resolve([]),
     ])
-      .then(([alerts, gaps, cases]) =>
+      .then(([alerts, gaps, cases, blocked]) =>
         setCounts({
           alerts: alerts.filter((a) => a.status === 'new').length,
           critical: alerts.filter((a) => a.severity === 'critical' && a.status === 'new').length,
-          gaps: gaps.filter((g) => g.isInformationGap).length,
+          gaps: gaps.filter((g) => (g.gapStatus ? g.gapStatus === 'active' : g.isInformationGap)).length,
           cases: cases.length,
+          blocked: blocked.length,
         }),
       )
       .catch(() => {
@@ -146,7 +156,7 @@ export default function Layout() {
           </div>
           <nav>
             {NAV.map((group) => {
-              const items = group.items.filter((i) => can(i.permission));
+              const items = group.items.filter((i) => can(i.permission) && (!i.feature || supports(i.feature)));
               if (!items.length) return null;
               return (
                 <div key={group.section} className="nav-group">
@@ -159,7 +169,10 @@ export default function Layout() {
                         <Icon name={item.icon} size={18} />
                         <span>{item.label}</span>
                         {count > 0 && (
-                          <span className={`nav-count ${urgent ? 'is-urgent' : ''}`} aria-label={`${count} nowych`}>
+                          <span
+                            className={`nav-count ${urgent ? 'is-urgent' : ''}`}
+                            aria-label={item.counter === 'blocked' ? `${count} zablokowanych` : `${count} nowych`}
+                          >
                             {count}
                           </span>
                         )}
@@ -221,8 +234,9 @@ export default function Layout() {
             <div className="demo-banner" role="note">
               <Icon name="info" size={16} />
               <span>
-                Tryb demonstracyjny: wszystkie liczby, zapytania i wyniki są przykładowe. Aby podłączyć prawdziwe API,
-                ustaw <code>"dataSource": "http"</code> w <code>config.json</code>.
+                Tryb demonstracyjny: wszystkie liczby, zapytania i wyniki są przykładowe. Prawdziwe dane z backendu admina:{' '}
+                <code>npm run dev</code> (bez <code>--mode demo</code>) albo <code>"dataSource": "http"</code> w{' '}
+                <code>config.json</code>.
               </span>
             </div>
           )}

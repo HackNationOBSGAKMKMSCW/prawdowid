@@ -1,0 +1,470 @@
+/**
+ * Translation between `backend/admin` (Polish vocabulary, snake_case) and the
+ * panel's domain types. Keep every backend-specific word here so pages stay
+ * independent of the data source.
+ */
+import { safetyLabel } from '../../components/labels.ts';
+import { fmtDateTime, plural } from '../../utils/format.ts';
+import type {
+  Alert,
+  AlertStatus,
+  AlertType,
+  AuditEntry,
+  CheckFlag,
+  CheckOutcome,
+  CheckRecord,
+  ClaimResult,
+  EndUser,
+  GapStatus,
+  InputKind,
+  MonitoringSettings,
+  QueryCluster,
+  RuntimeConfig,
+  SecretName,
+  Severity,
+  TechEvent,
+  Verdict,
+} from '../types.ts';
+import type { RawAlert, RawAudit, RawClaim, RawConfig, RawEvent, RawGap, RawQuery, RawTopic, RawUser } from './raw.ts';
+
+const HOUR = 3_600_000;
+
+// ── verdicts and outcomes ───────────────────────────────────────────────────
+
+/** Every verdict word the pipelines write (analysis/, whatsappAdapter, admin monitor). */
+const VERDICT_FROM_BACKEND: Record<string, Verdict> = {
+  prawda: 'confirmed',
+  prawdziwy: 'confirmed',
+  potwierdzony: 'confirmed',
+  falsz: 'false',
+  falszywy: 'false',
+  zawiera_falsz: 'false',
+  czesciowo_potwierdzony: 'misleading',
+  sprzeczne_zrodla: 'misleading',
+  manipulacja: 'misleading',
+  brak_wystarczajacych_danych: 'insufficient',
+  brak_danych: 'insufficient',
+  nieweryfikowalny: 'not_verifiable',
+};
+
+/** Verdict filter → the value stored by the backend (the most common spelling). */
+export const VERDICT_TO_BACKEND: Record<Verdict, string> = {
+  confirmed: 'prawda',
+  false: 'falsz',
+  misleading: 'czesciowo_potwierdzony',
+  insufficient: 'brak_wystarczajacych_danych',
+  not_verifiable: 'nieweryfikowalny',
+};
+
+const ABSTAINING: ReadonlySet<Verdict> = new Set<Verdict>(['insufficient', 'not_verifiable']);
+const TECHNICAL_VERDICTS = new Set(['blad_analizy']);
+
+export function mapVerdict(value: string | null | undefined): Verdict | null {
+  return value ? (VERDICT_FROM_BACKEND[value] ?? null) : null;
+}
+
+export function outcomeOf(q: Pick<RawQuery, 'status' | 'verdict'>): CheckOutcome {
+  if (q.status === 'odrzucone') return 'refused';
+  if (q.status === 'w_toku') return 'pending';
+  if (q.status === 'blad' || (q.verdict && TECHNICAL_VERDICTS.has(q.verdict))) return 'technical_error';
+  const verdict = mapVerdict(q.verdict);
+  // No verdict after a finished check = no sources found (counted as a gap by the monitor).
+  return verdict && !ABSTAINING.has(verdict) ? 'verdict' : 'abstained';
+}
+
+/** Outcome filter → `status` / `verdict` query parameters. */
+export function outcomeFilter(outcome: CheckOutcome): Record<string, string> {
+  switch (outcome) {
+    case 'refused':
+      return { status: 'odrzucone' };
+    case 'pending':
+      return { status: 'w_toku' };
+    case 'technical_error':
+      return { status: 'blad' };
+    case 'abstained':
+      return { verdict: 'brak_wystarczajacych_danych' };
+    default:
+      return { status: 'zakonczone' };
+  }
+}
+
+// ── flags ───────────────────────────────────────────────────────────────────
+
+/** Panel flag → prefix of the backend flag (the API matches `flag%`). */
+export const FLAG_TO_BACKEND: Partial<Record<CheckFlag, string>> = {
+  high_risk: 'niebezpieczne',
+  refused: 'odrzucone',
+  no_evidence: 'brak_danych',
+  information_gap: 'luka_informacyjna',
+  disinformation: 'kampania_dezinformacyjna',
+};
+
+export const BACKEND_FLAGS = Object.keys(FLAG_TO_BACKEND) as CheckFlag[];
+
+function mapFlags(flags: string[] | null): CheckFlag[] {
+  const out = new Set<CheckFlag>();
+  for (const flag of flags ?? []) {
+    for (const [panel, prefix] of Object.entries(FLAG_TO_BACKEND)) {
+      if (flag === prefix || flag.startsWith(`${prefix}:`)) out.add(panel as CheckFlag);
+    }
+  }
+  return [...out];
+}
+
+const REFUSAL: Record<string, string> = {
+  uzytkownik_zablokowany: 'Użytkownik jest zablokowany — wiadomość nie została sprawdzona.',
+  niebezpieczna_tresc:
+    'Prośba o instrukcje lub zdobycie broni, materiałów wybuchowych albo przemocy — odrzucona bez sprawdzania.',
+};
+
+function refusalReason(flags: string[] | null): string | undefined {
+  const flag = (flags ?? []).find((f) => f.startsWith('odrzucone:'));
+  if (!flag) return undefined;
+  const reason = flag.slice('odrzucone:'.length);
+  return REFUSAL[reason] ?? reason.replace(/_/g, ' ');
+}
+
+// ── queries (verification log) ──────────────────────────────────────────────
+
+function durationMs(start: string, end: string | null): number {
+  if (!end) return 0;
+  const ms = Date.parse(end) - Date.parse(start);
+  return Number.isFinite(ms) && ms > 0 ? ms : 0;
+}
+
+function inputKind(text: string): InputKind {
+  return /^\s*https?:\/\/\S+\s*$/i.test(text) ? 'url' : 'text';
+}
+
+function mapClaim(claim: RawClaim, index: number): ClaimResult {
+  const verdict = mapVerdict(claim.verdict);
+  return {
+    id: String(claim.id ?? index),
+    text: claim.text,
+    verdict,
+    strength: claim.sources_count === 0 ? 'none' : 'unknown',
+    rationale: '',
+    evidence: [],
+    missing:
+      claim.kind === 'luka'
+        ? 'Brak rozstrzygnięcia: nie znaleziono źródeł albo nie wystarczyły do oceny.'
+        : claim.verdict && TECHNICAL_VERDICTS.has(claim.verdict)
+          ? 'Błąd analizy źródeł — to nie jest werdykt.'
+          : undefined,
+    sourcesCount: claim.sources_count,
+    topicId: claim.topic_id,
+  };
+}
+
+export function mapQuery(q: RawQuery): CheckRecord {
+  const text = q.text ?? '';
+  const outcome = outcomeOf(q);
+  return {
+    id: q.id,
+    createdAt: q.ts,
+    channel: q.channel || 'api',
+    inputKind: inputKind(text),
+    query: text,
+    outcome,
+    overallVerdict: outcome === 'verdict' || outcome === 'abstained' ? mapVerdict(q.verdict) : null,
+    strength: q.sources_count === 0 ? 'none' : 'unknown',
+    claims: (q.claims ?? []).map(mapClaim),
+    flags: mapFlags(q.flags),
+    riskTopics: (q.safety?.categories ?? []).map(safetyLabel),
+    durationMs: durationMs(q.ts, q.completed_at),
+    models: {},
+    tokens: 0,
+    costPln: 0,
+    errorMessage: outcome === 'refused' ? refusalReason(q.flags) : (q.error ?? undefined),
+    userKey: q.user_key,
+    userLabel: q.user_label ?? undefined,
+    sourcesCount: q.sources_count,
+    requestId: q.request_id,
+  };
+}
+
+// ── alerts ──────────────────────────────────────────────────────────────────
+
+const ALERT_TYPE_FROM_BACKEND: Record<string, AlertType> = {
+  luka_informacyjna: 'information_gap',
+  kampania_dezinformacyjna: 'disinformation',
+  niebezpieczny_uzytkownik: 'dangerous_user',
+};
+
+export const ALERT_TYPE_TO_BACKEND: Partial<Record<AlertType, string>> = Object.fromEntries(
+  Object.entries(ALERT_TYPE_FROM_BACKEND).map(([k, v]) => [v, k]),
+);
+
+export const BACKEND_ALERT_TYPES = Object.values(ALERT_TYPE_FROM_BACKEND);
+
+const SEVERITY_FROM_BACKEND: Record<string, Severity> = {
+  krytyczna: 'critical',
+  wysoka: 'high',
+  srednia: 'medium',
+  niska: 'low',
+};
+
+const ALERT_STATUS_FROM_BACKEND: Record<string, AlertStatus> = {
+  otwarty: 'new',
+  w_analizie: 'acknowledged',
+  rozwiazany: 'resolved',
+  falszywy_alarm: 'dismissed',
+};
+
+export const ALERT_STATUS_TO_BACKEND: Record<AlertStatus, string> = {
+  new: 'otwarty',
+  acknowledged: 'w_analizie',
+  escalated: 'w_analizie',
+  resolved: 'rozwiazany',
+  dismissed: 'falszywy_alarm',
+};
+
+const persons = (n: number) => `${n} ${plural(n, ['osoba', 'osoby', 'osób'])}`;
+const asked = (n: number) => `${n} ${plural(n, ['osoba pytała', 'osoby pytały', 'osób pytało'])}`;
+const queries = (n: number) => `${n} ${plural(n, ['zapytanie', 'zapytania', 'zapytań'])}`;
+const num = (value: unknown): number => (typeof value === 'number' ? value : Number(value) || 0);
+
+function describeAlert(a: RawAlert, type: AlertType, m: MonitoringSettings | null) {
+  const d = a.details ?? {};
+  const windowH = num(d.okno_h);
+  const metrics: Record<string, string | number> = {};
+  let description: string;
+  let rule: string;
+
+  if (type === 'dangerous_user') {
+    const high = num(d.wysokie_ryzyko);
+    const categories = Object.entries((d.kategorie as Record<string, number> | undefined) ?? {})
+      .sort((x, y) => y[1] - x[1])
+      .map(([name, n]) => `${safetyLabel(name)} (${n})`);
+    const blockedUntil = typeof d.zablokowany_do === 'string' ? d.zablokowany_do : null;
+    description =
+      `Jedna osoba wysłała ${queries(a.count)} o treści niebezpieczne w ciągu ${windowH} h` +
+      (high ? `, w tym ${high} wysokiego ryzyka (prośby o instrukcje lub zdobycie)` : '') +
+      '.' +
+      (blockedUntil ? ` Zablokowana automatycznie do ${fmtDateTime(blockedUntil)}.` : '');
+    rule = m
+      ? `alert od ${m.dangerous_alert_after} takich zapytań w ${m.dangerous_window_hours} h; ` +
+        (m.auto_block
+          ? `blokada na ${m.dangerous_block_hours} h od ${m.dangerous_block_after} zapytań wysokiego ryzyka`
+          : 'automatyczna blokada wyłączona')
+      : 'powtarzające się zapytania o treści niebezpieczne';
+    metrics['Zapytania'] = a.count;
+    metrics['Wysokiego ryzyka'] = high;
+    if (categories.length) metrics['Kategorie'] = categories.join(', ');
+    if (blockedUntil) metrics['Zablokowany do'] = fmtDateTime(blockedUntil);
+  } else if (type === 'disinformation') {
+    description =
+      `W ciągu ${windowH} h ${asked(a.users)} o twierdzenie ocenione jako fałsz ` +
+      `(${queries(a.count)}). Może to być skoordynowane rozpowszechnianie dezinformacji.`;
+    rule = m
+      ? `≥ ${persons(m.disinfo_min_users)} w ${m.disinfo_window_hours} h pyta o twierdzenie ocenione jako fałsz; ` +
+        `od ${persons(2 * m.disinfo_min_users)} — wysoki priorytet`
+      : 'wiele różnych osób pyta o twierdzenie ocenione jako fałsz';
+    metrics['Różne osoby'] = a.users;
+    metrics['Zapytania'] = a.count;
+  } else {
+    description =
+      `${asked(a.users)} o temat, którego system nie rozstrzygnął — brak źródeł albo ` +
+      `niewystarczające dane (${queries(a.count)} w oknie ${windowH} h).`;
+    rule = m
+      ? `≥ ${persons(m.info_gap_min_users)} w ${m.info_gap_window_hours} h pyta o temat bez rozstrzygnięcia; ` +
+        `od ${persons(3 * m.info_gap_min_users)} — wysoki priorytet`
+      : 'kilka różnych osób pyta o temat bez rozstrzygnięcia';
+    metrics['Różne osoby'] = a.users;
+    metrics['Zapytania bez dowodów'] = a.count;
+  }
+  if (windowH) metrics['Okno'] = `${windowH} h`;
+  metrics['Pierwsze zgłoszenie'] = fmtDateTime(a.first_seen);
+  return { description, rule, metrics };
+}
+
+export function mapAlert(a: RawAlert, monitoring: MonitoringSettings | null): Alert {
+  const type = ALERT_TYPE_FROM_BACKEND[a.type] ?? 'system';
+  const { description, rule, metrics } = describeAlert(a, type, monitoring);
+  const aboutTopic = type === 'information_gap' || type === 'disinformation';
+  return {
+    id: a.id,
+    type,
+    severity: SEVERITY_FROM_BACKEND[a.severity] ?? 'medium',
+    status: ALERT_STATUS_FROM_BACKEND[a.status] ?? 'new',
+    title: a.title,
+    description,
+    rule,
+    createdAt: a.first_seen,
+    updatedAt: a.last_seen,
+    clusterId: aboutTopic ? a.subject : undefined,
+    userKey: type === 'dangerous_user' ? a.subject : undefined,
+    checkIds: [],
+    queryCount: a.count,
+    metrics,
+    notified: [],
+    note: a.note ?? undefined,
+  };
+}
+
+// ── topics and information gaps ─────────────────────────────────────────────
+
+const GAP_FROM_BACKEND: Record<string, GapStatus> = {
+  podejrzenie: 'suspected',
+  aktywna: 'active',
+  w_uzupelnianiu: 'in_progress',
+  zamknieta: 'closed',
+  odrzucona: 'rejected',
+};
+
+export const GAP_TO_BACKEND: Record<GapStatus, string> = {
+  suspected: 'podejrzenie',
+  active: 'aktywna',
+  in_progress: 'w_uzupelnianiu',
+  closed: 'zamknieta',
+  rejected: 'odrzucona',
+};
+
+export function mapTopic(gap: RawGap, topic: RawTopic | null, now = Date.now()): QueryCluster {
+  const claims = topic?.claims ?? [];
+  const byKind = topic?.by_kind ?? {};
+  const counted = Object.values(byKind).reduce((s, k) => s + k.claims, 0);
+  const total = counted || claims.length;
+  const noEvidence = byKind.luka?.claims ?? claims.filter((c) => c.kind === 'luka').length;
+
+  const hourly = new Array<number>(48).fill(0);
+  let inWindow = 0;
+  let previousWindow = 0;
+  const verdicts: Partial<Record<Verdict, number>> = {};
+  for (const claim of claims) {
+    const age = now - Date.parse(claim.ts ?? '');
+    if (Number.isFinite(age) && age >= 0) {
+      const bucket = 47 - Math.floor(age / HOUR);
+      if (bucket >= 0) hourly[bucket] += 1;
+      if (age < 24 * HOUR) inWindow += 1;
+      else if (age < 48 * HOUR) previousWindow += 1;
+    }
+    const verdict = mapVerdict(claim.verdict) ?? (claim.kind === 'luka' ? 'insufficient' : null);
+    if (verdict) verdicts[verdict] = (verdicts[verdict] ?? 0) + 1;
+  }
+
+  const users = new Set(claims.map((c) => c.user_key).filter(Boolean)).size;
+  const status = GAP_FROM_BACKEND[gap.gap_status];
+  return {
+    id: gap.id,
+    label: gap.label,
+    keywords: (topic?.tokens ?? []).slice(0, 6),
+    total,
+    inWindow,
+    previousWindow,
+    uniqueSessions: Math.max(users, gap.gap_users ?? 0),
+    noEvidence,
+    noEvidenceRatio: total ? noEvidence / total : 0,
+    verdicts,
+    channels: {},
+    firstSeen: gap.created_at,
+    lastSeen: gap.last_seen,
+    hourly,
+    riskTopics: [],
+    sampleQueries: [...new Set(claims.map((c) => c.text))].slice(0, 6),
+    isInformationGap: status === 'active' || status === 'in_progress',
+    isSurging: false,
+    gapStatus: status,
+    gapNote: gap.gap_note ?? undefined,
+    gapSince: gap.gap_since ?? undefined,
+    gapUpdatedAt: gap.gap_updated_at ?? undefined,
+  };
+}
+
+// ── end users ───────────────────────────────────────────────────────────────
+
+export function mapUser(u: RawUser, now = Date.now()): EndUser {
+  const until = u.blocked_until;
+  const blocked = !!until && Date.parse(until) > now;
+  return {
+    key: u.user_key,
+    label: u.label || '***',
+    firstSeen: u.first_seen,
+    lastSeen: u.last_seen,
+    queries: u.queries,
+    dangerous: u.dangerous,
+    blockedUntil: until,
+    blockReason: u.block_reason,
+    blocked,
+    permanent: blocked && !!until && until.startsWith('9999'),
+  };
+}
+
+// ── configuration and audit ─────────────────────────────────────────────────
+
+export function mapConfig(raw: RawConfig, previous?: RuntimeConfig): RuntimeConfig {
+  const secrets = Object.fromEntries(
+    Object.entries(raw.secrets ?? {}).map(([name, s]) => [
+      name,
+      { overridden: s.nadpisany, set: s.ustawiony, mask: s.maska },
+    ]),
+  ) as RuntimeConfig['secrets'];
+  return {
+    llm: raw.llm,
+    apis: raw.apis,
+    monitoring: raw.monitoring,
+    secrets,
+    effective: raw.efektywne ?? {},
+    apiClients: raw.api_clients ?? previous?.apiClients ?? [],
+    file: raw.file ?? previous?.file ?? '',
+  };
+}
+
+export const SECRET_LABEL: Record<SecretName, string> = {
+  freellm_api_key: 'Klucz API modelu językowego (FREELLM_API_KEY)',
+  google_fact_check_api_key: 'Google Fact Check Tools (GOOGLE_FACT_CHECK_API_KEY)',
+  diffbot_api_token: 'Diffbot — pobieranie artykułów (DIFFBOT_API_TOKEN)',
+};
+
+const FIELD_LABEL: Record<string, string> = {
+  'llm.model': 'Model główny',
+  'llm.text_analysis_model': 'Model analizy tekstu',
+  'llm.base_url': 'Adres API modelu',
+  'llm.timeout_s': 'Limit czasu modelu',
+  'llm.max_retries': 'Ponowienia modelu',
+  'apis.disabled_clients': 'Wyłączone źródła danych',
+  'apis.article_scraping_enabled': 'Pobieranie artykułów',
+  'apis.article_extractor': 'Ekstraktor artykułów',
+  'monitoring.retention_days': 'Retencja danych (dni)',
+  'monitoring.auto_block': 'Automatyczna blokada',
+  'monitoring.refuse_high_risk': 'Odrzucanie treści wysokiego ryzyka',
+};
+
+export function fieldLabel(field: string): string {
+  const [section, name] = field.split('.');
+  if (FIELD_LABEL[field]) return FIELD_LABEL[field];
+  if (section === 'secrets' && name in SECRET_LABEL) return SECRET_LABEL[name as SecretName];
+  return field;
+}
+
+export function formatValue(value: unknown): string {
+  if (value === null || value === undefined) return 'z .env';
+  if (typeof value === 'boolean') return value ? 'tak' : 'nie';
+  if (Array.isArray(value)) return value.length ? value.join(', ') : '(brak)';
+  return String(value);
+}
+
+export function mapAudit(row: RawAudit): AuditEntry {
+  return {
+    id: String(row.id),
+    at: row.ts,
+    actor: row.actor,
+    action: row.field.startsWith('secrets.') ? 'Zmiana klucza API' : 'Zmiana konfiguracji',
+    target: `${fieldLabel(row.field)} (${row.field})`,
+    detail: `${formatValue(row.old)} → ${formatValue(row.new)}`,
+  };
+}
+
+// ── observability events ────────────────────────────────────────────────────
+
+export function mapEvent(raw: RawEvent, index: number): TechEvent {
+  const { ts, level, event, request_id, ...fields } = raw;
+  return {
+    id: `${index}-${ts ?? ''}`,
+    at: ts ?? '',
+    level: level ?? 'info',
+    event: event ?? 'log',
+    requestId: request_id,
+    fields,
+  };
+}

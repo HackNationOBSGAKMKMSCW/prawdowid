@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
-import { getApi } from '../api/index.ts';
+import { Link, useSearchParams } from 'react-router-dom';
+import { getApi, supports } from '../api/index.ts';
 import type { CheckFlag, CheckOutcome, CheckQuery, CheckRecord, Verdict } from '../api/types.ts';
 import { useAuth } from '../auth/AuthContext.tsx';
 import { Icon } from '../components/icons.tsx';
@@ -19,6 +19,16 @@ function ResultBadge({ check }: { check: CheckRecord }) {
   return <Badge tone={o.tone}>{o.label}</Badge>;
 }
 
+/** Sources found: the backend may report only a count, the mock lists the materials. */
+function sourceCount(check: CheckRecord): number | null {
+  if (check.sourcesCount !== undefined && check.sourcesCount !== null) return check.sourcesCount;
+  if (check.claims.some((c) => c.sourcesCount !== undefined && c.sourcesCount !== null)) {
+    return check.claims.reduce((s, c) => s + (c.sourcesCount ?? 0), 0);
+  }
+  if (check.outcome === 'refused' || check.outcome === 'pending') return null;
+  return check.claims.reduce((s, cl) => s + cl.evidence.length, 0);
+}
+
 export default function ChecksPage() {
   const api = getApi();
   const { can } = useAuth();
@@ -27,12 +37,26 @@ export default function ChecksPage() {
   const [search, setSearch] = useState(params.get('q') ?? '');
   const [filters, setFilters] = useState<CheckQuery>({ outcome: 'any', verdict: 'any', channel: 'any', flag: 'any', sinceHours: 168 });
   const [page, setPage] = useState(1);
-  const [selected, setSelected] = useState<CheckRecord | null>(null);
+  const [picked, setPicked] = useState<string | null>(null);
+  const selectedId = picked ?? params.get('focus');
   const [confirmDelete, setConfirmDelete] = useState<CheckRecord | null>(null);
   const { run, busy } = useAction();
+  const { checkFlags, checkOutcomes } = api.capabilities;
+  const showCost = supports('checkCost');
+  const showUser = supports('endUsers');
 
   const query: CheckQuery = { ...filters, search, clusterId, page, pageSize: 25 };
   const checks = useAsync(() => api.listChecks(query), [JSON.stringify(query)]);
+  // The list may omit claims and sources; the drawer always loads the full record.
+  const selected = useAsync<CheckRecord | null>(() => (selectedId ? api.getCheck(selectedId) : Promise.resolve(null)), [selectedId]);
+
+  const closeDetail = () => {
+    setPicked(null);
+    if (params.has('focus')) {
+      params.delete('focus');
+      setParams(params, { replace: true });
+    }
+  };
 
   const update = (patch: Partial<CheckQuery>) => {
     setFilters((f) => ({ ...f, ...patch }));
@@ -81,7 +105,10 @@ export default function ChecksPage() {
       {clusterId && (
         <div className="rule-strip">
           <Icon name="repeat" size={16} />
-          <span>Filtr: zapytania z jednej grupy podobnych pytań.</span>
+          <span>
+            Filtr: zapytania z jednej grupy podobnych pytań.
+            {!supports('cases') && ' Pozostałe filtry nie są wtedy stosowane.'}
+          </span>
           <button
             type="button"
             className="btn btn-sm btn-ghost"
@@ -122,25 +149,30 @@ export default function ChecksPage() {
                 {v.label}
               </option>
             ))}
-            <option value="o:technical_error">Błąd techniczny</option>
-            <option value="o:needs_clarification">Prośba o doprecyzowanie</option>
+            {checkOutcomes.map((o) => (
+              <option key={o} value={`o:${o}`}>
+                {OUTCOME[o].label}
+              </option>
+            ))}
           </select>
         </label>
-        <label className="select-label">
-          Kanał
-          <select value={filters.channel} onChange={(e) => update({ channel: e.target.value })}>
-            <option value="any">Wszystkie</option>
-            <option value="web">WWW</option>
-            <option value="whatsapp">WhatsApp</option>
-          </select>
-        </label>
+        {supports('channelFilter') && (
+          <label className="select-label">
+            Kanał
+            <select value={filters.channel} onChange={(e) => update({ channel: e.target.value })}>
+              <option value="any">Wszystkie</option>
+              <option value="web">WWW</option>
+              <option value="whatsapp">WhatsApp</option>
+            </select>
+          </label>
+        )}
         <label className="select-label">
           Flaga
           <select value={filters.flag} onChange={(e) => update({ flag: e.target.value as CheckFlag | 'any' })}>
             <option value="any">Dowolna</option>
-            {Object.entries(FLAG).map(([k, v]) => (
+            {checkFlags.map((k) => (
               <option key={k} value={k}>
-                {v.label}
+                {FLAG[k].label}
               </option>
             ))}
           </select>
@@ -169,32 +201,44 @@ export default function ChecksPage() {
                       <tr>
                         <th>Czas</th>
                         <th>Kanał</th>
+                        {showUser && <th>Użytkownik</th>}
                         <th className="col-wide">Zapytanie</th>
                         <th>Wynik</th>
-                        <th>Siła</th>
+                        {showCost && <th>Siła</th>}
                         <th className="num">Źródła</th>
                         <th className="num">Czas odp.</th>
-                        <th className="num">Koszt</th>
+                        {showCost && <th className="num">Koszt</th>}
                         <th>Flagi</th>
                       </tr>
                     </thead>
                     <tbody>
                       {result.items.map((c) => (
-                        <tr key={c.id} className="clickable" onClick={() => setSelected(c)}>
+                        <tr key={c.id} className="clickable" onClick={() => setPicked(c.id)}>
                           <td className="nowrap small">{fmtDateTime(c.createdAt)}</td>
                           <td className="small">{channelLabel(c.channel)}</td>
+                          {showUser && (
+                            <td className="small mono">
+                              {c.userKey ? (
+                                <Link to={`/end-users?focus=${encodeURIComponent(c.userKey)}`} onClick={(e) => e.stopPropagation()}>
+                                  {c.userLabel ?? c.userKey}
+                                </Link>
+                              ) : (
+                                '—'
+                              )}
+                            </td>
+                          )}
                           <td>
-                            <button type="button" className="link-btn" onClick={(e) => { e.stopPropagation(); setSelected(c); }}>
+                            <button type="button" className="link-btn" onClick={(e) => { e.stopPropagation(); setPicked(c.id); }}>
                               {truncate(c.query, 80)}
                             </button>
                           </td>
                           <td>
                             <ResultBadge check={c} />
                           </td>
-                          <td className="small">{STRENGTH[c.strength]}</td>
-                          <td className="num">{c.claims.reduce((s, cl) => s + cl.evidence.length, 0)}</td>
+                          {showCost && <td className="small">{STRENGTH[c.strength]}</td>}
+                          <td className="num">{sourceCount(c) ?? '—'}</td>
                           <td className="num nowrap">{fmtDuration(c.durationMs)}</td>
-                          <td className="num nowrap">{fmtPln(c.costPln, 3)}</td>
+                          {showCost && <td className="num nowrap">{fmtPln(c.costPln, 3)}</td>}
                           <td>
                             <div className="row gap-xs wrap">
                               {c.flags.map((f) => (
@@ -217,18 +261,18 @@ export default function ChecksPage() {
       </Card>
 
       <Drawer
-        open={!!selected}
-        onClose={() => setSelected(null)}
+        open={!!selectedId}
+        onClose={closeDetail}
         wide
         title="Przebieg sprawdzenia"
         footer={
-          selected && (
+          selected.data && (
             <>
-              <button type="button" className="btn" onClick={() => exportJson(`sprawdzenie-${selected.id}`, selected)}>
+              <button type="button" className="btn" onClick={() => selected.data && exportJson(`sprawdzenie-${selected.data.id}`, selected.data)}>
                 <Icon name="download" size={16} /> JSON
               </button>
-              {can('checks:delete') && (
-                <button type="button" className="btn btn-danger" onClick={() => setConfirmDelete(selected)}>
+              {can('checks:delete') && supports('deleteCheck') && (
+                <button type="button" className="btn btn-danger" onClick={() => setConfirmDelete(selected.data ?? null)}>
                   <Icon name="trash" size={16} /> Usuń zapis
                 </button>
               )}
@@ -236,7 +280,7 @@ export default function ChecksPage() {
           )
         }
       >
-        {selected && <CheckDetail check={selected} />}
+        <Async state={selected}>{(check) => (check ? <CheckDetail check={check} /> : null)}</Async>
       </Drawer>
 
       <Modal
@@ -257,7 +301,7 @@ export default function ChecksPage() {
                 const ok = await run(() => api.deleteCheck(confirmDelete.id), 'Zapis usunięty.');
                 if (ok) {
                   setConfirmDelete(null);
-                  setSelected(null);
+                  closeDetail();
                   checks.reload();
                 }
               }}
@@ -321,6 +365,29 @@ function CheckDetail({ check }: { check: CheckRecord }) {
           </div>
         </div>
       )}
+      {check.outcome === 'refused' && (
+        <div className="notice notice-critical">
+          <Icon name="lock" size={16} />
+          <div>
+            <strong>Zapytanie odrzucone — nie zostało sprawdzone.</strong> {check.errorMessage}
+          </div>
+        </div>
+      )}
+      {check.outcome === 'pending' && (
+        <div className="notice notice-info">
+          <Icon name="refresh" size={16} />
+          <div>Sprawdzanie jeszcze trwa albo zostało przerwane przed zapisaniem wyniku.</div>
+        </div>
+      )}
+      {check.riskTopics.length > 0 && (
+        <div className="notice notice-warning">
+          <Icon name="alert" size={16} />
+          <div>
+            <strong>Treści niebezpieczne:</strong> {check.riskTopics.join(', ')}. Zapytanie zostało oznaczone do
+            obserwacji.
+          </div>
+        </div>
+      )}
       {check.outcome === 'needs_clarification' && (
         <div className="notice notice-info">
           <Icon name="info" size={16} />
@@ -332,12 +399,20 @@ function CheckDetail({ check }: { check: CheckRecord }) {
         <section key={claim.id} className="claim">
           <div className="claim-head">
             <span className="muted small">Twierdzenie {i + 1}</span>
-            <Badge tone={VERDICT[claim.verdict].tone}>{VERDICT[claim.verdict].label}</Badge>
-            <span className="muted small">Siła podstaw: {STRENGTH[claim.strength]}</span>
+            {claim.verdict ? (
+              <Badge tone={VERDICT[claim.verdict].tone}>{VERDICT[claim.verdict].label}</Badge>
+            ) : (
+              <Badge tone="warning">Brak werdyktu</Badge>
+            )}
+            {claim.strength !== 'unknown' && <span className="muted small">Siła podstaw: {STRENGTH[claim.strength]}</span>}
           </div>
           <p className="claim-text">„{claim.text}”</p>
-          <div className="field-label">Uzasadnienie (interpretacja modelu)</div>
-          <p>{claim.rationale}</p>
+          {claim.rationale && (
+            <>
+              <div className="field-label">Uzasadnienie (interpretacja modelu)</div>
+              <p>{claim.rationale}</p>
+            </>
+          )}
           {claim.missing && (
             <div className="notice notice-warning">
               <Icon name="gap" size={16} />
@@ -346,9 +421,13 @@ function CheckDetail({ check }: { check: CheckRecord }) {
               </div>
             </div>
           )}
-          <div className="field-label">Materiały źródłowe ({claim.evidence.length})</div>
+          <div className="field-label">Materiały źródłowe ({claim.evidence.length || (claim.sourcesCount ?? 0)})</div>
           {claim.evidence.length === 0 ? (
-            <p className="muted small">Nie znaleziono materiałów w katalogu źródeł.</p>
+            <p className="muted small">
+              {claim.sourcesCount
+                ? `Znaleziono źródeł: ${claim.sourcesCount}. Backend zapisuje tylko ich liczbę — szczegóły są w logach technicznych żądania.`
+                : 'Nie znaleziono materiałów w źródłach danych.'}
+            </p>
           ) : (
             <ul className="evidence">
               {claim.evidence.map((e) => (
@@ -387,25 +466,50 @@ function CheckDetail({ check }: { check: CheckRecord }) {
             <dt>Czas odpowiedzi</dt>
             <dd>{fmtDuration(check.durationMs)}</dd>
           </div>
-          <div>
-            <dt>Tokeny</dt>
-            <dd>{check.tokens}</dd>
-          </div>
-          <div>
-            <dt>Koszt (szac.)</dt>
-            <dd>{fmtPln(check.costPln, 4)}</dd>
-          </div>
+          {check.userKey && (
+            <div>
+              <dt>Użytkownik</dt>
+              <dd>
+                <Link to={`/end-users?focus=${encodeURIComponent(check.userKey)}`}>{check.userLabel ?? check.userKey}</Link>
+              </dd>
+            </div>
+          )}
+          {check.requestId && (
+            <div>
+              <dt>Request ID</dt>
+              <dd className="mono small">{check.requestId}</dd>
+            </div>
+          )}
+          {supports('checkCost') && (
+            <>
+              <div>
+                <dt>Tokeny</dt>
+                <dd>{check.tokens}</dd>
+              </div>
+              <div>
+                <dt>Koszt (szac.)</dt>
+                <dd>{fmtPln(check.costPln, 4)}</dd>
+              </div>
+            </>
+          )}
         </dl>
-        <table className="table table-compact">
-          <tbody>
-            {Object.entries(check.models).map(([role, model]) => (
-              <tr key={role}>
-                <td className="small">{PIPELINE_ROLE[role as keyof typeof PIPELINE_ROLE]?.label ?? role}</td>
-                <td className="mono small">{model}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        {Object.keys(check.models).length > 0 && (
+          <table className="table table-compact">
+            <tbody>
+              {Object.entries(check.models).map(([role, model]) => (
+                <tr key={role}>
+                  <td className="small">{PIPELINE_ROLE[role as keyof typeof PIPELINE_ROLE]?.label ?? role}</td>
+                  <td className="mono small">{model}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+        {check.requestId && supports('techEvents') && (
+          <Link to={`/logs?request=${encodeURIComponent(check.requestId)}`} className="btn btn-sm">
+            <Icon name="search" size={14} /> Logi techniczne tego żądania
+          </Link>
+        )}
       </section>
     </div>
   );

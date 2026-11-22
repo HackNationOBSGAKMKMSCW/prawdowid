@@ -1,5 +1,5 @@
 import { Link, useNavigate } from 'react-router-dom';
-import { getApi } from '../api/index.ts';
+import { getApi, supports } from '../api/index.ts';
 import type { Alert, ModelProvider, ModeratorCase, PipelineAssignment, QueryCluster, Source } from '../api/types.ts';
 import { useAuth } from '../auth/AuthContext.tsx';
 import { Icon, type IconName } from '../components/icons.tsx';
@@ -32,14 +32,16 @@ export default function DashboardPage() {
   const refreshCounts = useRefreshCounts();
   const { run, busy } = useAction();
 
+  const withCases = supports('cases');
+  const lifecycle = supports('gapLifecycle');
   const alerts = useAsync(() => api.listAlerts({ status: 'open' }), []);
   const gaps = useAsync(() => api.listClusters({ onlyGaps: true }), []);
-  const cases = useAsync(() => api.listCases({ status: 'open' }), []);
+  const cases = useAsync(() => (withCases ? api.listCases({ status: 'open' }) : Promise.resolve([])), []);
   const stats = useAsync(() => api.getDashboard(24), []);
-  const sources = useAsync<Source[]>(() => api.listSources(), []);
+  const sources = useAsync<Source[]>(() => (supports('sources') ? api.listSources() : Promise.resolve([])), []);
   const models = useAsync<{ providers: ModelProvider[]; assignments: PipelineAssignment[] } | null>(
     () =>
-      can('models:read')
+      can('models:read') && supports('providers')
         ? Promise.all([api.listProviders(), api.listAssignments()]).then(([providers, assignments]) => ({ providers, assignments }))
         : Promise.resolve(null),
     [],
@@ -48,7 +50,10 @@ export default function DashboardPage() {
   const openAlerts = alerts.data ?? [];
   const urgent = openAlerts.filter((a) => URGENT.has(a.severity) && a.status !== 'escalated');
   const critical = openAlerts.filter((a) => a.severity === 'critical' && a.status === 'new');
-  const gapsWithoutCase = (gaps.data ?? []).filter((g) => g.isInformationGap && !g.caseId);
+  // Gaps nobody has picked up yet: without a case (mock) or still `active`, not `in_progress` (backend).
+  const gapsWithoutCase = (gaps.data ?? []).filter((g) =>
+    lifecycle ? g.gapStatus === 'active' : g.isInformationGap && !g.caseId,
+  );
   const waitingCases = (cases.data ?? []).filter((c) => caseNeed(c));
 
   const modelProblems = (models.data?.assignments ?? [])
@@ -81,6 +86,7 @@ export default function DashboardPage() {
   };
 
   const firstName = user?.name.split(' ')[0] ?? '';
+  const blockedUsers = stats.data?.blockedUsers ?? 0;
   const allClear = critical.length + urgent.length + gapsWithoutCase.length + waitingCases.length + systemIssues === 0;
 
   return (
@@ -107,15 +113,32 @@ export default function DashboardPage() {
       <div className="att-grid">
         <AttentionTile to="/alerts" icon="alert" tone="critical" count={critical.length} label="Krytyczne alerty" ok="Brak krytycznych alertów" />
         <AttentionTile to="/alerts" icon="bell" tone="serious" count={urgent.length} label="Pilne do przejrzenia" ok="Nic pilnego" />
-        <AttentionTile to="/gaps" icon="gap" tone="warning" count={gapsWithoutCase.length} label={plural(gapsWithoutCase.length, ['luka bez sprawy', 'luki bez sprawy', 'luk bez sprawy'])} ok="Luki mają sprawy" />
-        <AttentionTile to="/cases" icon="folder" tone="warning" count={waitingCases.length} label={plural(waitingCases.length, ['sprawa czeka', 'sprawy czekają', 'spraw czeka'])} ok="Sprawy są w toku" />
-        <AttentionTile to={can('models:read') ? '/models' : '/sources'} icon="plug" tone="warning" count={systemIssues} label="Problemy techniczne" ok="System działa" />
+        {lifecycle ? (
+          <AttentionTile to="/gaps" icon="gap" tone="warning" count={gapsWithoutCase.length} label={plural(gapsWithoutCase.length, ['luka czeka', 'luki czekają', 'luk czeka'])} ok="Luki są obsługiwane" />
+        ) : (
+          <AttentionTile to="/gaps" icon="gap" tone="warning" count={gapsWithoutCase.length} label={plural(gapsWithoutCase.length, ['luka bez sprawy', 'luki bez sprawy', 'luk bez sprawy'])} ok="Luki mają sprawy" />
+        )}
+        {withCases ? (
+          <AttentionTile to="/cases" icon="folder" tone="warning" count={waitingCases.length} label={plural(waitingCases.length, ['sprawa czeka', 'sprawy czekają', 'spraw czeka'])} ok="Sprawy są w toku" />
+        ) : (
+          supports('endUsers') && (
+            <AttentionTile to="/end-users" icon="lock" tone="warning" count={blockedUsers} label={plural(blockedUsers, ['zablokowany użytkownik', 'zablokowanych użytkowników', 'zablokowanych użytkowników'])} ok="Nikt nie jest zablokowany" />
+          )
+        )}
+        <AttentionTile
+          to={supports('providers') && can('models:read') ? '/models' : supports('techEvents') ? '/logs' : supports('sources') ? '/sources' : '/checks'}
+          icon="plug"
+          tone="warning"
+          count={systemIssues}
+          label="Problemy techniczne"
+          ok="System działa"
+        />
       </div>
 
       <div className="grid-2-1">
         <Card
           title="Pilne alerty"
-          subtitle="Krytyczne i wysokie, jeszcze bez sprawy."
+          subtitle={withCases ? 'Krytyczne i wysokie, jeszcze bez sprawy.' : 'Krytyczne i wysokie, jeszcze otwarte.'}
           actions={
             <Link to="/alerts" className="btn btn-sm btn-ghost">
               Wszystkie <Icon name="arrowRight" size={14} />
@@ -146,10 +169,15 @@ export default function DashboardPage() {
                         <span className="muted small">{a.description}</span>
                       </div>
                       <div className="todo-actions">
-                        {can('cases:write') && (
+                        {withCases && can('cases:write') && (
                           <button type="button" className="btn btn-sm btn-primary" disabled={busy} onClick={() => escalate(a.id)}>
                             Utwórz sprawę
                           </button>
+                        )}
+                        {a.userKey && supports('endUsers') && (
+                          <Link to={`/end-users?focus=${encodeURIComponent(a.userKey)}`} className="btn btn-sm">
+                            Użytkownik
+                          </Link>
                         )}
                         {can('alerts:write') && a.status === 'new' && (
                           <button type="button" className="btn btn-sm" disabled={busy} onClick={() => acknowledge(a)}>
@@ -166,6 +194,7 @@ export default function DashboardPage() {
         </Card>
 
         <div className="stack">
+          {withCases && (
           <Card
             title="Sprawy czekające na decyzję"
             actions={
@@ -203,22 +232,29 @@ export default function DashboardPage() {
               }
             </Async>
           </Card>
+          )}
 
-          <Card title="Luki informacyjne bez sprawy" subtitle="Ludzie pytają, a brakuje źródeł." padded={false}>
+          <Card
+            title={lifecycle ? 'Luki informacyjne do podjęcia' : 'Luki informacyjne bez sprawy'}
+            subtitle="Ludzie pytają, a brakuje źródeł."
+            padded={false}
+          >
             <Async state={gaps}>
               {() =>
                 gapsWithoutCase.length === 0 ? (
-                  <p className="card-body muted">Każda luka ma już sprawę.</p>
+                  <p className="card-body muted">{lifecycle ? 'Żadna luka nie czeka na decyzję.' : 'Każda luka ma już sprawę.'}</p>
                 ) : (
                   <ul className="list">
                     {gapsWithoutCase.slice(0, 5).map((g: QueryCluster) => (
                       <li key={g.id}>
-                        <Link to="/gaps" className="list-link">
-                          <span className="gap-count">{g.noEvidence}</span>
+                        <Link to={lifecycle ? `/gaps?focus=${encodeURIComponent(g.id)}` : '/gaps'} className="list-link">
+                          <span className="gap-count">{lifecycle ? g.uniqueSessions : g.noEvidence}</span>
                           <span className="list-main">
                             <span className="list-title">{g.label}</span>
                             <span className="muted small">
-                              {fmtPct(g.noEvidenceRatio)} bez dowodów
+                              {lifecycle
+                                ? `${g.uniqueSessions} ${plural(g.uniqueSessions, ['osoba pytała', 'osoby pytały', 'osób pytało'])} · ${fmtPct(g.noEvidenceRatio)} bez dowodów`
+                                : `${fmtPct(g.noEvidenceRatio)} bez dowodów`}
                               {g.riskTopics.length ? ` · ${g.riskTopics[0]}` : ''}
                             </span>
                           </span>
@@ -270,10 +306,29 @@ export default function DashboardPage() {
                 </Link>
               </li>
             )}
+            {!!stats.data?.pending && (
+              <li>
+                <StatusDot tone="muted" />
+                <span>
+                  <strong>{stats.data.pending}</strong> {plural(stats.data.pending, ['zapytanie bez zapisanego wyniku', 'zapytania bez zapisanego wyniku', 'zapytań bez zapisanego wyniku'])} (w toku lub przerwane)
+                </span>
+              </li>
+            )}
             {systemIssues === 0 && (
               <li>
                 <StatusDot tone="good" />
-                <span>Wszystkie modele i źródła działają poprawnie.</span>
+                <span>
+                  {supports('providers') ? 'Wszystkie modele i źródła działają poprawnie.' : 'Brak błędów technicznych w ostatnich 24 godzinach.'}
+                </span>
+              </li>
+            )}
+            {supports('runtimeConfig') && can('models:read') && (
+              <li>
+                <StatusDot tone="muted" />
+                <span>Model językowy, źródła danych i klucze API</span>
+                <Link to="/runtime" className="small">
+                  Konfiguracja
+                </Link>
               </li>
             )}
           </ul>
@@ -302,10 +357,29 @@ export default function DashboardPage() {
                   <span className="mini-value">{fmtDuration(s.medianLatencyMs)}</span>
                   <span className="muted small">typowa odpowiedź</span>
                 </div>
-                <div>
-                  <span className="mini-value">{s.injectionsBlocked}</span>
-                  <span className="muted small">odpartych ataków</span>
-                </div>
+                {s.refused === undefined ? (
+                  <div>
+                    <span className="mini-value">{s.injectionsBlocked}</span>
+                    <span className="muted small">odpartych ataków</span>
+                  </div>
+                ) : (
+                  <div>
+                    <span className="mini-value">{s.refused}</span>
+                    <span className="muted small">odrzuconych</span>
+                  </div>
+                )}
+                {s.users !== undefined && (
+                  <div>
+                    <span className="mini-value">{fmtInt(s.users)}</span>
+                    <span className="muted small">{plural(s.users, ['osoba', 'osoby', 'osób'])}</span>
+                  </div>
+                )}
+                {s.dangerousQueries !== undefined && (
+                  <div>
+                    <span className="mini-value">{s.dangerousQueries}</span>
+                    <span className="muted small">o treści niebezpieczne</span>
+                  </div>
+                )}
               </div>
             )}
           </Async>

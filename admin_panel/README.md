@@ -6,20 +6,22 @@ alerty i ostrzeżenia, luki informacyjne, powtarzające się zapytania, sprawy
 moderatora, historia weryfikacji, katalog źródeł, wymienne modele, reguły
 alertów, kanały i prywatność, użytkownicy oraz dziennik audytu.
 
-Wszystko jest w tym folderze; główne `backend/` i `frontend/` nie są zmieniane.
+Panel jest podłączony do backendu admina z `backend/admin` (FastAPI, `/api/admin`).
+Bez backendu działa w trybie demonstracyjnym na danych przykładowych.
 
 ```
 admin_panel/
-├── openapi.yaml          # kontrakt API panelu (do zaimplementowania w backendzie)
+├── openapi.yaml          # pierwotny kontrakt (tryb demo); prawdziwe API: backend/admin/api.py
 └── frontend/             # Vite + React 19 + TypeScript, port 5175
-    ├── public/config.json   # konfiguracja uruchomieniowa (adres API, tryb danych)
+    ├── public/config.json   # konfiguracja uruchomieniowa (adres API, ścieżki)
     └── src/
         ├── config.ts        # wczytanie config.json → env → wartości domyślne
         ├── api/
-        │   ├── types.ts         # modele domenowe (zgodne z openapi.yaml)
-        │   ├── AdminApi.ts      # interfejs źródła danych
-        │   ├── endpoints.ts     # ścieżki endpointów (nadpisywalne w config.json)
-        │   ├── http.ts          # implementacja HTTP (Bearer, timeout, 401 → wylogowanie)
+        │   ├── types.ts         # modele domenowe panelu
+        │   ├── AdminApi.ts      # interfejs źródła danych + capabilities
+        │   ├── endpoints.ts     # ścieżki backend/admin (nadpisywalne w config.json)
+        │   ├── http.ts          # klient backend/admin (Bearer, X-Admin-User, 401 → wylogowanie)
+        │   ├── backend/         # surowe odpowiedzi backendu i ich mapowanie na typy panelu
         │   ├── mock/            # dane przykładowe + referencyjne reguły wykrywania
         │   └── index.ts         # wybór implementacji na podstawie konfiguracji
         ├── auth/            # sesja, ochrona tras, role i uprawnienia
@@ -27,17 +29,58 @@ admin_panel/
         └── pages/           # widoki panelu
 ```
 
-## Uruchomienie
+## Uruchomienie z backendem
 
 ```bash
+# 1. backend admina (z katalogu backend/, port 8100)
+cd backend
+ADMIN_API_TOKEN=<długi-losowy-token> uvicorn admin.api:create_app --factory --port 8100
+
+# 2. panel (Vite przekazuje /api na 127.0.0.1:8100)
 cd admin_panel/frontend
 npm install
 npm run dev        # http://localhost:5175
 ```
 
-Domyślnie panel działa w **trybie demonstracyjnym** (`"dataSource": "mock"`):
-dane są generowane w przeglądarce, a panel pokazuje to w banerze. Konta
-przykładowe (hasło `demo1234`):
+Logowanie: **imię i nazwisko** (trafia do dziennika audytu jako `X-Admin-User`,
+polskie znaki są zamieniane na ASCII) i **token administratora** — wartość
+`ADMIN_API_TOKEN`. Backend nie ma kont użytkowników, więc w panelu każdy
+zalogowany ma rolę administratora. Sesja wygasa po 8 h lub po odpowiedzi 401.
+
+Bot WhatsApp i panel muszą mieć to samo `ADMIN_DB_PATH`, żeby panel widział
+zapytania z bota (zob. `backend/admin/README.md`). Logi techniczne panel czyta
+z `LOG_FILE` (domyślnie `backend/logs/app.jsonl`).
+
+Inny adres backendu w trybie deweloperskim: `ADMIN_API_PROXY_TARGET` w `.env`
+(`.env.example`). Po buildzie: `apiBaseUrl` w `public/config.json`.
+
+### Co panel pokazuje z backendu
+
+| Widok | Endpointy `backend/admin` |
+|---|---|
+| Pulpit, Statystyki | `GET /dashboard`, `GET /queries` (szereg czasowy, kanały, czasy odpowiedzi) |
+| Alerty i ostrzeżenia | `GET /alerts`, `POST /alerts/{id}` (przyjęcie, rozwiązanie, odrzucenie) |
+| Luki informacyjne | `GET /info-gaps`, `GET /topics/{id}`, `POST /info-gaps/{id}` (podejrzenie → aktywna → w uzupełnianiu → zamknięta / odrzucona) |
+| Użytkownicy serwisu | `GET /users`, `GET /users/{key}`, `POST /users/{key}/block` i `/unblock` |
+| Historia weryfikacji | `GET /queries` (filtry: wynik, flaga, okres, tekst), `GET /queries/{id}` |
+| Logi techniczne | `GET /events`, `GET /events/summary` |
+| Modele i źródła danych | `GET`/`PATCH /config` (model, endpoint, klienci apiReading, pobieranie artykułów, klucze API tylko do zapisu), `GET /config/models` |
+| Reguły i progi | `PATCH /config` (sekcja `monitoring`), `POST /maintenance/purge` |
+| Dziennik audytu | `GET /config/audit` |
+
+Widoki z pierwotnego kontraktu, których backend nie ma (sprawy moderatora,
+katalog źródeł, rejestr dostawców modeli, kanały, konta panelu, dziennik
+bezpieczeństwa, powtarzające się zapytania), są ukryte. Każde źródło danych
+deklaruje w `capabilities`, co obsługuje; menu, trasy i przyciski się do tego
+dostosowują.
+
+## Tryb demonstracyjny (bez backendu)
+
+```bash
+npm run dev:demo   # dane generowane w przeglądarce
+```
+
+Konta przykładowe (hasło `demo1234`):
 
 | Konto | Rola | Co widzi |
 |---|---|---|
@@ -48,38 +91,40 @@ przykładowe (hasło `demo1234`):
 Zmiany wprowadzone w trybie demo są pamiętane w `localStorage` przez 6 godzin;
 „Kanały i prywatność → Przywróć dane demo” zaczyna od nowa.
 
-Build produkcyjny: `npm run build` → `dist/` (statyczne pliki).
+Build produkcyjny: `npm run build` → `dist/` (statyczne pliki, backend admina);
+`npm run build:demo` — wersja demonstracyjna.
 
-## API nie jest zapisane w kodzie
+## Konfiguracja nie jest zapisana w kodzie
 
 Strony korzystają wyłącznie z interfejsu `AdminApi`. Implementację wybiera
 konfiguracja, czytana w kolejności (późniejsze wygrywa):
 
-1. wartości domyślne (`src/config.ts`),
-2. zmienne z buildu: `VITE_ADMIN_DATA_SOURCE`, `VITE_ADMIN_API_URL` (`.env.example`),
+1. wartości domyślne (`src/config.ts`: `http`, `/api/admin`),
+2. zmienne z buildu: `VITE_ADMIN_DATA_SOURCE`, `VITE_ADMIN_API_URL` (`.env.example`,
+   `.env.demo`),
 3. `public/config.json`, pobierany przy starcie — można go podmienić na serwerze
    bez przebudowy.
 
 ```json
 {
   "dataSource": "http",
-  "apiBaseUrl": "https://api.example.gov.pl/admin",
+  "apiBaseUrl": "https://api.example.gov.pl/api/admin",
   "requestTimeoutMs": 20000,
   "environmentLabel": "pilotaż",
-  "endpoints": { "dashboard": "/stats/overview" }
+  "endpoints": { "dashboard": "/dashboard" }
 }
 ```
 
 `endpoints` pozwala nadpisać pojedyncze ścieżki (klucze w
-`src/api/endpoints.ts`), gdy backend ma inne trasy. W trybie deweloperskim
-względny `apiBaseUrl` (np. `/api/admin`) jest przekazywany przez proxy Vite na
-`ADMIN_API_PROXY_TARGET` (domyślnie `http://127.0.0.1:8000`).
-
-Kontrakt wszystkich endpointów jest w [`openapi.yaml`](openapi.yaml). Aby
-podłączyć inny transport (np. GraphQL), wystarczy nowa klasa implementująca
-`AdminApi` w `src/api/index.ts`.
+`src/api/endpoints.ts`), gdy backend ma inne trasy. Gdy panel i API są na
+różnych domenach, backend musi zezwolić na CORS; najprościej podać panel i API
+z jednej domeny (reverse proxy `/api/admin` → backend).
 
 ## Modele łatwe do podmienienia
+
+> Ten i dwa kolejne rozdziały opisują pełny kontrakt z `openapi.yaml`, widoczny
+> w trybie demo. Z backendem admina modele zmienia się w widoku **Modele i
+> źródła danych**, a progi alertów w **Reguły i progi**.
 
 Widok **Modele AI** odpowiada wymaganiu „wymiana modelu lub dostawcy
 bez przebudowy systemu”:
@@ -147,10 +192,14 @@ konkretnej osobie. Zamknięcie sprawy wymaga opisu rozstrzygnięcia.
 
 ## Ograniczenia
 
-- Backend nie ma jeszcze endpointów z `openapi.yaml`; do tego czasu panel
-  działa na danych przykładowych.
-- Wszystkie liczby w trybie demo (w tym mierniki jakości) są przykładowe — nie
+- Backend zapisuje tylko liczbę źródeł, bez ich listy, uzasadnień, tokenów i
+  kosztu pojedynczego sprawdzenia — panel pokazuje to, co jest (szczegóły
+  żądania są w logach technicznych, po `request_id`).
+- Szereg czasowy na pulpicie jest liczony z maks. 5000 zapytań z okresu.
+- Audyt backendu obejmuje zmiany konfiguracji; blokady użytkowników i zmiany
+  stanu luk nie są w nim zapisywane.
+- Backend ma jeden wspólny token, więc role w panelu (administrator, analityk,
+  moderator) działają tylko w trybie demo. Uprawnienia w panelu tylko ukrywają
+  akcje; egzekwować je musi serwer.
+- W trybie demo wszystkie liczby (w tym mierniki jakości) są przykładowe — nie
   są wynikami testów systemu.
-- Uprawnienia w panelu tylko ukrywają akcje; egzekwować je musi serwer.
-- Wykrywanie tematów wysokiego ryzyka w implementacji referencyjnej to
-  dopasowanie słów kluczowych; backend może je zastąpić klasyfikatorem.

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { getApi } from '../api/index.ts';
+import { getApi, supports } from '../api/index.ts';
 import type { Alert, AlertQuery, AlertStatus, AlertType, Severity, User } from '../api/types.ts';
 import { useAuth } from '../auth/AuthContext.tsx';
 import { Icon } from '../components/icons.tsx';
@@ -18,9 +18,15 @@ export default function AlertsPage() {
   const refreshCounts = useRefreshCounts();
   const [params] = useSearchParams();
   const focus = params.get('focus');
-  const [query, setQuery] = useState<AlertQuery>({ status: 'open', type: (params.get('type') as AlertType) ?? 'any', severity: 'any' });
+  const [query, setQuery] = useState<AlertQuery>({
+    status: (params.get('status') as AlertQuery['status']) ?? 'open',
+    type: (params.get('type') as AlertType) ?? 'any',
+    severity: 'any',
+  });
   const alerts = useAsync(() => api.listAlerts(query), [query.status, query.type, query.severity]);
-  const users = useAsync<User[]>(() => (can('cases:read') ? api.listUsers() : Promise.resolve([])), []);
+  const users = useAsync<User[]>(() => (can('cases:read') && supports('staffUsers') ? api.listUsers() : Promise.resolve([])), []);
+  const withCases = supports('cases');
+  const withRecipients = supports('staffUsers');
   const { run, busy } = useAction();
   const [escalating, setEscalating] = useState<Alert | null>(null);
   const [assignee, setAssignee] = useState('');
@@ -72,7 +78,11 @@ export default function AlertsPage() {
     <>
       <PageHeader
         title="Alerty i ostrzeżenia"
-        description="Sygnały z reguł: luki informacyjne, dużo zapytań o to samo, tematy wysokiego ryzyka (np. terroryzm), próby manipulacji i problemy techniczne. Alert nie jest werdyktem."
+        description={
+          withCases
+            ? 'Sygnały z reguł: luki informacyjne, dużo zapytań o to samo, tematy wysokiego ryzyka (np. terroryzm), próby manipulacji i problemy techniczne. Alert nie jest werdyktem.'
+            : 'Sygnały z reguł backendu: luki informacyjne, możliwe ataki dezinformacyjne i użytkownicy powtarzający pytania o treści niebezpieczne. Alert nie jest werdyktem.'
+        }
         actions={
           can('export') && alerts.data ? (
             <>
@@ -104,9 +114,9 @@ export default function AlertsPage() {
           Typ
           <select value={query.type} onChange={(e) => setQuery({ ...query, type: e.target.value as AlertType | 'any' })}>
             <option value="any">Wszystkie typy</option>
-            {Object.entries(ALERT_TYPE).map(([k, v]) => (
+            {api.capabilities.alertTypes.map((k) => (
               <option key={k} value={k}>
-                {v.label}
+                {ALERT_TYPE[k].label}
               </option>
             ))}
           </select>
@@ -161,6 +171,12 @@ export default function AlertsPage() {
                       </div>
                     ))}
                   </dl>
+                  {a.note && (
+                    <div className="alert-rule">
+                      <Icon name="info" size={14} /> <span>Notatka: {a.note}</span>
+                    </div>
+                  )}
+                  {withRecipients && (
                   <div className="alert-notify">
                     {a.notified.length > 0 ? (
                       <span>
@@ -182,10 +198,21 @@ export default function AlertsPage() {
                       </span>
                     )}
                   </div>
+                  )}
                   <div className="alert-actions">
                     {a.clusterId && (
                       <Link to={`/checks?cluster=${encodeURIComponent(a.clusterId)}`} className="btn btn-sm btn-ghost">
-                        Zapytania ({a.checkIds.length})
+                        Zapytania ({a.queryCount ?? a.checkIds.length})
+                      </Link>
+                    )}
+                    {a.clusterId && a.type === 'information_gap' && supports('gapLifecycle') && (
+                      <Link to={`/gaps?focus=${encodeURIComponent(a.clusterId)}`} className="btn btn-sm">
+                        <Icon name="gap" size={14} /> Luka informacyjna
+                      </Link>
+                    )}
+                    {a.userKey && supports('endUsers') && (
+                      <Link to={`/end-users?focus=${encodeURIComponent(a.userKey)}`} className="btn btn-sm">
+                        <Icon name="users" size={14} /> Użytkownik
                       </Link>
                     )}
                     {a.caseId ? (
@@ -193,6 +220,7 @@ export default function AlertsPage() {
                         <Icon name="folder" size={14} /> Sprawa {a.caseId}
                       </Link>
                     ) : (
+                      withCases &&
                       can('cases:write') && (
                         <button type="button" className="btn btn-sm btn-primary" onClick={() => { setAssignee(''); setEscalating(a); }}>
                           <Icon name="folder" size={14} /> Utwórz sprawę

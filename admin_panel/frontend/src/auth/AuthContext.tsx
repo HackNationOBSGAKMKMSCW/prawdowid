@@ -1,7 +1,7 @@
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
-import { getApi } from '../api/index.ts';
-import type { Session, User } from '../api/types.ts';
+import { getApi, supports } from '../api/index.ts';
+import type { Feature, Session, User } from '../api/types.ts';
 import { EmptyState } from '../components/ui.tsx';
 import { can, type Permission } from './permissions.ts';
 
@@ -36,7 +36,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const api = getApi();
   const [session, setSession] = useState<Session | null>(() => {
     const stored = readStoredSession();
-    api.setToken(stored?.token ?? null);
+    api.setToken(stored?.token ?? null, stored?.user.name);
     return stored;
   });
   const [notice, setNotice] = useState<string | null>(null);
@@ -71,7 +71,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = useCallback(
     async (email: string, password: string) => {
       const next = await api.login(email, password);
-      api.setToken(next.token);
+      api.setToken(next.token, next.user.name);
       try {
         sessionStorage.setItem(SESSION_KEY, JSON.stringify(next));
       } catch {
@@ -111,8 +111,24 @@ export function RequireAuth({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
-export function RequirePermission({ permission, children }: { permission: Permission; children: ReactNode }) {
+export function RequirePermission({
+  permission,
+  feature,
+  children,
+}: {
+  permission: Permission;
+  /** Optional part of the panel the current data source must support. */
+  feature?: Feature;
+  children: ReactNode;
+}) {
   const { can: allowed } = useAuth();
+  if (feature && !supports(feature)) {
+    return (
+      <EmptyState title="Niedostępne w tym źródle danych" icon="plug">
+        Ten widok wymaga funkcji, której podłączony backend nie udostępnia.
+      </EmptyState>
+    );
+  }
   if (!allowed(permission)) {
     return (
       <EmptyState title="Brak dostępu" icon="lock">
