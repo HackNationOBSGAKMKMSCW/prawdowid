@@ -82,7 +82,7 @@ def main(argv: list[str] | None = None) -> int:
     create = sub.add_parser("create-user", help="utwórz konto")
     create.add_argument("--email", required=True)
     create.add_argument("--name", required=True)
-    create.add_argument("--role", default="analyst", choices=["analyst", "moderator", "admin"])
+    create.add_argument("--role", default="analyst", choices=["analyst", "admin"])
     args = parser.parse_args(argv)
 
     try:

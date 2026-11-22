@@ -65,7 +65,6 @@ export const ROLE_PERMISSIONS: Record<Role, ReadonlySet<Permission>> = {
   ]),
   // Read-only observer; the administrator creates and manages the account.
   analyst: new Set<Permission>([...OBSERVE, 'models:read', 'settings:read']),
-  moderator: new Set<Permission>([...COMMON, 'endusers:write']),
   // Accounts of the public service cannot use the panel (the backend refuses them too).
   user: new Set<Permission>(),
 };

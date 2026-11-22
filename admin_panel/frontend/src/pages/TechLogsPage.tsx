@@ -26,8 +26,6 @@ const LEVEL_TONE: Record<string, Tone> = {
 };
 
 const fmtMs = (ms: number | null | undefined) => (ms === null || ms === undefined ? '—' : fmtDuration(ms));
-const fmtUsd = (value: number | null | undefined) =>
-  value === null || value === undefined ? '—' : `${value.toLocaleString('pl-PL', { maximumFractionDigits: 4 })} USD`;
 
 function fieldsPreview(fields: Record<string, unknown>): string {
   return Object.entries(fields)
@@ -193,7 +191,6 @@ function SummaryView({ summary: s }: { summary: TechSummary }) {
       <div className="kpi-grid">
         <Kpi icon="history" label="Żądania" value={fmtInt(s.requests.count)} hint={`${s.requests.failed} nieudanych · ${s.requests.abstained} bez werdyktu`} />
         <Kpi icon="refresh" label="Czas żądania (mediana)" value={fmtMs(s.requests.duration_ms_p50)} hint={`najwolniejsze 5%: ${fmtMs(s.requests.duration_ms_p95)}`} />
-        <Kpi icon="cpu" label="Koszt modeli" value={fmtUsd(s.requests.cost_usd_total)} hint={s.requests.cost_incomplete ? `${s.requests.cost_incomplete} żądań bez ceny` : 'szacunek z cennika'} />
         <Kpi
           icon="alert"
           label="Linie z błędem"
@@ -216,7 +213,6 @@ function SummaryView({ summary: s }: { summary: TechSummary }) {
                     <th className="num">Wywołania</th>
                     <th className="num">Błędy</th>
                     <th className="num">Tokeny (we/wy)</th>
-                    <th className="num">Koszt</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -228,7 +224,6 @@ function SummaryView({ summary: s }: { summary: TechSummary }) {
                       <td className="num small">
                         {fmtInt(m.prompt_tokens)} / {fmtInt(m.completion_tokens)}
                       </td>
-                      <td className="num small">{fmtUsd(m.cost_usd)}</td>
                     </tr>
                   ))}
                 </tbody>

@@ -8,8 +8,11 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-ROLES = ("user", "moderator", "analyst", "admin")
-PANEL_ROLES = ("moderator", "analyst", "admin")
+# Rola "moderator" jest na razie wyłączona: panel ma tylko administratora i analityka
+# (migracja 0007 zmieniła istniejące konta moderatorów na analityków). Wartość zostaje
+# w typie user_role w bazie, więc rolę da się przywrócić bez migracji typu.
+ROLES = ("user", "analyst", "admin")
+PANEL_ROLES = ("analyst", "admin")
 
 # Panel obserwacyjny: wszystko do odczytu (pulpit, statystyki, alerty, luki, historia,
 # logi, użytkownicy serwisu, źródła) i eksport — bez żadnych zmian w serwisie.
@@ -31,7 +34,6 @@ _COMMON = _OBSERVE | {"alerts:write", "cases:write", "cases:forward"}
 
 ROLE_PERMISSIONS: dict[str, frozenset[str]] = {
     "user": frozenset({"checks:create", "me:read", "me:write"}),
-    "moderator": _COMMON | {"endusers:write", "me:read", "me:write"},
     # Analityk tylko obserwuje; konto zakłada i nim zarządza administrator.
     "analyst": _OBSERVE | {"models:read", "settings:read", "me:read", "me:write"},
     "admin": _COMMON

@@ -10,7 +10,8 @@ export type ISODate = string;
 // ── Users and sessions ──────────────────────────────────────────────────────
 
 /** `user` = account of the public service (no panel access); the rest are panel roles. */
-export type Role = 'admin' | 'moderator' | 'analyst' | 'user';
+// The moderator role is switched off for now: the panel has administrators and analysts.
+export type Role = 'admin' | 'analyst' | 'user';
 
 export interface User {
   id: string;

@@ -68,20 +68,22 @@ def test_role_permissions_match_panel():
     for write in ("sources:write", "alerts:write", "cases:write", "endusers:write",
                   "settings:write", "models:write", "users:read", "users:write", "audit:read"):
         assert not permissions.allowed("analyst", ["*"], write), write
-    assert permissions.allowed("moderator", ["*"], "endusers:write")
-    assert not permissions.allowed("moderator", ["*"], "models:read")
+    assert permissions.allowed("admin", ["*"], "endusers:write")
+    # rola moderatora jest wyłączona: nie daje żadnych uprawnień ani wstępu do panelu
+    assert "moderator" not in permissions.ROLES and "moderator" not in permissions.PANEL_ROLES
+    assert not permissions.allowed("moderator", ["*"], "dashboard:read")
     assert not permissions.allowed("user", ["*"], "dashboard:read")
     # token zawęża uprawnienia roli, nigdy ich nie rozszerza
     assert not permissions.allowed("admin", ["alerts:read"], "users:write")
     assert permissions.allowed("admin", ["users:*"], "users:write")
-    assert not permissions.allowed("moderator", ["users:*"], "users:write")
+    assert not permissions.allowed("analyst", ["users:*"], "users:write")
 
 
 def test_token_abilities_cannot_exceed_role():
-    assert permissions.normalize_abilities("moderator", None) == ["*"]
-    assert permissions.normalize_abilities("moderator", ["alerts:read"]) == ["alerts:read"]
+    assert permissions.normalize_abilities("analyst", None) == ["*"]
+    assert permissions.normalize_abilities("analyst", ["alerts:read"]) == ["alerts:read"]
     with pytest.raises(ValueError):
-        permissions.normalize_abilities("moderator", ["settings:write"])
+        permissions.normalize_abilities("analyst", ["settings:write"])
 
 
 def test_placeholders_translate_outside_string_literals():
