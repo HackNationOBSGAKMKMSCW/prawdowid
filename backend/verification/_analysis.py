@@ -73,3 +73,10 @@ def verdict_pipeline() -> ModuleType:
 def verdict_schemas() -> ModuleType:
     verdict_pipeline()
     return _import("prawdowid_analysis.schemas")
+
+
+@cache
+def verdict_aggregate() -> ModuleType:
+    """``prawdowid_analysis.aggregate`` (text verdict from claim verdicts, no LLM)."""
+    verdict_pipeline()
+    return _import("prawdowid_analysis.aggregate")
