@@ -97,7 +97,9 @@ class Database:
             raise ValueError("DATABASE_SCHEMA: małe litery, cyfry i _")
         self.url = url
         self.schema = schema
-        kwargs: dict[str, Any] = {"autocommit": False}
+        # prepare_threshold=None: bez nazwanych prepared statements po stronie serwera —
+        # zgodne z poolerami (PgBouncer) i serwerami, gdzie połączenia dzielą proces.
+        kwargs: dict[str, Any] = {"autocommit": False, "prepare_threshold": None}
         if schema:
             kwargs["options"] = f"-c search_path={schema},public"
         self._pool = ConnectionPool(
