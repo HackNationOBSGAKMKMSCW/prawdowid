@@ -1,29 +1,38 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "services": {
-    "app": {
+    "backend": {
       "root": ".",
-      "framework": "fastapi"
+      "framework": "fastapi",
+      "entrypoint": "api/index.py",
+      "functions": {
+        "api/index.py": {
+          "maxDuration": 300,
+          "excludeFiles": "{frontend/**,admin_panel/frontend/**,**/node_modules/**,dist/**,docs/**,**/tests/**,**/test_*.py,**/conftest.py,**/.venv/**,**/venv/**,**/__pycache__/**,backend/logs/**,analysis/data/eval/**,analysis/scripts/**}"
+        }
+      }
     },
-    "frontend-2": {
+    "admin": {
       "root": "admin_panel/frontend",
-      "framework": "vite"
-    },
-    "analysis": {
-      "root": "analysis",
-      "runtime": "python"
+      "framework": "vite",
+      "buildCommand": "npm run build -- --base=/admin/"
     },
     "frontend": {
       "root": "frontend",
-      "framework": "vite"
+      "framework": "vite",
+      "buildCommand": "npm run build:live"
     }
   },
   "rewrites": [
+    { "source": "/api/(.*)", "destination": { "service": "backend" } },
+    { "source": "/admin", "destination": { "service": "admin" } },
+    { "source": "/admin/(.*)", "destination": { "service": "admin" } },
+    { "source": "/(.*)", "destination": { "service": "frontend" } }
+  ],
+  "headers": [
     {
-      "source": "/(.*)",
-      "destination": {
-        "service": "app"
-      }
+      "source": "/admin/config.json",
+      "headers": [{ "key": "Cache-Control", "value": "no-store" }]
     }
   ]
 }
