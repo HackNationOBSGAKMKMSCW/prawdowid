@@ -11,8 +11,9 @@ Przepływ dla jednego zapytania::
 
 Bez danych o użytkownikach aplikacji: nie zapisujemy numerów telefonów, adresów IP,
 pseudonimów ani końcówek identyfikatorów. Każde zapytanie jest anonimowe
-(``user_key = ANONYMOUS_KEY``), więc nie ma rejestru użytkowników ani blokad, a reguły liczą
-zapytania, nie osoby.
+(``user_key = ANONYMOUS_KEY``), więc nie ma rejestru użytkowników, a reguły liczą zapytania,
+nie osoby. Jedyny wyjątek to blokada adresu IP po próbie prompt injection (niżej): wtedy
+adres trafia do ``ip_blocks`` jako klucz HMAC z maską, nigdy wprost.
 
 Reguły (progi w ``RuntimeConfig.monitoring``, zmieniane przez admina):
 
@@ -27,8 +28,11 @@ Reguły (progi w ``RuntimeConfig.monitoring``, zmieniane przez admina):
   ``dangerous_window_hours`` alert zbiorczy; prośba o instrukcję lub zdobycie (wysokie
   ryzyko) jest odrzucana, gdy ``refuse_high_risk``.
 * **próba prompt injection** — tekst z poleceniami dla modelu (``observability.injection``):
-  flaga ``prompt_injection``, zdarzenie w logach, a od ``injection_alert_after`` prób w oknie
-  ``dangerous_window_hours`` alert zbiorczy. Tekst nadal jest sprawdzany jako dane.
+  flaga ``prompt_injection``, zdarzenie w logach i wystąpienie w alercie ``prompt_injection``
+  (jeden alert na adres IP, a bez adresu, np. WhatsApp, na kanał). Od
+  ``injection_block_after`` prób z jednego adresu w oknie ``dangerous_window_hours`` adres
+  jest blokowany na ``injection_block_hours`` (``injection_block_ip``): to i kolejne
+  zapytania z niego są odrzucane (``ip_zablokowany``). Admin może zablokować i odblokować.
 * **rosyjska dezinformacja** — twierdzenie z zapytania jest w bazie EUvsDisinfo (MCP):
   jeden alert na przypadek z bazy, każde kolejne zapytanie zwiększa licznik.
 * **SQL injection** — próba wstrzyknięcia SQL w parametrach żądania albo w treści
@@ -40,6 +44,7 @@ from __future__ import annotations
 
 import contextlib
 import hashlib
+import secrets
 import threading
 from collections.abc import Callable, Sequence
 from dataclasses import asdict, dataclass, field
@@ -47,6 +52,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from . import topics
+from .client_ip import IpIdentity, identity
 from .runtime import MonitoringConfig, RuntimeConfigStore
 from .safety import classify
 from .settings import AdminSettings
@@ -74,6 +80,13 @@ SOURCES_LIMIT = 500
 DISINFO_LABEL = "Zweryfikowana rosyjska dezinformacja"
 INJECTION_FLAG = "prompt_injection"
 TOPIC_LOOKBACK = timedelta(days=30)
+
+PERMANENT_UNTIL = "9999-12-31T00:00:00.000Z"  # blokada bez terminu
+IP_BLOCKED = "ip_zablokowany"
+MESSAGE_IP_BLOCKED = (
+    "Sprawdzanie z tego adresu jest czasowo wstrzymane po próbie manipulowania modelem "
+    "(prompt injection)."
+)
 
 MESSAGE_HIGH_RISK = (
     "Nie mogę pomóc w tej sprawie. Serwis sprawdza prawdziwość informacji i nie udziela "
@@ -252,6 +265,7 @@ class Monitor:
         self.runtime = runtime or RuntimeConfigStore()
         self._clock = clock or (lambda: datetime.now(UTC))
         self._events_lock = threading.Lock()  # alerty-zdarzenia: odczyt + zapis bez wyścigu
+        self._salt: str | None = self.settings.ip_salt
 
     @property
     def anonymous_key(self) -> str:
@@ -263,6 +277,14 @@ class Monitor:
 
     def now(self) -> datetime:
         return self._clock()
+
+    def ip_identity(self, address: str | None) -> IpIdentity | None:
+        """Klucz HMAC i maska adresu (sól z ``ADMIN_IP_SALT`` albo zapisana w bazie)."""
+        if not address:
+            return None
+        if self._salt is None:
+            self._salt = self.store.meta_value("ip_salt", secrets.token_hex(32))
+        return identity(address, self._salt)
 
     # --- przed potokiem ----------------------------------------------------------------
 
@@ -276,12 +298,15 @@ class Monitor:
         query_id: str | None = None,
         user_id: str | None = None,
         anonymous: bool = True,
+        client_ip: str | None = None,
     ) -> ScreenDecision:
         """Zarejestruj zapytanie i zdecyduj, czy wolno je przetwarzać.
 
-        Zapis jest anonimowy: ``user_id`` (np. numer telefonu, adres IP) i ``anonymous`` są
-        przyjmowane tylko dla zgodności wywołań i niczego nie zapisują. Odmowa zależy wyłącznie
-        od treści (prośba o instrukcje przemocy).
+        Zapis jest anonimowy: ``user_id`` (np. numer telefonu) i ``anonymous`` są przyjmowane
+        tylko dla zgodności wywołań i niczego nie zapisują. ``client_ip`` (strona WWW) służy
+        wyłącznie blokadzie po prompt injection: zapytanie z zablokowanego adresu jest
+        odrzucane, a adres trafia do ``ip_blocks`` (klucz HMAC i maska) tylko przy próbie.
+        Poza tym odmowa zależy od treści (prośba o instrukcje przemocy).
 
         ``query_id``: własny identyfikator (np. id wyniku z ``/api/check``), żeby późniejsze
         zgłoszenie błędu trafiło do tego samego wpisu; domyślnie nowy.
@@ -289,6 +314,8 @@ class Monitor:
         del user_id, anonymous  # nie zbieramy danych o użytkownikach aplikacji
         now, cfg = self.now(), self.config
         ts = iso(now)
+        ip = self.ip_identity(client_ip)
+        blocked_until = self._active_block(ip.key, ts) if ip else None
         safety = classify(text)
         query_id = (query_id or new_id())[:32]
         flags = [f"niebezpieczne:{name}" for name in safety.categories]
@@ -330,11 +357,31 @@ class Monitor:
                 _log("admin_alert_failed", "warning", error_type=type(exc).__name__)
         if injection is not None:
             _log_injection(text, injection, query_id=query_id, channel=channel[:32])
-            self._watch_injection(now, cfg)
+            try:  # alert i blokada; awaria nie psuje zapytania
+                blocked_until = self.register_prompt_injection(
+                    injection,
+                    channel=channel,
+                    query_id=query_id,
+                    request_id=request_id,
+                    ip=ip,
+                    already_blocked=blocked_until,
+                )
+            except Exception as exc:  # noqa: BLE001
+                _log("admin_alert_failed", "warning", error_type=type(exc).__name__)
         if safety.dangerous:
             self._watch_dangerous_content(now, cfg)
 
-        if safety.severity == "wysoki" and cfg.refuse_high_risk:
+        if blocked_until:
+            decision.allowed = False
+            decision.reason = IP_BLOCKED
+            decision.message = MESSAGE_IP_BLOCKED
+            decision.blocked_until = blocked_until
+            flags.append(f"odrzucone:{decision.reason}")
+            self.store.update_query(query_id, status="odrzucone", flags=flags, completed_at=ts)
+            # osobne zdarzenie: odmowa z powodu adresu, nie treści (raport zagrożeń jej nie
+            # liczy do „informacji krytycznych”)
+            _log("admin_ip_refused", "warning", reason=IP_BLOCKED, query_id=query_id)
+        elif safety.severity == "wysoki" and cfg.refuse_high_risk:
             decision.allowed = False
             decision.reason = "niebezpieczna_tresc"
             decision.message = MESSAGE_HIGH_RISK
@@ -380,21 +427,123 @@ class Monitor:
             },
         )
 
-    def _watch_injection(self, now: datetime, cfg: MonitoringConfig) -> None:
-        """Alert zbiorczy, gdy w oknie powtarzają się próby sterowania modelem."""
-        since = iso(now - timedelta(hours=cfg.dangerous_window_hours))
-        _, attempts = self.store.list_queries(flag=INJECTION_FLAG, since=since, limit=1)
-        if attempts >= cfg.injection_alert_after:
-            self._upsert_alert(
-                "prompt_injection",
-                "wszystkie",
-                now,
-                title=f"Powtarzające się próby prompt injection ({attempts})",
-                severity="wysoka" if attempts >= 2 * cfg.injection_alert_after else "srednia",
-                count=attempts,
-                users=0,
-                details={"okno_h": cfg.dangerous_window_hours},
-            )
+    # --- prompt injection i blokady adresów IP ------------------------------------------
+
+    def _active_block(self, ip_key: str, ts: str) -> str | None:
+        row = self.store.ip_block(ip_key)
+        until = _iso_value(row.get("blocked_until")) if row else None
+        return until if until and until > ts else None
+
+    def register_prompt_injection(
+        self,
+        match: Any,
+        *,
+        channel: str,
+        query_id: str | None,
+        request_id: str | None = None,
+        ip: IpIdentity | None = None,
+        already_blocked: str | None = None,
+    ) -> str | None:
+        """Wystąpienie w alercie ``prompt_injection`` i (z adresem IP) licznik prób i blokada.
+
+        Zwraca koniec blokady adresu (ISO), gdy adres jest zablokowany, inaczej ``None``.
+        """
+        now, cfg = self.now(), self.config
+        ts = iso(now)
+        until, attempts = already_blocked, None
+        if ip is not None:
+            window_start = iso(now - timedelta(hours=cfg.dangerous_window_hours))
+            row = self.store.record_ip_attempt(ip.key, ip.label, ts, window_start)
+            attempts = int(row.get("attempts") or 1)
+            if until is None and cfg.injection_block_ip and attempts >= cfg.injection_block_after:
+                until = iso(now + timedelta(hours=cfg.injection_block_hours))
+                self.store.set_ip_block(
+                    ip.key,
+                    blocked_until=until,
+                    blocked_at=ts,
+                    blocked_by="auto",
+                    reason=f"prompt injection ({attempts})",
+                )
+                _log("admin_ip_blocked", "warning", ip=ip.label, until=until, attempts=attempts)
+        subject = f"ip:{ip.key}" if ip else f"kanal:{channel}"[:64]
+        where = f"z adresu {ip.label}" if ip else f"({channel})"
+        details: dict[str, Any] = {"kanal": channel}
+        if ip is not None:
+            details.update(adres=ip.label, ip_key=ip.key, proby=attempts)
+        alert_id = self._record_occurrence(
+            "prompt_injection",
+            subject,
+            title=f"Prompt injection {where}",
+            severity="wysoka" if until else "srednia",
+            details=details,
+            occurrence={
+                "query_id": query_id,
+                "kanal": channel,
+                "fragment": (getattr(match, "snippet", "") or "")[:300],
+                "wzorzec": (getattr(match, "pattern", "") or "")[:200],
+                "zablokowany": bool(until),
+            },
+            source=None,
+            request_id=request_id,
+        )
+        if ip is not None:
+            self.store.set_ip_block(ip.key, alert_id=alert_id)
+        return until
+
+    def block_ip(
+        self, ip_key: str, *, hours: int | None, actor: str, reason: str | None = None
+    ) -> dict[str, Any]:
+        """Blokada przez admina (``hours=None``: bez terminu). Tylko adresy z próbami."""
+        if self.store.ip_block(ip_key) is None:
+            raise KeyError(ip_key)
+        now = self.now()
+        until = PERMANENT_UNTIL if hours is None else iso(now + timedelta(hours=hours))
+        self.store.set_ip_block(
+            ip_key,
+            blocked_until=until,
+            blocked_at=iso(now),
+            blocked_by=actor[:255],
+            reason=(reason or "blokada ręczna")[:500],
+        )
+        return self.ip_block_view(ip_key)
+
+    def unblock_ip(self, ip_key: str, *, actor: str) -> dict[str, Any]:
+        """Zdjęcie blokady; licznik prób zaczyna się od nowa."""
+        if self.store.ip_block(ip_key) is None:
+            raise KeyError(ip_key)
+        self.store.set_ip_block(
+            ip_key, blocked_until=None, attempts=0, blocked_by=actor[:255], reason="odblokowany"
+        )
+        return self.ip_block_view(ip_key)
+
+    def ip_block_view(self, ip_key: str) -> dict[str, Any]:
+        row = self.store.ip_block(ip_key)
+        if row is None:
+            raise KeyError(ip_key)
+        return self._block_view(row, iso(self.now()))
+
+    def ip_blocks(self, *, active_only: bool = False) -> list[dict[str, Any]]:
+        ts = iso(self.now())
+        rows = self.store.list_ip_blocks(active_at=ts if active_only else None)
+        return [self._block_view(row, ts) for row in rows]
+
+    @staticmethod
+    def _block_view(row: dict[str, Any], ts: str) -> dict[str, Any]:
+        view = {name: _iso_value(value) for name, value in row.items()}
+        until = view.get("blocked_until")
+        view["active"] = bool(until and until > ts)
+        view["permanent"] = until == PERMANENT_UNTIL
+        return view
+
+    def with_block_state(self, alerts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Alerty ``prompt_injection`` z bieżącym stanem blokady adresu (``details.blokada``)."""
+        ts = iso(self.now())
+        for alert in alerts:
+            key = (alert.get("details") or {}).get("ip_key")
+            if alert.get("type") == "prompt_injection" and key:
+                row = self.store.ip_block(key)
+                alert["details"]["blokada"] = self._block_view(row, ts) if row else None
+        return alerts
 
     def _recent_categories(self, since: str) -> dict[str, int]:
         counts: dict[str, int] = {}
@@ -946,5 +1095,10 @@ class Monitor:
         return self.store.get_topic(topic_id)
 
     def purge_expired(self) -> dict[str, int]:
-        before = iso(self.now() - timedelta(days=self.config.retention_days))
-        return self.store.purge(before)
+        now, cfg = self.now(), self.config
+        before = iso(now - timedelta(days=cfg.retention_days))
+        deleted = self.store.purge(before)
+        # adresy bez blokady znikają po oknie liczenia prób
+        window = iso(now - timedelta(hours=cfg.dangerous_window_hours))
+        deleted["ip_blocks"] = self.store.purge_ip_blocks(iso(now), window)
+        return deleted

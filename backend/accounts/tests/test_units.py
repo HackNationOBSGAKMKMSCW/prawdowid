@@ -63,12 +63,12 @@ def test_role_permissions_match_panel():
     assert permissions.allowed("admin", ["*"], "users:write")
     # analityk: panel obserwacyjny, sam odczyt
     for read in ("dashboard:read", "alerts:read", "clusters:read", "checks:read", "sources:read",
-                 "security:read", "endusers:read", "settings:read", "models:read", "export"):
+                 "security:read", "settings:read", "models:read", "export"):
         assert permissions.allowed("analyst", ["*"], read), read
-    for write in ("sources:write", "alerts:write", "cases:write", "endusers:write",
+    for write in ("sources:write", "alerts:write", "cases:write", "security:write",
                   "settings:write", "models:write", "users:read", "users:write", "audit:read"):
         assert not permissions.allowed("analyst", ["*"], write), write
-    assert permissions.allowed("admin", ["*"], "endusers:write")
+    assert permissions.allowed("admin", ["*"], "security:write")  # blokady adresów IP
     # rola moderatora jest wyłączona: nie daje żadnych uprawnień ani wstępu do panelu
     assert "moderator" not in permissions.ROLES and "moderator" not in permissions.PANEL_ROLES
     assert not permissions.allowed("moderator", ["*"], "dashboard:read")

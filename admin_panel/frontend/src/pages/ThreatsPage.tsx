@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { getApi, supports } from '../api/index.ts';
-import type { CriticalQueryEvent, InjectionEvent, ThreatReport, ThreatSubject } from '../api/types.ts';
+import type { CriticalQueryEvent, InjectionEvent, IpBlock, ThreatReport, ThreatSubject } from '../api/types.ts';
 import { useAuth } from '../auth/AuthContext.tsx';
 import { BarList, TimeSeriesChart } from '../components/charts.tsx';
 import { Icon } from '../components/icons.tsx';
 import { channelLabel, safetyLabel } from '../components/labels.ts';
-import { Async, Badge, Card, EmptyState, Kpi, PageHeader, Tabs } from '../components/ui.tsx';
+import { Async, Badge, Card, EmptyState, Kpi, PageHeader, Tabs, useAction } from '../components/ui.tsx';
 import { useAsync } from '../hooks/useAsync.ts';
 import { exportJson } from '../utils/export.ts';
 import { fmtDateTime, fmtInt, fmtRelative, fmtTime, plural, truncate } from '../utils/format.ts';
@@ -56,6 +56,7 @@ const SEVERITY_LABEL: Record<string, { label: string; tone: 'critical' | 'seriou
 
 const REFUSAL: Record<string, string> = {
   niebezpieczna_tresc: 'prośba o instrukcje — odrzucona',
+  ip_zablokowany: 'adres zablokowany (prompt injection)',
 };
 
 export default function ThreatsPage() {
@@ -167,6 +168,7 @@ function ThreatView({ report: r }: { report: ThreatReport }) {
       )}
 
       <InjectionSection report={r} />
+      {supports('ipBlocks') && <BlockedAddresses />}
       <ManipulationSection report={r} />
       <CriticalSection report={r} />
     </>
@@ -199,6 +201,70 @@ function countItems(counts: Record<string, number>, label: (key: string) => stri
   return Object.entries(counts)
     .sort((a, b) => b[1] - a[1])
     .map(([key, value]) => ({ key, label: label(key), value }));
+}
+
+/** Addresses blocked after prompt injection (masked; the backend never stores the address). */
+function BlockedAddresses() {
+  const api = getApi();
+  const { can } = useAuth();
+  const { run, busy } = useAction();
+  const blocks = useAsync<IpBlock[]>(() => api.listIpBlocks(true), []);
+  const unblock = async (key: string) => {
+    if (await run(() => api.unblockIp(key), 'Adres odblokowany.')) blocks.reload();
+  };
+  return (
+    <Card
+      title="Zablokowane adresy"
+      subtitle="Adresy IP zablokowane po próbach prompt injection. Panel pokazuje tylko maskę; w bazie jest skrót (HMAC), nie adres."
+      padded={false}
+    >
+      <Async state={blocks}>
+        {(list) =>
+          list.length === 0 ? (
+            <EmptyState title="Żaden adres nie jest zablokowany" icon="lock" />
+          ) : (
+            <div className="table-wrap">
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>Adres</th>
+                    <th>Do kiedy</th>
+                    <th className="num">Próby</th>
+                    <th>Kto</th>
+                    <th />
+                  </tr>
+                </thead>
+                <tbody>
+                  {list.map((b) => (
+                    <tr key={b.key}>
+                      <td className="mono">{b.label}</td>
+                      <td className="small nowrap">{b.permanent ? 'bez terminu' : fmtDateTime(b.blockedUntil ?? '')}</td>
+                      <td className="num">{b.attempts}</td>
+                      <td className="small">{b.blockedBy === 'auto' ? 'automatycznie' : b.blockedBy}</td>
+                      <td>
+                        <div className="row gap-xs">
+                          {b.alertId && (
+                            <Link className="btn btn-xs" to={`/alerts?focus=${encodeURIComponent(b.alertId)}&status=any&type=prompt_injection`}>
+                              Alert
+                            </Link>
+                          )}
+                          {can('security:write') && (
+                            <button type="button" className="btn btn-xs" disabled={busy} onClick={() => unblock(b.key)}>
+                              Odblokuj
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )
+        }
+      </Async>
+    </Card>
+  );
 }
 
 function InjectionSection({ report: r }: { report: ThreatReport }) {

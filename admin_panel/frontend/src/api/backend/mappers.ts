@@ -24,6 +24,7 @@ import type {
   Severity,
   TechEvent,
   ThreatReport,
+  IpBlock,
   TrustedSite,
   User,
   Verdict,
@@ -130,6 +131,7 @@ function mapFlags(flags: string[] | null): CheckFlag[] {
 }
 
 const REFUSAL: Record<string, string> = {
+  ip_zablokowany: 'Adres zablokowany po próbie prompt injection — zapytanie nie zostało sprawdzone.',
   niebezpieczna_tresc:
     'Prośba o instrukcje lub zdobycie broni, materiałów wybuchowych albo przemocy — odrzucona bez sprawdzania.',
 };
@@ -250,11 +252,41 @@ function categoryList(raw: unknown): string[] {
     .map(([name, n]) => `${safetyLabel(name)} (${n})`);
 }
 
+const CHANNEL_NAME: Record<string, string> = { web: 'strona WWW', whatsapp: 'WhatsApp', panel: 'panel', test: 'test' };
+
+/** Adres po prompt injection (``ip_blocks``, w alertach ``details.blokada``). */
+export function mapIpBlock(raw: Record<string, unknown>): IpBlock {
+  const str = (v: unknown) => (typeof v === 'string' && v ? v : null);
+  return {
+    key: String(raw.ip_key ?? ''),
+    label: String(raw.label ?? 'adres'),
+    attempts: num(raw.attempts),
+    firstSeen: str(raw.first_seen),
+    lastSeen: str(raw.last_seen),
+    blockedUntil: str(raw.blocked_until),
+    blockedBy: str(raw.blocked_by),
+    reason: str(raw.reason),
+    active: raw.active === true,
+    permanent: raw.permanent === true,
+    alertId: str(raw.alert_id),
+  };
+}
+
 /** Ostatnie wystąpienia alertów-zdarzeń (``details.wystapienia``), najnowsze pierwsze. */
 function occurrencesOf(a: RawAlert, type: AlertType): AlertOccurrence[] {
   const list = Array.isArray(a.details?.wystapienia) ? (a.details.wystapienia as Record<string, unknown>[]) : [];
   return list.slice(0, 10).map((o) => {
     const channel = text(o.kanal);
+    if (type === 'prompt_injection') {
+      return {
+        at: text(o.ts),
+        text: text(o.fragment) ? `„${text(o.fragment)}”` : 'polecenie dla modelu w treści zapytania',
+        detail: [CHANNEL_NAME[channel] ?? channel, o.zablokowany === true ? 'odrzucone — adres zablokowany' : '']
+          .filter(Boolean)
+          .join(' · '),
+        queryId: text(o.query_id) || undefined,
+      };
+    }
     if (type === 'sql_injection') {
       const fields = Array.isArray(o.pola) ? (o.pola as string[]).join(', ') : '';
       const patterns = Array.isArray(o.wzorce) ? (o.wzorce as string[]).join(', ') : '';
@@ -299,15 +331,28 @@ function describeAlert(a: RawAlert, type: AlertType, m: MonitoringSettings | nul
       if (categories.length) metrics['Kategorie'] = categories.join(', ');
       break;
     }
-    case 'prompt_injection':
-      description =
-        `W ciągu ${windowH} h wykryto ${queries(a.count)} z poleceniami dla modelu (prompt injection). ` +
-        'Treść potraktowano jako dane do sprawdzenia, polecenia zignorowano.';
+    case 'prompt_injection': {
+      const address = text(d.adres);
+      const channel = text(d.kanal);
+      const tries = `${a.count} ${plural(a.count, ['próba', 'próby', 'prób'])}`;
+      description = address
+        ? `Z adresu ${address} ${plural(a.count, ['przyszła', 'przyszły', 'przyszło'])} ${tries} sterowania modelem (prompt injection): polecenia ` +
+          'w treści zapytania, np. „zignoruj poprzednie instrukcje”. Każda próba jest oznaczona w historii weryfikacji.'
+        : windowH
+          ? `W ciągu ${windowH} h wykryto ${queries(a.count)} z poleceniami dla modelu (prompt injection).`
+          : `Kanał ${CHANNEL_NAME[channel] ?? channel}: ${tries} sterowania modelem (prompt injection). ` +
+            'Bez adresu IP (np. WhatsApp) nie ma blokady — treść jest sprawdzana jako dane, polecenia są ignorowane.';
       rule = m
-        ? `alert od ${m.injection_alert_after} ${m.injection_alert_after === 1 ? 'próby' : 'prób'} w ${m.dangerous_window_hours} h`
-        : 'powtarzające się próby sterowania modelem';
+        ? m.injection_block_ip
+          ? `blokada adresu IP po ${m.injection_block_after} ${m.injection_block_after === 1 ? 'próbie' : 'próbach'} w ` +
+            `${m.dangerous_window_hours} h, na ${m.injection_block_hours} h`
+          : 'automatyczna blokada adresów wyłączona — tylko oznaczenie i alert'
+        : 'każda próba sterowania modelem';
       metrics['Próby'] = a.count;
+      if (address) metrics['Adres'] = address;
+      if (channel) metrics['Kanał'] = CHANNEL_NAME[channel] ?? channel;
       break;
+    }
     case 'disinformation':
       description =
         `W ciągu ${windowH} h ${queries(a.count)} dotyczyło twierdzenia ocenionego jako fałsz. ` +
@@ -373,6 +418,10 @@ export function mapAlert(a: RawAlert, monitoring: MonitoringSettings | null): Al
     notified: [],
     note: a.note ?? undefined,
     occurrences: occurrencesOf(a, type),
+    ipBlock:
+      a.details?.blokada && typeof a.details.blokada === 'object'
+        ? mapIpBlock(a.details.blokada as Record<string, unknown>)
+        : undefined,
     link: text(caseInfo.url) ? { label: 'Przypadek w bazie EUvsDisinfo', url: text(caseInfo.url) } : undefined,
   };
 }
@@ -488,7 +537,9 @@ const FIELD_LABEL: Record<string, string> = {
   'monitoring.disinfo_window_hours': 'Dezinformacja: okno czasu (h)',
   'monitoring.dangerous_alert_after': 'Treści niebezpieczne: alert po',
   'monitoring.dangerous_window_hours': 'Treści niebezpieczne: okno czasu (h)',
-  'monitoring.injection_alert_after': 'Prompt injection: alert po',
+  'monitoring.injection_block_ip': 'Prompt injection: blokada adresu IP',
+  'monitoring.injection_block_after': 'Prompt injection: blokada po (próbach)',
+  'monitoring.injection_block_hours': 'Prompt injection: długość blokady (h)',
   'monitoring.refuse_high_risk': 'Odrzucanie treści wysokiego ryzyka',
 };
 
@@ -573,6 +624,8 @@ const ACTION_LABEL: Record<string, string> = {
   'alert.status_changed': 'Zmiana statusu alertu',
   'info_gap.status_changed': 'Zmiana stanu luki informacyjnej',
   'maintenance.purged': 'Usunięcie starych danych',
+  'ip.blocked': 'Blokada adresu IP (prompt injection)',
+  'ip.unblocked': 'Odblokowanie adresu IP',
   'source.created': 'Nowe źródło zaufane',
   'source.updated': 'Zmiana źródła zaufanego',
   'source.deleted': 'Usunięcie źródła zaufanego',
@@ -584,6 +637,7 @@ const SUBJECT_LABEL: Record<string, string> = {
   alert: 'alert',
   topic: 'temat',
   config: 'konfiguracja',
+  ip: 'adres IP',
   source: 'źródło',
   token: 'token',
 };

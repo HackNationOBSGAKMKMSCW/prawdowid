@@ -4,6 +4,9 @@ Tabele: ``user_queries`` (zapytania, anonimowe), ``query_claims`` (twierdzenia z
 i tematem), ``query_topics`` (grupy podobnych twierdzeń + stan luki informacyjnej),
 ``monitor_alerts`` (zdarzenia dla admina), ``config_audit``. Bez danych o użytkownikach
 aplikacji: ``user_key`` ma zawsze wartość ``monitor.ANONYMOUS_KEY``, ``user_label`` jest pusty.
+
+``ip_blocks``: tylko adresy, z których przyszła próba prompt injection — jako klucz HMAC i
+maska (``client_ip``), z licznikiem prób i czasem blokady. ``monitor_meta``: sól tego klucza.
 """
 
 from __future__ import annotations
@@ -93,6 +96,25 @@ CREATE TABLE IF NOT EXISTS config_audit (
     field TEXT NOT NULL,
     old TEXT,
     new TEXT
+);
+
+CREATE TABLE IF NOT EXISTS ip_blocks (
+    ip_key TEXT PRIMARY KEY,
+    label TEXT NOT NULL,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    first_seen TEXT NOT NULL,
+    last_seen TEXT NOT NULL,
+    blocked_until TEXT,
+    blocked_at TEXT,
+    blocked_by TEXT,
+    reason TEXT,
+    alert_id TEXT
+);
+CREATE INDEX IF NOT EXISTS ix_ip_blocks_until ON ip_blocks(blocked_until);
+
+CREATE TABLE IF NOT EXISTS monitor_meta (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
 );
 """
 
@@ -572,6 +594,56 @@ class AdminStore:
         claims = self._execute("DELETE FROM query_claims WHERE ts < ?", [before]).rowcount
         queries = self._execute("DELETE FROM user_queries WHERE ts < ?", [before]).rowcount
         return {"queries": queries, "claims": claims}
+
+    # --- blokady adresów IP (prompt injection) -----------------------------------------
+
+    def meta_value(self, key: str, default: str) -> str:
+        """Wartość z ``monitor_meta``; przy pierwszym odczycie zapisuje ``default``."""
+        self._execute(
+            "INSERT INTO monitor_meta (key, value) VALUES (?, ?) ON CONFLICT (key) DO NOTHING",
+            [key, default],
+        )
+        return str(self._one("SELECT value FROM monitor_meta WHERE key = ?", [key])[0])
+
+    def record_ip_attempt(self, ip_key: str, label: str, ts: str, window_start: str) -> dict:
+        """Próba z adresu: licznik +1 (od nowa, gdy poprzednia była przed ``window_start``)."""
+        self._execute(
+            "INSERT INTO ip_blocks (ip_key, label, attempts, first_seen, last_seen) "
+            "VALUES (?, ?, 1, ?, ?) ON CONFLICT (ip_key) DO UPDATE SET "
+            "attempts = CASE WHEN ip_blocks.last_seen >= ? THEN ip_blocks.attempts + 1 ELSE 1 END, "
+            "first_seen = CASE WHEN ip_blocks.last_seen >= ? THEN ip_blocks.first_seen "
+            "ELSE excluded.first_seen END, "
+            "last_seen = excluded.last_seen, label = excluded.label",
+            [ip_key, label, ts, ts, window_start, window_start],
+        )
+        return self.ip_block(ip_key) or {}
+
+    def ip_block(self, ip_key: str) -> dict[str, Any] | None:
+        return _row(self._one("SELECT * FROM ip_blocks WHERE ip_key = ?", [ip_key]))
+
+    def set_ip_block(self, ip_key: str, **fields: Any) -> None:
+        assignments = ", ".join(f"{name} = ?" for name in fields)
+        self._execute(
+            f"UPDATE ip_blocks SET {assignments} WHERE ip_key = ?", [*fields.values(), ip_key]
+        )
+
+    def list_ip_blocks(self, *, active_at: str | None = None, limit: int = 500) -> list[dict]:
+        """Adresy z próbami; ``active_at``: tylko zablokowane w tej chwili."""
+        where, params = "", []
+        if active_at:
+            where, params = "WHERE blocked_until > ?", [active_at]
+        rows = self._all(
+            f"SELECT * FROM ip_blocks {where} ORDER BY last_seen DESC LIMIT ?", [*params, limit]
+        )
+        return [_row(row) for row in rows]
+
+    def purge_ip_blocks(self, now: str, before: str) -> int:
+        """Usuń adresy bez aktywnej blokady, z ostatnią próbą przed ``before``."""
+        return self._execute(
+            "DELETE FROM ip_blocks WHERE (blocked_until IS NULL OR blocked_until <= ?) "
+            "AND last_seen < ?",
+            [now, before],
+        ).rowcount
 
 
 def open_store(settings: Any) -> AdminStore:

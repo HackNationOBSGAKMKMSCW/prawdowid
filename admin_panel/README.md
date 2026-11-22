@@ -62,8 +62,10 @@ Strona dla obywateli nie ma kont: sprawdzanie jest anonimowe. Konta zakłada wy�
 
 **Bez danych o użytkownikach aplikacji.** Panel nie zbiera i nie pokazuje numerów telefonów,
 adresów IP, pseudonimów ani innych identyfikatorów osób pytających (strona i WhatsApp). Reguły
-liczą zapytania, alerty o treściach niebezpiecznych i prompt injection są zbiorcze, nikt nie
-jest blokowany. Widok **Konta panelu** pokazuje tylko konta panelu (administrator, analityk).
+liczą zapytania, a alert o treściach niebezpiecznych jest zbiorczy. Wyjątek: próba prompt
+injection ze strony blokuje adres IP (domyślnie od 1. próby na 24 h). Panel pokazuje wtedy
+tylko maskę adresu (`203.0.113.x`), a administrator może go odblokować w alercie albo w
+„Zagrożeniach”. Widok **Konta panelu** pokazuje tylko konta panelu (administrator, analityk).
 
 **Konta i hasła:**
 - Konta zakłada i wyłącza administrator w widoku **Konta panelu** („Dodaj konto”, domyślnie rola analityka). Formularz generuje losowe hasło początkowe; administrator kopiuje je i przekazuje tej osobie razem z adresem e-mail. Może też ustawić komuś nowe hasło.
@@ -85,7 +87,8 @@ Inny adres backendu w trybie deweloperskim: `ADMIN_API_PROXY_TARGET` w `.env`
 | Widok | Endpointy `backend/admin` |
 |---|---|
 | Pulpit, Statystyki | `GET /dashboard`, `GET /queries` (szereg czasowy, kanały, czasy odpowiedzi) |
-| Alerty i ostrzeżenia | `GET /alerts`, `POST /alerts/{id}` (przyjęcie, rozwiązanie, odrzucenie) |
+| Alerty i ostrzeżenia | `GET /alerts`, `POST /alerts/{id}` (przyjęcie, rozwiązanie, odrzucenie), `POST /ip-blocks/{key}/block` i `/unblock` |
+| Zagrożenia: zablokowane adresy | `GET /ip-blocks?active=true`, `POST /ip-blocks/{key}/unblock` |
 | Luki informacyjne | `GET /info-gaps`, `GET /topics/{id}`, `POST /info-gaps/{id}` (podejrzenie → aktywna → w uzupełnianiu → zamknięta / odrzucona) |
 | Historia weryfikacji | `GET /queries` (filtry: wynik, flaga, okres, tekst), `GET /queries/{id}` |
 | Logi techniczne | `GET /events`, `GET /events/summary` |

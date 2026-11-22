@@ -21,6 +21,7 @@ import type {
   PurgeResult,
   RuntimeConfig,
   TechEvent,
+  IpBlock,
   TechSummary,
   ThreatReport,
   TrustedSite,
@@ -928,6 +929,15 @@ export class MockAdminApi implements AdminApi {
   }
   getThreats(): Promise<ThreatReport> {
     return Promise.reject(unsupported('Zagrożenia z logów'));
+  }
+  listIpBlocks(): Promise<IpBlock[]> {
+    return Promise.reject(unsupported('Blokady adresów IP'));
+  }
+  blockIp(): Promise<IpBlock> {
+    return Promise.reject(unsupported('Blokady adresów IP'));
+  }
+  unblockIp(): Promise<IpBlock> {
+    return Promise.reject(unsupported('Blokady adresów IP'));
   }
   listTrustedSites(): Promise<TrustedSite[]> {
     return Promise.reject(unsupported('Strony zaufane'));

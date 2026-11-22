@@ -252,8 +252,29 @@ export interface Alert {
   occurrences?: AlertOccurrence[];
   /** External reference, e.g. the EUvsDisinfo case. */
   link?: { label: string; url: string };
+  /** Prompt injection from a website client: masked address and its current block. */
+  ipBlock?: IpBlock;
   /** Admin's note from the last status change. */
   note?: string;
+}
+
+/**
+ * Address that sent a prompt injection (backend `ip_blocks`). The backend stores only an
+ * HMAC key and a mask, never the address itself.
+ */
+export interface IpBlock {
+  key: string;
+  /** Masked address, e.g. `203.0.113.x` or `2001:db8:1:…/64`. */
+  label: string;
+  attempts: number;
+  firstSeen: ISODate | null;
+  lastSeen: ISODate | null;
+  blockedUntil: ISODate | null;
+  blockedBy: string | null;
+  reason: string | null;
+  active: boolean;
+  permanent: boolean;
+  alertId: string | null;
 }
 
 export interface AlertOccurrence {
@@ -645,6 +666,8 @@ export type Feature =
   | 'retention'
   /** Trusted sites searched by the verification (`trusted_sources` table + live registry). */
   | 'trustedSites'
+  /** Address blocks after prompt injection (`/ip-blocks`). */
+  | 'ipBlocks'
   /** Threat report built from the observability logs (`GET /threats`). */
   | 'threats';
 
@@ -678,8 +701,9 @@ export interface ApiSettings {
 
 /**
  * Progi monitora (backend/admin/runtime.py). Bez danych o użytkownikach aplikacji wszystkie
- * progi liczą zapytania; `disinfo_min_users` ma historyczną nazwę. Pola blokad i liczenia
- * „osób” zostały w backendzie tylko dla zgodności starszych plików i są nieużywane.
+ * progi liczą zapytania; `disinfo_min_users` ma historyczną nazwę. Jedyne blokady to adresy
+ * IP po prompt injection (`injection_block_*`). Pozostałe pola blokad i liczenia „osób”
+ * zostały w backendzie tylko dla zgodności starszych plików i są nieużywane.
  */
 export interface MonitoringSettings {
   info_gap_min_queries: number;
@@ -688,7 +712,9 @@ export interface MonitoringSettings {
   disinfo_window_hours: number;
   dangerous_alert_after: number;
   dangerous_window_hours: number;
-  injection_alert_after: number;
+  injection_block_ip: boolean;
+  injection_block_after: number;
+  injection_block_hours: number;
   refuse_high_risk: boolean;
   retention_days: number;
   // nieużywane (zgodność): bez danych o osobach nie ma blokad ani liczenia osób
@@ -697,6 +723,7 @@ export interface MonitoringSettings {
   dangerous_block_after?: number;
   dangerous_block_hours?: number;
   auto_block?: boolean;
+  injection_alert_after?: number;
 }
 
 export type SecretName = 'freellm_api_key' | 'google_fact_check_api_key' | 'diffbot_api_token';

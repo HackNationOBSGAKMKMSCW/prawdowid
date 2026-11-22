@@ -1,6 +1,7 @@
 """Ustawienia samego panelu admina (token awaryjny, baza).
 
-Nie ma pseudonimizacji użytkowników aplikacji: rejestr nie zapisuje żadnych ich identyfikatorów.
+Rejestr nie zapisuje identyfikatorów użytkowników aplikacji. Wyjątek: adres IP, z którego
+przyszła próba prompt injection, trafia do blokad jako klucz HMAC (``ip_salt``) z maską.
 """
 
 from __future__ import annotations
@@ -21,6 +22,8 @@ class AdminSettings:
     api_token: str | None = field(default=None, repr=False)
     db_path: Path = DEFAULT_DB_PATH
     max_text_length: int = 4000
+    # Sól HMAC kluczy adresów IP w blokadach; brak = losowa, zapisana w bazie (monitor_meta).
+    ip_salt: str | None = field(default=None, repr=False)
 
     @classmethod
     def from_environment(cls) -> AdminSettings:
@@ -29,6 +32,7 @@ class AdminSettings:
         return cls(
             api_token=(os.getenv("ADMIN_API_TOKEN") or "").strip() or None,
             db_path=Path(os.getenv("ADMIN_DB_PATH") or DEFAULT_DB_PATH),
+            ip_salt=(os.getenv("ADMIN_IP_SALT") or "").strip() or None,
         )
 
 

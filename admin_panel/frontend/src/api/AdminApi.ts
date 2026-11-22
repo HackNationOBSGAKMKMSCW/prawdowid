@@ -10,6 +10,7 @@ import type {
   RuntimeConfigPatch,
   TechEvent,
   TechEventQuery,
+  IpBlock,
   TechSummary,
   ThreatReport,
   TrustedSite,
@@ -145,6 +146,12 @@ export interface AdminApi {
   deleteTrustedSite(url: string): Promise<void>;
   /** Fetches the site again and re-detects how to search it. */
   checkTrustedSite(url: string): Promise<TrustedSite>;
+
+  /** `ipBlocks`: addresses that sent a prompt injection (masked); `activeOnly`: blocked now. */
+  listIpBlocks(activeOnly?: boolean): Promise<IpBlock[]>;
+  /** `hours: null` blocks with no end date; `undefined` uses the configured duration. */
+  blockIp(key: string, hours?: number | null): Promise<IpBlock>;
+  unblockIp(key: string): Promise<IpBlock>;
 
   /** `threats`: prompt injection, manipulation campaigns and critical queries from the logs. */
   getThreats(hours: number): Promise<ThreatReport>;

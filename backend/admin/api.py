@@ -43,6 +43,14 @@ class PurgeRequest(BaseModel):
     older_than_days: int | None = Field(default=None, ge=1, le=3650)
 
 
+class IpBlockRequest(BaseModel):
+    hours: int | None = Field(
+        default=None, ge=1, le=24 * 365 * 10, description="Brak: injection_block_hours"
+    )
+    permanent: bool = False
+    reason: str | None = Field(default=None, max_length=500)
+
+
 def known_api_clients() -> list[str]:
     from apiReading.clients import CLIENT_CLASSES
 
@@ -114,7 +122,9 @@ def create_router(
             "generated_at": iso(now),
             "window_hours": hours,
             **monitor.store.stats(since, iso(now)),
-            "latest_alerts": monitor.store.list_alerts(status="otwarty", limit=10),
+            "latest_alerts": monitor.with_block_state(
+                monitor.store.list_alerts(status="otwarty", limit=10)
+            ),
         }
 
     # --- dziennik zapytań (anonimowy) --------------------------------------------------
@@ -189,8 +199,6 @@ def create_router(
         report = threat_report(iter_events(path), monitor.store, hours=hours, now=monitor.now())
         return {"file": str(path), "log_available": path.is_file(), **report}
 
-    # --- użytkownicy -------------------------------------------------------------------
-
     # --- alerty ------------------------------------------------------------------------
 
     @router.get("/alerts", dependencies=[need("alerts:read")])
@@ -203,7 +211,7 @@ def create_router(
         items = monitor.store.list_alerts(
             alert_type=type, status=status, limit=limit, offset=offset
         )
-        return {"items": items}
+        return {"items": monitor.with_block_state(items)}
 
     @router.get("/alerts/{alert_id}", dependencies=[need("alerts:read")])
     def alert(alert_id: str) -> dict[str, Any]:
@@ -212,7 +220,38 @@ def create_router(
             raise not_found(f"alert {alert_id}")
         if item["type"] in ("luka_informacyjna", "kampania_dezinformacyjna"):
             item["topic"] = monitor.store.get_topic(item["subject"])
-        return item
+        return monitor.with_block_state([item])[0]
+
+    # --- blokady adresów IP (prompt injection) -----------------------------------------
+
+    @router.get("/ip-blocks", dependencies=[need("security:read")])
+    def ip_blocks(active: bool = False) -> dict[str, Any]:
+        """Adresy z próbami prompt injection (maska + klucz HMAC), ``active``: tylko blokady."""
+        return {"items": monitor.ip_blocks(active_only=active)}
+
+    @router.post("/ip-blocks/{ip_key}/block")
+    def block_ip(
+        ip_key: str, body: IpBlockRequest, principal: Principal = need("security:write")
+    ) -> dict[str, Any]:
+        hours = None if body.permanent else body.hours or monitor.config.injection_block_hours
+        try:
+            result = monitor.block_ip(
+                ip_key, hours=hours, actor=principal.label, reason=body.reason
+            )
+        except KeyError:
+            raise not_found(f"adres {ip_key}") from None
+        until = result["blocked_until"]
+        record(principal, "ip.blocked", "ip", result["label"], until=until, reason=body.reason)
+        return result
+
+    @router.post("/ip-blocks/{ip_key}/unblock")
+    def unblock_ip(ip_key: str, principal: Principal = need("security:write")) -> dict[str, Any]:
+        try:
+            result = monitor.unblock_ip(ip_key, actor=principal.label)
+        except KeyError:
+            raise not_found(f"adres {ip_key}") from None
+        record(principal, "ip.unblocked", "ip", result["label"])
+        return result
 
     @router.post("/alerts/{alert_id}")
     def update_alert(

@@ -1,11 +1,21 @@
-# Powiadomienia admina: rosyjska dezinformacja i SQL injection
+# Powiadomienia admina: rosyjska dezinformacja, SQL injection i prompt injection
 
-Oba zdarzenia trafiają do tej samej tabeli powiadomień co pozostałe alerty panelu (`monitor_alerts`). Front czyta je istniejącymi endpointami `/api/admin/alerts`. Schemat bazy się nie zmienił: kolumna `type` przyjmuje nowe wartości bez migracji.
+Zdarzenia trafiają do tej samej tabeli powiadomień co pozostałe alerty panelu (`monitor_alerts`). Front czyta je istniejącymi endpointami `/api/admin/alerts`. Schemat bazy się nie zmienił: kolumna `type` przyjmuje nowe wartości bez migracji.
 
 | `type` | Kiedy powstaje | `subject` | Ważność |
 |---|---|---|---|
 | `rosyjska_dezinformacja` | twierdzenie z zapytania na stronie jest w bazie EUvsDisinfo (sprawdzenie przez MCP i potwierdzenie przez LLM) | skrót linku do przypadku: jeden alert na przypadek | `wysoka` |
 | `sql_injection` | w parametrach URL, treści JSON lub formularza albo w wiadomości bota wykryto składnię SQL injection | `kanal:web`, `kanal:panel` albo `kanal:whatsapp` | `wysoka` |
+| `prompt_injection` | w treści zapytania są polecenia dla modelu (np. „zignoruj poprzednie instrukcje”); zapytanie ma flagę `prompt_injection` | `ip:<klucz>` (strona WWW: jeden alert na adres) albo `kanal:<kanał>` (bez adresu, np. WhatsApp) | `wysoka`, gdy adres jest zablokowany, inaczej `srednia` |
+
+### Prompt injection i blokada adresu
+
+- `details`: `kanal`, a dla strony także `adres` (maska, np. `203.0.113.x` albo `2001:db8:1:…/64`), `ip_key` (HMAC adresu) i `proby` (próby z adresu w oknie `dangerous_window_hours`).
+- `details.wystapienia[]`: `ts`, `request_id`, `query_id`, `kanal`, `fragment` (fragment tekstu wokół polecenia), `wzorzec`, `zablokowany`.
+- `details.blokada` dokłada API przy każdym odczycie (`GET /alerts`, `GET /alerts/{id}`, pulpit): bieżący stan z `ip_blocks` — `active`, `blocked_until`, `permanent`, `blocked_by` (`auto` albo admin), `attempts`.
+- Od `monitoring.injection_block_after` prób (domyślnie 1) adres jest blokowany na `injection_block_hours` (domyślnie 24 h), gdy `injection_block_ip`. To zapytanie i kolejne z adresu dostają `403 user_blocked`, a w dzienniku status `odrzucone` i flagę `odrzucone:ip_zablokowany`.
+- `GET /ip-blocks?active=true` — lista adresów (maska, klucz, próby, do kiedy); `POST /ip-blocks/{ip_key}/block` z `{"hours": 24}` albo `{"permanent": true}` (pusty = `injection_block_hours`); `POST /ip-blocks/{ip_key}/unblock`. Zmiany wymagają uprawnienia `security:write` (administrator) i trafiają do dziennika działań (`ip.blocked`, `ip.unblocked`).
+- Pełny adres nie jest nigdzie zapisywany. Adres klienta: `CLIENT_IP_HEADER` (domyślnie `cf-connecting-ip`), potem `X-Forwarded-For` z `TRUSTED_PROXY_HOPS` zaufanymi proxy, potem adres połączenia.
 
 ## Jak liczone są wystąpienia
 

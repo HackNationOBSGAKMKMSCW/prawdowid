@@ -5,11 +5,13 @@ Każde sprawdzenie ze strony trafia do tego samego rejestru co wiadomości z bot
 informacyjnych i alertach. Zgłoszenie błędu w wyniku dopisuje się do tego samego wpisu
 (identyfikator wyniku = identyfikator zapytania).
 
-Użytkownik strony jest w pełni anonimowy: do rejestru nie trafia ani adres IP, ani żaden
-wyliczony z niego pseudonim.
+Zapytania są anonimowe: do dziennika nie trafia adres IP ani żaden wyliczony z niego
+pseudonim. Adres klienta (``client_ip.request_address``) monitor dostaje tylko po to, żeby
+odrzucić zapytanie z adresu zablokowanego po prompt injection, a przy próbie prompt injection
+zapisać go w blokadach jako klucz HMAC z maską.
 
 Błąd monitora nigdy nie psuje sprawdzenia: zapis jest pomijany i zostaje ostrzeżenie w logach.
-Jedyny wyjątek to świadoma odmowa (zablokowany użytkownik, prośba o instrukcje przemocy).
+Jedyny wyjątek to świadoma odmowa (adres zablokowany, prośba o instrukcje przemocy).
 """
 
 from __future__ import annotations
@@ -21,6 +23,7 @@ from typing import Any
 from starlette.concurrency import run_in_threadpool
 
 from .checks import known_disinfo_matches
+from .client_ip import request_address
 from .monitor import ClaimInput, Monitor, ScreenDecision
 
 logger = logging.getLogger(__name__)
@@ -84,6 +87,7 @@ class CheckJournal:
                 channel=CHANNEL,
                 request_id=request_id,
                 query_id=query_id,
+                client_ip=request_address(request) if request is not None else None,
             )
         except Exception as exc:  # noqa: BLE001
             logger.warning("admin_journal_failed step=screen error_type=%s", type(exc).__name__)

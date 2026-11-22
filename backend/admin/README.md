@@ -37,6 +37,9 @@ Bez `DATABASE_URL` nie ma kont; panel działa wtedy tylko z awaryjnym `ADMIN_API
 | `ADMIN_API_TOKEN` | brak | Awaryjny dostęp bez konta (najlepiej nie ustawiać) |
 | `ADMIN_DB_PATH` | `backend/admin/data/admin.db` | Baza SQLite z zapytaniami, alertami i audytem |
 | `RUNTIME_CONFIG_FILE` | `backend/admin/data/runtime_config.json` | Nadpisania konfiguracji |
+| `ADMIN_IP_SALT` | losowa, w bazie | Sól HMAC adresów IP w blokadach po prompt injection |
+| `CLIENT_IP_HEADER` | `cf-connecting-ip` | Nagłówek zaufanego proxy z adresem klienta (pusty = nie ufaj) |
+| `TRUSTED_PROXY_HOPS` | `1` | Ile zaufanych proxy dopisuje się do `X-Forwarded-For` (0 = adres połączenia) |
 
 Katalog `data/` jest w `.gitignore`, bo może zawierać klucze API.
 
@@ -75,10 +78,11 @@ Progi ustawia się w sekcji `monitoring` konfiguracji (`PATCH /api/admin/config`
 
 **Bez danych o użytkownikach aplikacji.** Dziennik nie zapisuje numeru telefonu, adresu IP,
 pseudonimu ani żadnego innego identyfikatora osoby pytającej (`user_key` = `anonim`,
-`user_label` = `NULL`). Dlatego wszystkie reguły liczą **zapytania**, a nie osoby, alerty o
-treściach niebezpiecznych i prompt injection są zbiorcze i nikogo się nie blokuje. Migracja
-`0010_no_end_user_data` usuwa dane zapisane wcześniej (tabela `end_users`, pseudonimy, źródła
-w alertach).
+`user_label` = `NULL`). Dlatego wszystkie reguły liczą **zapytania**, a nie osoby, a alert o
+treściach niebezpiecznych jest zbiorczy. Migracja `0010_no_end_user_data` usuwa dane zapisane
+wcześniej (tabela `end_users`, pseudonimy, źródła w alertach). Jedyny wyjątek to adres, z
+którego przyszła próba prompt injection: trafia do `ip_blocks` (migracja `0011`) jako klucz
+HMAC z maską, żeby można go było zablokować.
 
 - **Luka informacyjna.** Twierdzenie jest jej kandydatem, gdy nie ma rozstrzygnięcia: werdykt `brak_wystarczajacych_danych` albo `nieweryfikowalny`, albo brak jakichkolwiek źródeł.
   - Podobne twierdzenia są grupowane w tematy.
@@ -93,7 +97,7 @@ w alertach).
   - Prośba o instrukcję, przepis lub zdobycie dostaje poziom `wysoki` i jest odrzucana.
   - `dangerous_alert_after` zapytań (łącznie) w oknie `dangerous_window_hours` daje zbiorczy alert `tresci_niebezpieczne` (temat `wszystkie`, w szczegółach kategorie i liczba próśb wysokiego ryzyka).
   - Nikt nie jest blokowany (`refuse_high_risk` odrzuca same prośby wysokiego ryzyka).
-- **Prompt injection.** `injection_alert_after` prób (łącznie, w oknie `dangerous_window_hours`) daje zbiorczy alert `prompt_injection`. Tekst jest dalej sprawdzany jako dane.
+- **Prompt injection.** Każda próba dostaje flagę `prompt_injection` i trafia jako wystąpienie do alertu `prompt_injection`: jeden alert na adres IP strony (`ip:<klucz>`), a bez adresu (WhatsApp) na kanał. Od `injection_block_after` prób z jednego adresu (domyślnie 1) w oknie `dangerous_window_hours` adres jest blokowany na `injection_block_hours` (domyślnie 24 h, `injection_block_ip`): to zapytanie i kolejne dostają `403 user_blocked`. Admin blokuje i odblokuje w panelu (alert albo „Zagrożenia”). Szczegóły: [ALERTS_FRONTEND.md](ALERTS_FRONTEND.md).
 - **Zweryfikowana rosyjska dezinformacja.** Twierdzenie z zapytania na stronie jest w bazie EUvsDisinfo (`knownDisinfo`, MCP). Powstaje wtedy alert `rosyjska_dezinformacja`, jeden na przypadek z bazy. Każde kolejne zapytanie zwiększa licznik i dopisuje się do `details.wystapienia`, a zapytanie dostaje flagę `rosyjska_dezinformacja`.
 - **SQL injection.** `admin/sqli.py` szuka składni SQL (UNION SELECT, `' OR '1'='1`, `; DROP TABLE`, SLEEP itp.):
   - w każdym żądaniu API strony i panelu (`admin/request_audit.py`, middleware w `server.py` i `admin/api.py`);
@@ -132,6 +136,7 @@ Klucze są tylko do zapisu. API i audyt pokazują wyłącznie maskę (`****abcd`
 | `GET /queries/{id}` | Szczegóły zapytania z twierdzeniami i zgłoszeniem błędu (`report`) |
 | `GET /events`, `GET /events/summary` | Techniczne logi observability (`backend/logs/app.jsonl`) |
 | `GET /alerts`, `GET /alerts/{id}`, `POST /alerts/{id}` | Alerty i zmiana ich statusu |
+| `GET /ip-blocks`, `POST /ip-blocks/{ip_key}/block`, `POST /ip-blocks/{ip_key}/unblock` | Adresy po prompt injection (maska), blokada i odblokowanie |
 | `GET /info-gaps`, `POST /info-gaps/{topic_id}`, `GET /topics/{id}` | Luki informacyjne |
 | `GET /info-gaps/summary` | Ile zapytań w oknie nie miało pokrycia w danych, liczba tematów w każdym stanie, najczęstsze tematy |
 | `GET /info-gaps/ranking` | Tematy z największą liczbą zapytań bez pokrycia (także poniżej progu), z trendem dziennym |

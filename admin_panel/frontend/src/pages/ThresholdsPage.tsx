@@ -15,7 +15,8 @@ type NumberKey =
   | 'disinfo_window_hours'
   | 'dangerous_alert_after'
   | 'dangerous_window_hours'
-  | 'injection_alert_after'
+  | 'injection_block_after'
+  | 'injection_block_hours'
   | 'retention_days';
 
 interface NumberField {
@@ -46,13 +47,21 @@ const GROUPS: { title: string; subtitle: string; fields: NumberField[] }[] = [
     ],
   },
   {
-    title: 'Treści niebezpieczne i prompt injection',
+    title: 'Treści niebezpieczne',
     subtitle:
-      'Terroryzm, materiały wybuchowe, broń, broń masowego rażenia, przemoc masowa. Pytanie o fakt jest sprawdzane i oznaczane; prośba o instrukcję lub zdobycie to wysokie ryzyko. Alerty są zbiorcze: nikogo nie identyfikujemy ani nie blokujemy.',
+      'Terroryzm, materiały wybuchowe, broń, broń masowego rażenia, przemoc masowa. Pytanie o fakt jest sprawdzane i oznaczane; prośba o instrukcję lub zdobycie to wysokie ryzyko. Alert jest zbiorczy: nikogo nie identyfikujemy.',
     fields: [
       { key: 'dangerous_alert_after', label: 'Alert po', hint: 'zapytaniach o treści niebezpieczne (łącznie)', min: 1, max: 1000 },
-      { key: 'dangerous_window_hours', label: 'Okno czasu', hint: 'dla obu progów w tej sekcji', min: 1, max: 2160, unit: 'h' },
-      { key: 'injection_alert_after', label: 'Prompt injection: alert po', hint: 'próbach manipulacji modelem (łącznie)', min: 1, max: 1000 },
+      { key: 'dangerous_window_hours', label: 'Okno czasu', hint: 'także okno liczenia prób prompt injection', min: 1, max: 2160, unit: 'h' },
+    ],
+  },
+  {
+    title: 'Prompt injection',
+    subtitle:
+      'Polecenia dla modelu w treści zapytania (np. „zignoruj poprzednie instrukcje”). Każda próba jest oznaczana w historii weryfikacji i trafia do alertów. Adres IP strony WWW może zostać zablokowany — w bazie jest tylko jego skrót (HMAC) i maska, np. 203.0.113.x. WhatsApp nie ma adresu IP, więc tam jest tylko oznaczenie i alert.',
+    fields: [
+      { key: 'injection_block_after', label: 'Blokada po', hint: 'próbach z jednego adresu w oknie czasu', min: 1, max: 1000 },
+      { key: 'injection_block_hours', label: 'Długość blokady', hint: 'admin może odblokować wcześniej', min: 1, max: 8760, unit: 'h' },
     ],
   },
 ];
@@ -64,7 +73,7 @@ export default function ThresholdsPage() {
     <>
       <PageHeader
         title="Reguły i progi"
-        description="Kiedy backend tworzy alerty o lukach informacyjnych, możliwej dezinformacji, treściach niebezpiecznych i prompt injection, oraz jak długo przechowuje zapytania. Zmiany działają od następnego zapytania."
+        description="Kiedy backend tworzy alerty o lukach informacyjnych, możliwej dezinformacji i treściach niebezpiecznych, kiedy blokuje adres po prompt injection i jak długo przechowuje zapytania. Zmiany działają od następnego zapytania."
       />
       <Async state={config}>
         {/* Keyed by the saved values: after a save the form starts from the new config. */}
@@ -133,7 +142,16 @@ function ThresholdsForm({ config, onSaved }: { config: RuntimeConfig; onSaved: (
               </Field>
             ))}
           </div>
-          {group.title.startsWith('Treści niebezpieczne') && (
+          {group.title === 'Prompt injection' && (
+            <Toggle
+              checked={form.injection_block_ip}
+              disabled={!editable}
+              onChange={(v) => setForm({ ...form, injection_block_ip: v })}
+              label="Blokuj adres IP po próbie prompt injection"
+              description="To zapytanie i kolejne z tego adresu są odrzucane (strona dostaje błąd 403) do końca blokady."
+            />
+          )}
+          {group.title === 'Treści niebezpieczne' && (
             <div className="stack">
               <Toggle
                 checked={form.refuse_high_risk}

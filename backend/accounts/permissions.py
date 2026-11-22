@@ -15,7 +15,7 @@ ROLES = ("user", "analyst", "admin")
 PANEL_ROLES = ("analyst", "admin")
 
 # Panel obserwacyjny: wszystko do odczytu (pulpit, statystyki, alerty, luki, historia,
-# logi, użytkownicy serwisu, źródła) i eksport — bez żadnych zmian w serwisie.
+# logi, blokady adresów, źródła) i eksport — bez żadnych zmian w serwisie.
 _OBSERVE = frozenset(
     {
         "dashboard:read",
@@ -26,7 +26,6 @@ _OBSERVE = frozenset(
         "sources:read",
         "security:read",
         "rules:read",
-        "endusers:read",
         "export",
     }
 )
@@ -49,7 +48,7 @@ ROLE_PERMISSIONS: dict[str, frozenset[str]] = {
         "users:read",
         "users:write",
         "audit:read",
-        "endusers:write",
+        "security:write",  # blokady adresów IP po prompt injection
         "me:read",
         "me:write",
     },

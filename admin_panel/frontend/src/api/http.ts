@@ -10,6 +10,7 @@ import {
   GAP_TO_BACKEND,
   joinTrustedSites,
   mapAccount,
+  mapIpBlock,
   mapThreats,
   mapActivity,
   mapAlert,
@@ -71,6 +72,7 @@ import type {
   Source,
   TechEvent,
   TechEventQuery,
+  IpBlock,
   TechSummary,
   ThreatReport,
   TrustedSite,
@@ -151,6 +153,7 @@ export class HttpAdminApi implements AdminApi {
       'techEvents',
       'retention',
       'trustedSites',
+      'ipBlocks',
       'threats',
     ]),
     alertTypes: BACKEND_ALERT_TYPES,
@@ -538,6 +541,24 @@ export class HttpAdminApi implements AdminApi {
 
   async getThreats(hours: number): Promise<ThreatReport> {
     return mapThreats(await this.request<Record<string, unknown>>('threats', { query: { hours } }));
+  }
+
+  // ── address blocks after prompt injection ────────────────────────────────
+
+  async listIpBlocks(activeOnly = false): Promise<IpBlock[]> {
+    const { items } = await this.request<{ items: Record<string, unknown>[] }>('ipBlocks', {
+      query: { active: activeOnly || undefined },
+    });
+    return items.map(mapIpBlock);
+  }
+
+  async blockIp(key: string, hours?: number | null): Promise<IpBlock> {
+    const body = hours === null ? { permanent: true } : { hours: hours ?? null };
+    return mapIpBlock(await this.request<Record<string, unknown>>('ipBlock', { method: 'POST', params: { key }, body }));
+  }
+
+  async unblockIp(key: string): Promise<IpBlock> {
+    return mapIpBlock(await this.request<Record<string, unknown>>('ipUnblock', { method: 'POST', params: { key } }));
   }
 
   // ── trusted sites (trusted_sources + the verification's registry) ────────

@@ -229,7 +229,8 @@ def test_middleware_reports_and_never_changes_the_response():
     attack = client.get(
         "/api/check",
         params={"text": "1 UNION SELECT password FROM users"},
-        headers={"X-Forwarded-For": "203.0.113.7, 10.0.0.1"},
+        # klient wpisał „198.51.100.9”, nasze proxy dopisało jego prawdziwy adres
+        headers={"X-Forwarded-For": "198.51.100.9, 203.0.113.7"},
     )
     assert attack.status_code == 200 and attack.json() == {"text_length": 34}
     assert worker.flush()

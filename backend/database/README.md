@@ -107,6 +107,14 @@ Table user_queries {
   error text
 }
 
+Table ip_blocks {
+  ip_key varchar(64) [pk, note: 'HMAC adresu IP (IPv6: sieci /64), nigdy adres']
+  label varchar(64) [note: 'maska, np. 203.0.113.x']
+  attempts integer [note: 'próby prompt injection w oknie']
+  blocked_until timestamptz [note: 'NULL = brak blokady']
+  blocked_by varchar(255) [note: 'auto albo admin']
+}
+
 Table query_topics {
   id varchar(32) [pk]
   label text

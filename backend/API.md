@@ -150,9 +150,19 @@ panel and the website share one process and one database:
 - The same rules as for the WhatsApp bot apply: information gaps, possible
   disinformation campaigns, dangerous content and prompt injection raise alerts.
   A request for weapon or explosive instructions is refused (`422 request_refused`)
-  before the pipeline runs. Nobody is blocked.
-- No data about the person asking is stored: no IP address, pseudonym or other
-  identifier (`user_key` is always `anonim`). All rules count queries, not people.
+  before the pipeline runs.
+- No data about the person asking is stored with a check: no IP address, pseudonym
+  or other identifier (`user_key` is always `anonim`). All rules count queries,
+  not people.
+- Prompt injection: every attempt is flagged (`prompt_injection`) and listed in a
+  panel alert (one alert per client address). The client address is blocked
+  after `monitoring.injection_block_after` attempts (default 1) for
+  `injection_block_hours` (default 24 h): that request and later ones get
+  `403 user_blocked` before the pipeline runs. Only blocked or attempting
+  addresses are kept, as an HMAC key (`ADMIN_IP_SALT`) and a mask
+  (`203.0.113.x`), never in plain text. Behind proxies set
+  `TRUSTED_PROXY_HOPS` (default 1: the address appended by the one proxy in
+  front of the app, e.g. Render; `0`: connection address, headers ignored).
 - Model, API-key and threshold changes made in the panel apply to `/api/check`
   immediately; trusted-site changes reload the search registry.
 - The panel itself (`admin_panel/frontend`) calls `/api/admin` on the same
@@ -183,6 +193,7 @@ to public launch traffic.
 
 | Status | Codes |
 | --- | --- |
+| `403` | `user_blocked` |
 | `404` | `result_not_found` |
 | `413` | `request_too_large` |
 | `422` | `invalid_request`, `invalid_url`, `unsafe_url`, `url_unavailable`, `request_refused` |

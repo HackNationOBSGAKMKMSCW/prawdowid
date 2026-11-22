@@ -111,8 +111,19 @@ class MonitoringConfig(_Section):
     dangerous_block_after: int = Field(default=2, ge=1, le=1000)
     dangerous_window_hours: int = Field(default=24, ge=1, le=24 * 90)
     dangerous_block_hours: int = Field(default=24, ge=1, le=24 * 365)
-    injection_alert_after: int = Field(default=2, ge=1, le=1000)
-    auto_block: bool = True
+    injection_alert_after: int = Field(
+        default=1,
+        ge=1,
+        le=1000,
+        description="Nieużywane (zgodność): każda próba prompt injection trafia do alertu",
+    )
+    # Blokada adresu IP po próbach prompt injection (strona WWW; WhatsApp nie ma adresu IP).
+    injection_block_ip: bool = True
+    injection_block_after: int = Field(
+        default=1, ge=1, le=1000, description="Prób z jednego adresu w oknie dangerous_window_hours"
+    )
+    injection_block_hours: int = Field(default=24, ge=1, le=24 * 365)
+    auto_block: bool = True  # nieużywane (zgodność): blokady osób usunięto
     refuse_high_risk: bool = True
     retention_days: int = Field(default=30, ge=1, le=3650)
 
