@@ -338,11 +338,20 @@ async def run(
         settings.article_max_links if settings else MAX_LINKS,
         settings.article_max_user_links if settings else MAX_USER_TEXT_LINKS,
     )
+    by_source = {
+        name: sum(1 for c in candidates if c.source == name) for name in ("fact_check", "user_text")
+    }
     print(
         f"[articleScraping] Znaleziono kandydatów: {found_count}; wybrano: {len(candidates)}; "
-        f"zapas: {len(reserves)}.",
+        f"zapas: {len(reserves)} "
+        f"(fact_check: {by_source['fact_check']}, user_text: {by_source['user_text']}).",
         flush=True,
     )
+    if not by_source["fact_check"]:
+        print(
+            "[articleScraping] Brak linków z fact-checków (API nie zwróciło twierdzeń lub bez URL).",
+            flush=True,
+        )
 
     def build_report(
         attempted: Sequence[CandidateLink], results: Sequence[ScrapedArticle | ArticleFailure]

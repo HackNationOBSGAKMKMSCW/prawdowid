@@ -41,7 +41,8 @@ i nie potrzebuje backendu. Pasek „DEMO” na górze pokazuje wszystkie
 scenariusze: wynik ze źródłami, analiza dat i manipulacji, link, opinia,
 „napisz więcej”, „poza zakresem” i awaria.
 
-Żeby łączyć się z backendem, ustaw w `.env.local` (wzór w `.env.example`):
+Żeby lokalnie łączyć się z backendem, ustaw `VITE_API_MODE=live` w głównym pliku
+`.env` projektu (wzór w głównym `.env.example`):
 
 ```
 VITE_API_MODE=live
@@ -69,19 +70,23 @@ Link `/?q=<tekst>` od razu sprawdza podany tekst – z tego korzysta przycisk
 
 Typy są w [`src/api/types.ts`](src/api/types.ts).
 
-### `POST /api/check`
+### `GET /api/check?text=...`
 
-```json
-{ "text": "Szczepionki powodują autyzm." }
+```http
+GET /api/check?text=Szczepionki%20powoduj%C4%85%20autyzm.
 ```
 
-Odpowiedź – jeden z trzech wariantów:
+W kodzie klienckim parametr `text` jest kodowany przez `URLSearchParams`.
+Każde wywołanie uruchamia nową analizę. Tekst jest częścią adresu GET, więc nie
+przekazuj w nim sekretów ani wrażliwych danych.
+
+Odpowiedź po ukończonej analizie:
 
 ```jsonc
 // wynik
 {
   "status": "result",
-  "id": "abc123",                 // potrzebne do zgłoszenia błędu i usunięcia danych
+  "id": "abc123",                 // potrzebne do zgłoszenia błędu
   "input_type": "text",           // albo "url"
   "claims": [
     {
@@ -100,11 +105,6 @@ Odpowiedź – jeden z trzech wariantów:
   "source_names": { "pap": "Polska Agencja Prasowa" }   // opcjonalnie, dla dates.issues[].source_id
 }
 
-// wiadomość za krótka / niejasna
-{ "status": "clarify" }
-
-// pytanie spoza zakresu
-{ "status": "out_of_scope" }
 ```
 
 ### `POST /api/check/{id}/report` → `204`
@@ -117,6 +117,26 @@ Okno „Zgłoś błąd”:
 
 `reason`: `wrong_verdict` | `bad_source` | `misunderstood` | `other`; `comment` jest opcjonalny (do 1000 znaków).
 
+Backend początkowo zwraca `result` dla ukończonej analizy. Błędne dane i awarie
+zwracają odpowiedzi HTTP z kodem błędu; nie są przedstawiane jako `clarify` ani
+`out_of_scope`, dopóki reguły tych klasyfikacji nie zostaną zdefiniowane.
+
+### Produkcyjne połączenie z API
+
+Frontend pozostaje hostowany na Vercel, a API działa jako osobna usługa FastAPI
+na Render (konfiguracja w `render.yaml`). W ustawieniach builda Vercel ustaw:
+
+```text
+VITE_API_MODE=live
+VITE_API_BASE_URL=https://<adres-api-render>/api
+VITE_CHECK_TIMEOUT_MS=360000
+```
+
+W Render ustaw `CORS_ORIGINS` na dokładne originy frontendu (bez ścieżki),
+`DATABASE_URL` na istniejącą bazę PostgreSQL oraz wymagane klucze/model LLM.
+`REPORT_RETENTION_DAYS` steruje retencją identyfikatorów wyników i zgłoszeń;
+codzienny cron usuwa wygasłe rekordy.
+
 ## Dostępność
 
 Cel: WCAG 2.2 na poziomie AA.
@@ -126,7 +146,14 @@ Cel: WCAG 2.2 na poziomie AA.
   zapamiętane w `localStorage`; motyw jest w `<html data-theme>` i ustawia się
   przed pierwszym renderem, więc strona nie mruga; podpisy w dymkach da się najechać
   myszą i schować klawiszem Esc;
-- „Przeczytaj na głos” przez Web Speech API (`pl-PL`);
+- „Czytaj stronę na głos” (ikona głośnika w nagłówku, zapamiętane w `localStorage`):
+  syntezator mowy przeglądarki (Web Speech API, `pl-PL`) czyta treść `<main>`, a po
+  każdej zmianie strony lub ekranu (np. przejście na wynik) czyta nową treść sam;
+  treść idzie blok po bloku (nagłówek, akapit, punkt listy, przycisk) z ciszą
+  między nimi: 1 s po nagłówku, 0,65 s po innym bloku (stałe w `SpeechProvider.tsx`);
+  Esc przerywa czytanie; po odświeżeniu strony przeglądarka pozwala mówić dopiero
+  po pierwszym kliknięciu lub klawiszu, więc czytanie rusza wtedy;
+- „Przeczytaj na głos” pod wynikiem czyta sam wynik (ten sam syntezator);
 - link „Przejdź do treści”, fokus przenoszony na nagłówek `h1` po zmianie ekranu,
   komunikaty przez `aria-live`, błędy formularza przez `role="alert"`;
 - okna modalne na `<dialog>`: fokus krąży tylko w oknie, Esc zamyka, fokus wraca

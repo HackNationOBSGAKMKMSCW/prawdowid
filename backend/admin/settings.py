@@ -9,6 +9,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 DATA_DIR = Path(__file__).resolve().parent / "data"
+# backend/.env, niezależnie od katalogu, z którego uruchomiono proces
+ENV_FILE = Path(__file__).resolve().parents[1] / ".env"
 DEFAULT_DB_PATH = DATA_DIR / "admin.db"
 _DEFAULT_SALT = "prawdowid-admin"
 
@@ -22,6 +24,8 @@ class AdminSettings:
 
     @classmethod
     def from_environment(cls) -> AdminSettings:
+        """Zmienne środowiskowe; brakujące uzupełnia ``backend/.env`` (nie nadpisuje istniejących)."""
+        load_env_file()
         return cls(
             api_token=(os.getenv("ADMIN_API_TOKEN") or "").strip() or None,
             db_path=Path(os.getenv("ADMIN_DB_PATH") or DEFAULT_DB_PATH),
@@ -32,6 +36,13 @@ class AdminSettings:
         """Pseudonim użytkownika: HMAC identyfikatora, stały między zapytaniami."""
         digest = hmac.new(self.user_salt.encode(), user_id.strip().encode(), hashlib.sha256)
         return digest.hexdigest()[:16]
+
+
+def load_env_file(path: Path = ENV_FILE) -> None:
+    if path.is_file():
+        from dotenv import load_dotenv
+
+        load_dotenv(path, override=False)
 
 
 def user_label(user_id: str) -> str:

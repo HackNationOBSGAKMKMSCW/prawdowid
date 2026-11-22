@@ -73,7 +73,7 @@ import {
 } from './seed.ts';
 
 const STORAGE_KEY = 'prawdowid-admin-mock-v1';
-const ROLE_PL: Record<Role, string> = { admin: 'administrator', moderator: 'moderator', analyst: 'analityk' };
+const ROLE_PL: Record<Role, string> = { admin: 'administrator', moderator: 'moderator', analyst: 'analityk', user: 'użytkownik serwisu' };
 const STATUS_PL: Record<string, string> = {
   new: 'nowa',
   in_progress: 'w toku',
@@ -899,6 +899,13 @@ export class MockAdminApi implements AdminApi {
   }
 
   // ── backend/admin only: not part of the demo data ─────────────────────────
+
+  changeOwnPassword(): Promise<void> {
+    return Promise.reject(unsupported('Zmiana hasła'));
+  }
+  resetUserPassword(): Promise<void> {
+    return Promise.reject(unsupported('Zmiana hasła'));
+  }
 
   listEndUsers(): Promise<EndUser[]> {
     return Promise.reject(unsupported('Użytkownicy serwisu'));

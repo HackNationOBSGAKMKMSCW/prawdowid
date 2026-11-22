@@ -5,6 +5,7 @@ from contextlib import suppress
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 from typing import Literal
+from urllib.parse import urlsplit
 
 from .models import ScrapedArticle
 from .protocols import RawArticle
@@ -13,6 +14,7 @@ from .url_validation import InvalidUrlError, site_key, validate_url
 MAX_ARTICLE_CHARS = 50_000
 MAX_TITLE_CHARS = 300
 MAX_AUTHOR_CHARS = 200
+MAX_DESCRIPTION_CHARS = 1000
 
 
 def _clean_text(value: str) -> str:
@@ -65,5 +67,14 @@ def map_article(
         author=_clean_text(article.author)[:MAX_AUTHOR_CHARS] or None if article.author else None,
         publisher=_clean_text(publisher)[:MAX_AUTHOR_CHARS] or None if publisher else None,
         truncated=len(text) > MAX_ARTICLE_CHARS,
+        domain=urlsplit(url).hostname,
+        site_name=_clean_text(article.site_name)[:MAX_AUTHOR_CHARS] if article.site_name else None,
+        description=(
+            _clean_text(article.description)[:MAX_DESCRIPTION_CHARS]
+            if article.description
+            else None
+        ),
+        language=article.language[:35] if article.language else None,
+        fetched_at=datetime.now(UTC),
         source=source,
     )

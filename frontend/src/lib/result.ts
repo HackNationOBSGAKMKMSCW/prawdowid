@@ -2,6 +2,7 @@ import type { CheckResult, Claim, TextAnalysis } from '../api/types.ts';
 import { MANIPULATION_FALLBACK_TITLE, MANIPULATION_TITLES, VERDICTS } from '../content/verdicts.ts';
 import { SOURCE_NAMES } from '../content/sources.ts';
 import { formatDate, plural } from './format.ts';
+import type { SpeechBlock } from './speech.ts';
 
 export type CardTone = 'danger' | 'warning' | 'manipulation';
 
@@ -20,8 +21,8 @@ export interface ResultView {
   summary: string;
   claims: Claim[];
   cards: AnalysisCardView[];
-  /** Cały wynik jako tekst do czytania na głos. */
-  readAloud: string;
+  /** Cały wynik do czytania na głos, blok po bloku (z pauzami między nimi). */
+  readAloud: SpeechBlock[];
 }
 
 function analysisCards(
@@ -94,11 +95,19 @@ function summaryFor(result: CheckResult, cards: AnalysisCardView[]): string {
 export function buildResultView(result: CheckResult): ResultView {
   const cards = analysisCards(result.analysis, result.source_names ?? {});
   const summary = summaryFor(result, cards);
-  const readAloud = [
-    'Wynik.',
-    summary,
-    ...result.claims.map((c) => `${VERDICTS[c.verdict].label}. ${c.text} ${c.explanation}`),
-    ...cards.map((k) => `${k.title}. ${k.quote ? `„${k.quote}”. ` : ''}${k.body}`),
-  ].join(' ');
+  const readAloud: SpeechBlock[] = [
+    { text: 'Wynik', heading: true },
+    { text: summary },
+    ...result.claims.flatMap((c) => [
+      { text: VERDICTS[c.verdict].label, heading: true },
+      { text: c.text },
+      { text: c.explanation },
+    ]),
+    ...cards.flatMap((k) => [
+      { text: k.title, heading: true },
+      ...(k.quote ? [{ text: `„${k.quote}”` }] : []),
+      { text: k.body },
+    ]),
+  ];
   return { summary, claims: result.claims, cards, readAloud };
 }

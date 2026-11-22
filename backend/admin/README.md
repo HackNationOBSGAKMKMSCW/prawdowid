@@ -5,21 +5,29 @@ Przez HTTP API daje dostęp do logów, alertów i konfiguracji serwisu.
 
 ## Uruchomienie
 
+W `backend/.env` ustaw `DATABASE_URL` (PostgreSQL, zob. `backend/database/README.md`), potem:
+
 ```bash
 cd backend
-ADMIN_API_TOKEN=<długi-losowy-token> uvicorn admin.api:create_app --factory --port 8100
+python -m database migrate
+python -m database create-user --email admin@example.pl --name "Jan Kowalski" --role admin
+uvicorn admin.api:create_app --factory --port 8100
 # dokumentacja: http://localhost:8100/api/admin/docs
 ```
 
-Frontend panelu jest w `admin_panel/frontend` (`npm run dev`, proxy na port 8100); loguje się tym samym tokenem.
+Frontend panelu jest w `admin_panel/frontend` (`npm run dev`, proxy na port 8100).
 
-Każde żądanie poza `/api/admin/health` wymaga nagłówka `Authorization: Bearer <ADMIN_API_TOKEN>`.
-Bez tokenu panel odpowiada 503, czyli jest wyłączony, a nie otwarty dla wszystkich.
-Nagłówek `X-Admin-User` jest opcjonalny i trafia do audytu zmian konfiguracji.
+Logowanie: `POST /api/admin/auth/login` (e-mail i hasło konta z tabeli `users`) zwraca token sesji.
+Każde żądanie poza `/health` i `/auth/login` wymaga nagłówka `Authorization: Bearer <token sesji>`.
+Role sprawdza backend (`accounts/permissions.py`).
+
+Bez `DATABASE_URL` nie ma kont; panel działa wtedy tylko z awaryjnym `ADMIN_API_TOKEN`
+(nieustawiony = wyłączony). Zmienne z `backend/.env` nie nadpisują tych ze środowiska.
 
 | Zmienna | Domyślnie | Znaczenie |
 |---|---|---|
-| `ADMIN_API_TOKEN` | brak | Token administratora |
+| `DATABASE_URL` | brak | PostgreSQL: konta, sesje, dziennik zapytań i działań |
+| `ADMIN_API_TOKEN` | brak | Awaryjny dostęp bez konta (najlepiej nie ustawiać) |
 | `ADMIN_DB_PATH` | `backend/admin/data/admin.db` | Baza SQLite z zapytaniami, alertami i audytem |
 | `ADMIN_USER_SALT` | stała | Sól HMAC do pseudonimizacji identyfikatorów użytkowników |
 | `RUNTIME_CONFIG_FILE` | `backend/admin/data/runtime_config.json` | Nadpisania konfiguracji |

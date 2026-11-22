@@ -1,3 +1,4 @@
+import { can } from '../auth/permissions.ts';
 import type { AdminConfig } from '../config.ts';
 import { type AdminApi, ApiError, unsupported } from './AdminApi.ts';
 import {
@@ -7,6 +8,8 @@ import {
   BACKEND_FLAGS,
   FLAG_TO_BACKEND,
   GAP_TO_BACKEND,
+  mapAccount,
+  mapActivity,
   mapAlert,
   mapAudit,
   mapConfig,
@@ -20,6 +23,8 @@ import {
   VERDICT_TO_BACKEND,
 } from './backend/mappers.ts';
 import type {
+  RawAccount,
+  RawActivity,
   RawAlert,
   RawAudit,
   RawConfig,
@@ -60,6 +65,7 @@ import type {
   ProviderTestResult,
   PurgeResult,
   QueryCluster,
+  Role,
   RuntimeConfig,
   RuntimeConfigPatch,
   SecurityEvent,
@@ -80,7 +86,7 @@ interface RequestOptions {
   params?: Record<string, string>;
   query?: Query;
   body?: unknown;
-  /** Do not sign out on 401 (used while checking the token at login). */
+  /** Do not sign out on 401 (a failed login is not an expired session). */
   quiet401?: boolean;
 }
 
@@ -98,7 +104,6 @@ const STATUS_MESSAGES: Record<number, string> = {
 };
 
 const HOUR = 3_600_000;
-const SESSION_HOURS = 8;
 const PAGE_LIMIT = 500;
 /** Most queries read to build the dashboard series; above it the series is a sample. */
 const DASHBOARD_QUERY_CAP = 5000;
@@ -108,21 +113,6 @@ const ALL_GAP_STATUSES = ['podejrzenie', 'aktywna', 'w_uzupelnianiu', 'zamknieta
 const OPEN_GAP_STATUSES = ['podejrzenie', 'aktywna', 'w_uzupelnianiu'];
 
 const iso = (ms: number) => new Date(ms).toISOString();
-
-/**
- * HTTP headers are Latin-1 only: "Michał" would make `fetch` throw. The actor
- * name is for the audit log, so it is transliterated to ASCII.
- */
-function headerSafe(text: string): string {
-  return text
-    .replace(/ł/g, 'l')
-    .replace(/Ł/g, 'L')
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .replace(/[^\x20-\x7e]/g, '')
-    .trim()
-    .slice(0, 64);
-}
 
 function errorDetail(body: unknown): string {
   if (!body || typeof body !== 'object') return '';
@@ -151,27 +141,28 @@ export class HttpAdminApi implements AdminApi {
   readonly mode = 'http' as const;
   readonly target: string;
   readonly capabilities: ApiCapabilities = {
-    features: new Set(['endUsers', 'gapLifecycle', 'runtimeConfig', 'techEvents', 'retention']),
+    features: new Set(['staffUsers', 'passwords', 'endUsers', 'gapLifecycle', 'runtimeConfig', 'techEvents', 'retention']),
     alertTypes: BACKEND_ALERT_TYPES,
     checkFlags: BACKEND_FLAGS,
     checkOutcomes: ['abstained', 'technical_error', 'refused', 'pending'],
   };
   private token: string | null = null;
-  private actor = 'admin';
-  private user: User | null = null;
   private unauthorizedHandler: (() => void) | null = null;
   private readonly config: AdminConfig;
   private monitoring: { at: number; value: MonitoringSettings | null } | null = null;
+  /** The role may not read the config (403): stop asking until the next sign-in. */
+  private monitoringForbidden = false;
 
   constructor(config: AdminConfig) {
     this.config = config;
     this.target = config.apiBaseUrl;
   }
 
-  setToken(token: string | null, actor?: string): void {
+  setToken(token: string | null, user?: User | null): void {
     this.token = token;
-    if (actor !== undefined) this.actor = headerSafe(actor) || 'admin';
-    if (!token) this.user = null;
+    this.monitoring = null;
+    // Alert rule texts need the thresholds from /config, which only some roles may read.
+    this.monitoringForbidden = !!user && !can(user, 'settings:read');
   }
 
   onUnauthorized(handler: () => void): void {
@@ -198,10 +189,7 @@ export class HttpAdminApi implements AdminApi {
     const timer = window.setTimeout(() => controller.abort(), this.config.requestTimeoutMs);
     const headers: Record<string, string> = { Accept: 'application/json' };
     if (options.body !== undefined) headers['Content-Type'] = 'application/json';
-    if (this.token) {
-      headers.Authorization = `Bearer ${this.token}`;
-      headers['X-Admin-User'] = this.actor;
-    }
+    if (this.token) headers.Authorization = `Bearer ${this.token}`;
 
     let res: Response;
     try {
@@ -239,12 +227,14 @@ export class HttpAdminApi implements AdminApi {
 
   /** Thresholds used to describe alert rules; cached for a minute, optional. */
   private async monitoringSettings(): Promise<MonitoringSettings | null> {
+    if (this.monitoringForbidden) return null;
     if (this.monitoring && Date.now() - this.monitoring.at < 60_000) return this.monitoring.value;
     let value: MonitoringSettings | null = null;
     try {
       value = (await this.request<RawConfig>('config')).monitoring;
-    } catch {
+    } catch (err) {
       // Alerts still render, only with a generic rule description.
+      if (err instanceof ApiError && err.status === 403) this.monitoringForbidden = true;
     }
     this.monitoring = { at: Date.now(), value };
     return value;
@@ -267,45 +257,39 @@ export class HttpAdminApi implements AdminApi {
 
   // ── session ───────────────────────────────────────────────────────────────
 
-  /**
-   * The backend has no user accounts: `name` is who signs in (for the audit
-   * log) and `token` is `ADMIN_API_TOKEN`. The token is checked with a cheap
-   * authenticated request.
-   */
-  async login(name: string, token: string): Promise<Session> {
-    const previous = { token: this.token, actor: this.actor };
-    this.setToken(token, name);
+  /** Accounts live in the backend; passwords and session tokens are stored there only as hashes. */
+  async login(email: string, password: string): Promise<Session> {
+    let raw: { token: string; expiresAt: string | null; user: RawAccount };
     try {
-      await this.request('dashboard', { query: { hours: 1 }, quiet401: true });
+      raw = await this.request('login', { method: 'POST', body: { email, password }, quiet401: true });
     } catch (err) {
-      this.token = previous.token;
-      this.actor = previous.actor;
-      if (err instanceof ApiError && err.status === 401) {
-        throw new ApiError('Nieprawidłowy token administratora.', 401);
+      if (err instanceof ApiError && err.status === 404) {
+        throw new ApiError('Backend działa bez bazy kont: ustaw DATABASE_URL w backend/.env i uruchom go ponownie.', 404);
       }
       throw err;
     }
-    const now = Date.now();
-    const user: User = {
-      id: `admin:${this.actor}`,
-      email: '',
-      name: name.trim() || 'Administrator',
-      role: 'admin',
-      active: true,
-      createdAt: iso(now),
-      lastLoginAt: iso(now),
-    };
-    this.user = user;
-    return { token, user, expiresAt: iso(now + SESSION_HOURS * HOUR) };
+    // A token without an expiry still ends with the browser tab (sessionStorage).
+    const expiresAt = raw.expiresAt ?? new Date(Date.now() + 12 * HOUR).toISOString();
+    return { token: raw.token, expiresAt, user: mapAccount(raw.user) };
   }
 
   async logout(): Promise<void> {
-    // Stateless token: nothing to revoke on the server.
+    try {
+      await this.request('logout', { method: 'POST', quiet401: true });
+    } catch {
+      // Signing out locally must work even if the API is down.
+    }
   }
 
   async me(): Promise<User> {
-    if (!this.user) throw new ApiError(STATUS_MESSAGES[401], 401);
-    return this.user;
+    return mapAccount(await this.request<RawAccount>('me'));
+  }
+
+  async changeOwnPassword(currentPassword: string, newPassword: string): Promise<void> {
+    await this.request('ownPassword', {
+      method: 'POST',
+      body: { current: currentPassword, new: newPassword },
+    });
   }
 
   health(): Promise<{ status: string; version?: string }> {
@@ -577,9 +561,36 @@ export class HttpAdminApi implements AdminApi {
     return this.request('purge', { method: 'POST', body: { older_than_days: olderThanDays ?? null } });
   }
 
+  // ── panel accounts ────────────────────────────────────────────────────────
+
+  async listUsers(): Promise<User[]> {
+    const rows = await this.request<RawAccount[] | { items: RawAccount[] }>('accounts');
+    return (Array.isArray(rows) ? rows : rows.items).map(mapAccount);
+  }
+
+  async createUser(input: { email: string; name: string; role: Role; password?: string }): Promise<User> {
+    return mapAccount(await this.request<RawAccount>('accounts', { method: 'POST', body: input }));
+  }
+
+  async updateUser(id: string, patch: { role?: Role; active?: boolean }): Promise<User> {
+    return mapAccount(await this.request<RawAccount>('account', { method: 'PATCH', params: { id }, body: patch }));
+  }
+
+  async resetUserPassword(id: string, password: string): Promise<void> {
+    await this.request('accountPassword', { method: 'POST', params: { id }, body: { password } });
+  }
+
   // ── audit ─────────────────────────────────────────────────────────────────
 
   async listAudit(): Promise<AuditEntry[]> {
+    // With PostgreSQL every action (logins, accounts, blocks, config) is in activity_logs;
+    // without it only configuration changes are recorded.
+    try {
+      const { items } = await this.request<{ items: RawActivity[] }>('activity', { query: { limit: 1000 } });
+      return items.map(mapActivity);
+    } catch (err) {
+      if (!(err instanceof ApiError && err.status === 404)) throw err;
+    }
     const { items } = await this.request<{ items: RawAudit[] }>('configAudit', { query: { limit: 1000 } });
     return items.map(mapAudit);
   }
@@ -655,14 +666,5 @@ export class HttpAdminApi implements AdminApi {
   }
   purgeDemoData(): Promise<{ deletedChecks: number }> {
     return Promise.reject(unsupported('Dane demo'));
-  }
-  listUsers(): Promise<User[]> {
-    return Promise.resolve(this.user ? [this.user] : []);
-  }
-  createUser(): Promise<User> {
-    return Promise.reject(unsupported('Konta panelu'));
-  }
-  updateUser(): Promise<User> {
-    return Promise.reject(unsupported('Konta panelu'));
   }
 }

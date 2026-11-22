@@ -7,6 +7,7 @@ const allowedHosts = ['.ts.net'];
 
 // https://vite.dev/config/
 export default defineConfig({
+  envDir: '..',
   plugins: [react()],
   server: {
     allowedHosts,

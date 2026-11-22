@@ -60,7 +60,7 @@ export default function App() {
             <Route path="models" element={guarded('models:read', <ModelsPage />, 'providers')} />
             <Route path="runtime" element={guarded('models:read', <RuntimeConfigPage />, 'runtimeConfig')} />
             <Route path="rules" element={guarded('rules:read', <RulesPage />, 'alertRules')} />
-            <Route path="thresholds" element={guarded('rules:read', <ThresholdsPage />, 'runtimeConfig')} />
+            <Route path="thresholds" element={guarded('settings:read', <ThresholdsPage />, 'runtimeConfig')} />
             <Route path="settings" element={guarded('settings:read', <SettingsPage />, 'channels')} />
             <Route path="users" element={guarded('users:read', <UsersPage />, 'staffUsers')} />
             <Route path="audit" element={guarded('audit:read', <AuditPage />)} />

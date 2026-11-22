@@ -55,8 +55,8 @@ export interface AdminApi {
   /** What this source supports; the panel hides views and actions it cannot serve. */
   readonly capabilities: ApiCapabilities;
 
-  /** `actor` is the signed-in person's name, sent to the backend for the audit log. */
-  setToken(token: string | null, actor?: string): void;
+  /** `user`: who signed in, so the source can skip calls the role is not allowed to make. */
+  setToken(token: string | null, user?: User | null): void;
   /** Called when the backend rejects the session (HTTP 401). */
   onUnauthorized(handler: () => void): void;
 
@@ -111,10 +111,16 @@ export interface AdminApi {
   purgeDemoData(): Promise<{ deletedChecks: number }>;
 
   listUsers(): Promise<User[]>;
-  createUser(input: { email: string; name: string; role: Role }): Promise<User>;
+  /** `password`: initial password, when the source stores accounts itself (`passwords`). */
+  createUser(input: { email: string; name: string; role: Role; password?: string }): Promise<User>;
   updateUser(id: string, patch: { role?: Role; active?: boolean }): Promise<User>;
 
   listAudit(): Promise<AuditEntry[]>;
+
+  /** `passwords`: the signed-in person changes their own password (ends their sessions). */
+  changeOwnPassword(currentPassword: string, newPassword: string): Promise<void>;
+  /** `passwords`: an administrator sets a new password for an account. */
+  resetUserPassword(id: string, password: string): Promise<void>;
 
   // ── Features of the real backend (backend/admin) ──────────────────────────
   // Gated by `capabilities.features`; sources without them reject the call.

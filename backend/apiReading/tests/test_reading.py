@@ -31,6 +31,7 @@ async def test_package_run_uses_analysis_statements_and_metadata(monkeypatch, ca
     assert all(call.request.url.params["key"] == "test-key" for call in route.calls)
     output = capsys.readouterr().out
     assert "[apiReading] Przygotowano zapytania: liczba=2" in output
+    assert "first claim" not in output and "second claim" not in output
     assert "[apiReading:google_fact_check] GET próba 1/3" in output
     assert "[apiReading] Pakiet zakończył pracę" in output
 

@@ -22,7 +22,7 @@ export default function AuditPage() {
         title="Dziennik audytu"
         description={
           supports('runtimeConfig')
-            ? 'Kto, kiedy i co zmienił w konfiguracji backendu: modele, źródła danych, klucze API (tylko końcówka) i progi reguł.'
+            ? 'Kto, kiedy i co zrobił: logowania (także nieudane), konta, blokady użytkowników, alerty, luki informacyjne, źródła i zmiany konfiguracji. Klucze API widać tylko jako końcówkę.'
             : 'Kto, kiedy i co zmienił: modele, źródła, reguły, sprawy, użytkownicy, logowania.'
         }
         actions={

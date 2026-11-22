@@ -24,9 +24,9 @@ export default function AlertsPage() {
     severity: 'any',
   });
   const alerts = useAsync(() => api.listAlerts(query), [query.status, query.type, query.severity]);
-  const users = useAsync<User[]>(() => (can('cases:read') && supports('staffUsers') ? api.listUsers() : Promise.resolve([])), []);
+  const users = useAsync<User[]>(() => (can('users:read') && supports('cases') ? api.listUsers() : Promise.resolve([])), []);
   const withCases = supports('cases');
-  const withRecipients = supports('staffUsers');
+  const withRecipients = supports('alertRules');
   const { run, busy } = useAction();
   const [escalating, setEscalating] = useState<Alert | null>(null);
   const [assignee, setAssignee] = useState('');

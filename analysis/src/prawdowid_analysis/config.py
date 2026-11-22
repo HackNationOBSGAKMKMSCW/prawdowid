@@ -2,9 +2,8 @@
 
 Kolejność (pierwsze wygrywa):
 1. zmienne środowiskowe procesu,
-2. `analysis/.env`,
-3. `backend/.env` – zapas, więc jeden plik wystarcza dla obu części projektu
-   (np. `GOOGLE_FACT_CHECK_API_KEY` trzymany tylko w backendzie).
+2. główny plik projektu `.env`,
+3. `backend/.env` – wsteczna kompatybilność ze starszą konfiguracją lokalną.
 
 `load_environment()` wczytuje pliki do `os.environ` bez nadpisywania. Wywołanie jej
 PRZED importem pakietów backendu sprawia, że backend (który przy imporcie sam
@@ -19,12 +18,14 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 ANALYSIS_DIR = Path(__file__).resolve().parents[2]
+PROJECT_ROOT = ANALYSIS_DIR.parent
+PROJECT_ENV_FILE = PROJECT_ROOT / ".env"
 BACKEND_ENV_FILE = ANALYSIS_DIR.parent / "backend" / ".env"
 DEFAULT_MODEL = "gpt-4o-mini"  # ta sama wartość domyślna co w backend/textAnalysis
 DEFAULT_MAX_SOURCE_AGE_DAYS = 730  # 2 lata
 
 
-# Starsze nazwy z analysis/.env -> nazwy czytane przez backend/textAnalysis.
+# Starsze nazwy -> nazwy czytane przez backend/textAnalysis.
 LEGACY_ALIASES = {
     "OPENAI_API_KEY": "FREELLM_API_KEY",
     "OPENAI_BASE_URL": "FREELLM_BASE_URL",
@@ -34,7 +35,7 @@ LEGACY_ALIASES = {
 
 
 def load_environment(env_file: Path | None = None, backend_env_file: Path | None = None) -> None:
-    load_dotenv(env_file or ANALYSIS_DIR / ".env", override=False)
+    load_dotenv(env_file or PROJECT_ENV_FILE, override=False)
     load_dotenv(backend_env_file or BACKEND_ENV_FILE, override=False)
     # Backend zna tylko FREELLM_*: przepisujemy starsze nazwy, gdy nowych brak,
     # żeby ekstrakcja stwierdzeń widziała ten sam klucz i model co werdykt.

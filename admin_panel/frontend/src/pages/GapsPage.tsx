@@ -23,7 +23,10 @@ export default function GapsPage() {
   const withCases = supports('cases');
   const clusters = useAsync(() => api.listClusters(showClosed ? {} : { onlyGaps: true }), [showClosed]);
   const rules = useAsync(() => (supports('alertRules') ? api.getAlertRules() : Promise.resolve(null)), []);
-  const runtime = useAsync(() => (supports('runtimeConfig') ? api.getRuntimeConfig() : Promise.resolve(null)), []);
+  const runtime = useAsync(
+    () => (supports('runtimeConfig') && can('settings:read') ? api.getRuntimeConfig() : Promise.resolve(null)),
+    [],
+  );
 
   // `?focus=<id>` (from an alert) opens that topic; it may be closed, so it is loaded on its own.
   const focusId = params.get('focus');
@@ -115,7 +118,7 @@ export default function GapsPage() {
             <strong>{m.info_gap_window_hours} h</strong> pyta o temat, którego system nie rozstrzygnął (brak źródeł albo
             niewystarczające dane). Pierwsze rozstrzygnięcie oparte na źródłach zamyka lukę automatycznie.
           </span>
-          {can('rules:read') && (
+          {can('settings:read') && (
             <Link to="/thresholds" className="btn btn-sm btn-ghost">
               Zmień progi
             </Link>

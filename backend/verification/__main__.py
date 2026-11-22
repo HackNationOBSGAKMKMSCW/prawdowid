@@ -46,7 +46,13 @@ def _summary(event: VerificationEvent) -> list[str]:
         lines += [f"   - {i['code']}: {i['description']}" for i in dates["issues"]]
         return lines
     lines = [head, f"   werdykt: {data['verdict']}: {data['summary']}"]
-    lines += [f"   - {c['verdict']}: {c['claim']}" for c in data.get("claims", [])]
+    for claim in data.get("claims", []):
+        lines.append(f"   - {claim['verdict_label']}: {claim['claim']}")
+        if case := claim.get("known_disinformation"):
+            lines.append(f"     EUvsDisinfo: {case['title']} ({case['url']})")
+    known = data.get("known_disinfo") or {}
+    lines.append(f"   baza EUvsDisinfo: {known.get('status')}, trafień {len(known.get('matches', []))}")
+    lines += [f"   ! {warning}" for warning in known.get("warnings", [])]
     return lines
 
 

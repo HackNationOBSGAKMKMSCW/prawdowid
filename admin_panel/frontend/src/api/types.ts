@@ -9,7 +9,8 @@ export type ISODate = string;
 
 // ── Users and sessions ──────────────────────────────────────────────────────
 
-export type Role = 'admin' | 'moderator' | 'analyst';
+/** `user` = account of the public service (no panel access); the rest are panel roles. */
+export type Role = 'admin' | 'moderator' | 'analyst' | 'user';
 
 export interface User {
   id: string;
@@ -587,6 +588,8 @@ export type Feature =
   | 'channelFilter'
   | 'quality'
   // backend/admin
+  /** Accounts with passwords stored (hashed) by the source: set and change passwords. */
+  | 'passwords'
   | 'endUsers'
   | 'gapLifecycle'
   | 'runtimeConfig'

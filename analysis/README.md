@@ -37,7 +37,7 @@ tekst ──► stwierdzenia ──► źródła wzorcowe dla twierdzenia ──
 cd analysis
 python -m venv .venv
 .venv/Scripts/python -m pip install -e ".[dev]"
-cp .env.example .env          # uzupełnij FREELLM_API_KEY, FREELLM_BASE_URL, FREELLM_MODEL
+cp ../.env.example ../.env    # uzupełnij wspólne FREELLM_API_KEY, FREELLM_BASE_URL, FREELLM_MODEL
 
 .venv/Scripts/python -m pytest                                   # testy offline (atrapa LLM)
 .venv/Scripts/python -m prawdowid_analysis.cli "Polska jest w UE od 2004 roku."
@@ -85,7 +85,7 @@ print(verdict.model_dump_json(indent=2))
 - **Ostrzeżenia** (`warnings`): błędy dostawców raz, po polsku i z liczbą zapytań
   (np. brak `GOOGLE_FACT_CHECK_API_KEY`), obcięte zapytanie pełnym tekstem,
   nieobsługiwani dostawcy, różnica języka.
-- **Konfiguracja**: zmienne procesu → `analysis/.env` → `backend/.env`. Starsze nazwy
+- **Konfiguracja**: zmienne procesu → główny `.env` → starszy `backend/.env`. Starsze nazwy
   (`OPENAI_API_KEY`, `LLM_MODEL`…) są przepisywane na `FREELLM_*`, a `--backend`
   ładuje konfigurację przed importem backendu, więc ekstrakcja stwierdzeń i werdykt
   używają tego samego modelu. Wynik zawiera `models` per etap.

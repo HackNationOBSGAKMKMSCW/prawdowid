@@ -36,7 +36,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const api = getApi();
   const [session, setSession] = useState<Session | null>(() => {
     const stored = readStoredSession();
-    api.setToken(stored?.token ?? null, stored?.user.name);
+    api.setToken(stored?.token ?? null, stored?.user);
     return stored;
   });
   const [notice, setNotice] = useState<string | null>(null);
@@ -71,7 +71,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = useCallback(
     async (email: string, password: string) => {
       const next = await api.login(email, password);
-      api.setToken(next.token, next.user.name);
+      api.setToken(next.token, next.user);
       try {
         sessionStorage.setItem(SESSION_KEY, JSON.stringify(next));
       } catch {

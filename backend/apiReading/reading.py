@@ -114,9 +114,8 @@ async def run(analysis: AnalysisDataContainer) -> list[ReadingResult]:
         raise
 
     print(
-        f"[apiReading] Pakiet zakończył pracę po {time.perf_counter() - started_at:.1f}s.",
+        f"[apiReading] Pakiet zakończył pracę po {time.perf_counter() - started_at:.1f}s; "
+        f"zapytań={len(results)}, wyników={sum(len(result.items) for result in results)}.",
         flush=True,
     )
-    for result in results:
-        print(format_result(result), flush=True)
     return results

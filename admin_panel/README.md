@@ -20,7 +20,7 @@ admin_panel/
         │   ├── types.ts         # modele domenowe panelu
         │   ├── AdminApi.ts      # interfejs źródła danych + capabilities
         │   ├── endpoints.ts     # ścieżki backend/admin (nadpisywalne w config.json)
-        │   ├── http.ts          # klient backend/admin (Bearer, X-Admin-User, 401 → wylogowanie)
+        │   ├── http.ts          # klient backend/admin (logowanie, token sesji, 401 → wylogowanie)
         │   ├── backend/         # surowe odpowiedzi backendu i ich mapowanie na typy panelu
         │   ├── mock/            # dane przykładowe + referencyjne reguły wykrywania
         │   └── index.ts         # wybór implementacji na podstawie konfiguracji
@@ -31,25 +31,42 @@ admin_panel/
 
 ## Uruchomienie z backendem
 
-```bash
-# 1. backend admina (z katalogu backend/, port 8100)
-cd backend
-ADMIN_API_TOKEN=<długi-losowy-token> uvicorn admin.api:create_app --factory --port 8100
+Backend potrzebuje Pythona ≥ 3.11 i bazy PostgreSQL (`DATABASE_URL` w `backend/.env`,
+szczegóły w `backend/database/README.md`).
 
-# 2. panel (Vite przekazuje /api na 127.0.0.1:8100)
+```bash
+# 1. baza: tabele i pierwsze konto administratora (z katalogu backend/)
+cd backend
+python -m database migrate
+python -m database create-user --email admin@example.pl --name "Jan Kowalski" --role admin
+
+# 2. backend admina (port 8100)
+uvicorn admin.api:create_app --factory --port 8100
+
+# 3. panel (Vite przekazuje /api na 127.0.0.1:8100)
 cd admin_panel/frontend
 npm install
 npm run dev        # http://localhost:5175
 ```
 
-Logowanie: **imię i nazwisko** (trafia do dziennika audytu jako `X-Admin-User`,
-polskie znaki są zamieniane na ASCII) i **token administratora** — wartość
-`ADMIN_API_TOKEN`. Backend nie ma kont użytkowników, więc w panelu każdy
-zalogowany ma rolę administratora. Sesja wygasa po 8 h lub po odpowiedzi 401.
+**Logowanie** to e-mail i hasło konta z tabeli `users`:
+- Hasła są w bazie jako skróty `scrypt`. Tokeny sesji są w `auth_access_tokens` jako SHA-256, a sam token zna tylko przeglądarka.
+- Po kilku nieudanych próbach backend czasowo blokuje logowanie (429).
+- Sesja wygasa po czasie z backendu albo przy odpowiedzi 401.
 
-Bot WhatsApp i panel muszą mieć to samo `ADMIN_DB_PATH`, żeby panel widział
-zapytania z bota (zob. `backend/admin/README.md`). Logi techniczne panel czyta
-z `LOG_FILE` (domyślnie `backend/logs/app.jsonl`).
+**Role** panelu to administrator, analityk i moderator. Sprawdza je backend (`backend/accounts/permissions.py`), a panel tylko chowa niedostępne widoki. Konta z rolą `user` (serwis dla obywateli) nie mają wstępu do panelu.
+
+**Konta i hasła:**
+- Konta zakłada i wyłącza administrator w widoku **Użytkownicy**. Może też ustawić komuś nowe hasło.
+- Każdy zmienia własne hasło ikoną kłódki w górnym pasku. Zmiana wylogowuje wszystkie jego sesje.
+
+**Dziennik audytu** (`activity_logs`) pokazuje logowania (także nieudane, z adresem IP), zmiany kont, blokady, alerty, luki, źródła i konfigurację.
+
+Bez `DATABASE_URL` backend działa na SQLite, ale bez kont, więc logowanie w panelu się nie uda.
+
+Bot WhatsApp i panel muszą korzystać z tej samej bazy, żeby panel widział
+zapytania z bota. Logi techniczne panel czyta z `LOG_FILE` (domyślnie
+`backend/logs/app.jsonl`).
 
 Inny adres backendu w trybie deweloperskim: `ADMIN_API_PROXY_TARGET` w `.env`
 (`.env.example`). Po buildzie: `apiBaseUrl` w `public/config.json`.
@@ -66,10 +83,12 @@ Inny adres backendu w trybie deweloperskim: `ADMIN_API_PROXY_TARGET` w `.env`
 | Logi techniczne | `GET /events`, `GET /events/summary` |
 | Modele i źródła danych | `GET`/`PATCH /config` (model, endpoint, klienci apiReading, pobieranie artykułów, klucze API tylko do zapisu), `GET /config/models` |
 | Reguły i progi | `PATCH /config` (sekcja `monitoring`), `POST /maintenance/purge` |
-| Dziennik audytu | `GET /config/audit` |
+| Logowanie, konto | `POST /auth/login`, `/auth/logout`, `GET /auth/me`, `POST /auth/me/password` |
+| Użytkownicy (konta panelu) | `GET`/`POST /accounts`, `PATCH /accounts/{id}`, `POST /accounts/{id}/password` |
+| Dziennik audytu | `GET /activity` (bez bazy: `GET /config/audit`) |
 
 Widoki z pierwotnego kontraktu, których backend nie ma (sprawy moderatora,
-katalog źródeł, rejestr dostawców modeli, kanały, konta panelu, dziennik
+katalog źródeł w formie z demo, rejestr dostawców modeli, kanały, dziennik
 bezpieczeństwa, powtarzające się zapytania), są ukryte. Każde źródło danych
 deklaruje w `capabilities`, co obsługuje; menu, trasy i przyciski się do tego
 dostosowują.
@@ -196,10 +215,7 @@ konkretnej osobie. Zamknięcie sprawy wymaga opisu rozstrzygnięcia.
   kosztu pojedynczego sprawdzenia — panel pokazuje to, co jest (szczegóły
   żądania są w logach technicznych, po `request_id`).
 - Szereg czasowy na pulpicie jest liczony z maks. 5000 zapytań z okresu.
-- Audyt backendu obejmuje zmiany konfiguracji; blokady użytkowników i zmiany
-  stanu luk nie są w nim zapisywane.
-- Backend ma jeden wspólny token, więc role w panelu (administrator, analityk,
-  moderator) działają tylko w trybie demo. Uprawnienia w panelu tylko ukrywają
-  akcje; egzekwować je musi serwer.
+- Backend ma już listę stron zaufanych (`/sources`, tabela `trusted_sources`),
+  ale widok „Katalog źródeł” w panelu nie jest jeszcze pod nią podpięty.
 - W trybie demo wszystkie liczby (w tym mierniki jakości) są przykładowe — nie
   są wynikami testów systemu.

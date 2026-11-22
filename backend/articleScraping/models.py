@@ -25,6 +25,11 @@ class ScrapedArticle(BaseModel):
     author: str | None = None
     publisher: str | None = None
     truncated: bool = False
+    domain: str | None = None
+    site_name: str | None = None
+    description: str | None = None
+    language: str | None = None
+    fetched_at: datetime | None = None
     source: LinkOrigin | None = None
 
 

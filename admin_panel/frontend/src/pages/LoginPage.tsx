@@ -45,8 +45,6 @@ export default function LoginPage() {
 
   if (user) return <Navigate to={from} replace />;
 
-  // backend/admin has no accounts: one shared token plus a name for the audit log.
-  const tokenLogin = api.mode === 'http';
   const locked = lockedUntil !== null && now < lockedUntil;
   const secondsLeft = locked ? Math.ceil((lockedUntil - now) / 1000) : 0;
 
@@ -54,7 +52,7 @@ export default function LoginPage() {
     e.preventDefault();
     if (locked || busy) return;
     if (!email.trim() || !password) {
-      setError(tokenLogin ? 'Podaj imię i nazwisko oraz token administratora.' : 'Podaj adres e-mail i hasło.');
+      setError('Podaj adres e-mail i hasło.');
       return;
     }
     setBusy(true);
@@ -98,10 +96,10 @@ export default function LoginPage() {
 
         <form className="login-form" onSubmit={submit} noValidate>
           <label className="field">
-            <span className="field-label">{tokenLogin ? 'Imię i nazwisko' : 'Adres e-mail'}</span>
+            <span className="field-label">Adres e-mail</span>
             <input
-              type={tokenLogin ? 'text' : 'email'}
-              autoComplete={tokenLogin ? 'name' : 'username'}
+              type="email"
+              autoComplete="username"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               disabled={locked}
@@ -109,11 +107,8 @@ export default function LoginPage() {
               autoFocus
             />
           </label>
-          {tokenLogin && (
-            <span className="field-hint login-hint">Trafia do dziennika audytu przy każdej zmianie konfiguracji.</span>
-          )}
           <label className="field">
-            <span className="field-label">{tokenLogin ? 'Token administratora' : 'Hasło'}</span>
+            <span className="field-label">Hasło</span>
             <div className="input-with-btn">
               <input
                 type={showPassword ? 'text' : 'password'}
@@ -128,17 +123,12 @@ export default function LoginPage() {
                 type="button"
                 className="icon-btn"
                 onClick={() => setShowPassword((s) => !s)}
-                aria-label={showPassword ? (tokenLogin ? 'Ukryj token' : 'Ukryj hasło') : tokenLogin ? 'Pokaż token' : 'Pokaż hasło'}
+                aria-label={showPassword ? 'Ukryj hasło' : 'Pokaż hasło'}
               >
                 <Icon name={showPassword ? 'eyeOff' : 'eye'} size={18} />
               </button>
             </div>
             {capsLock && <span className="field-hint">Włączony Caps Lock.</span>}
-            {tokenLogin && !capsLock && (
-              <span className="field-hint">
-                Wartość <code>ADMIN_API_TOKEN</code> ustawiona w backendzie panelu.
-              </span>
-            )}
           </label>
 
           {error && (
@@ -146,11 +136,17 @@ export default function LoginPage() {
               <Icon name="alert" size={16} />
               <div>
                 {error}
-                {tokenLogin && /połączenia|503|wyłączony/i.test(error) && (
+                {api.mode === 'http' && /połączenia/i.test(error) && (
                   <div className="small login-help">
                     Uruchom backend: <code>cd backend</code>, potem{' '}
-                    <code>ADMIN_API_TOKEN=&lt;token&gt; uvicorn admin.api:create_app --factory --port 8100</code>. Bez
-                    backendu: <code>npm run dev:demo</code> (dane przykładowe).
+                    <code>uvicorn admin.api:create_app --factory --port 8100</code>. Bez backendu:{' '}
+                    <code>npm run dev:demo</code> (dane przykładowe).
+                  </div>
+                )}
+                {api.mode === 'http' && /e-mail lub hasło/i.test(error) && (
+                  <div className="small login-help">
+                    Nie masz konta? Pierwsze konto zakłada się w backendzie:{' '}
+                    <code>python -m admin.accounts create --email … --name "…"</code>
                   </div>
                 )}
               </div>
