@@ -10,8 +10,7 @@ const LOCK_SECONDS = 30;
 
 const DEMO_ACCOUNTS = [
   { email: 'admin@prawdowid.demo', role: 'Administrator', note: 'pełny dostęp, konfiguracja modeli' },
-  { email: 'analityk@prawdowid.demo', role: 'Analityk', note: 'luki informacyjne, źródła' },
-  { email: 'moderator@prawdowid.demo', role: 'Moderator', note: 'alerty i sprawy' },
+  { email: 'analityk@prawdowid.demo', role: 'Analityk', note: 'podgląd: pulpit, alerty, luki, historia, źródła' },
 ];
 
 export default function LoginPage() {
