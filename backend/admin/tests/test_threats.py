@@ -120,4 +120,9 @@ def test_threats_endpoint_reads_the_log_file(monitor, logs, tmp_path):
 
 def test_report_without_log_file_is_empty(monitor):
     report = threat_report([], monitor.store, hours=24)
-    assert report["summary"]["prompt_injection"] == 0 and report["timeline"] == []
+    assert report["summary"]["prompt_injection"] == 0
+    # oś czasu ma wszystkie godziny okresu, z zerami
+    assert len(report["timeline"]) in (24, 25)
+    assert all(b["prompt_injection"] == 0 for b in report["timeline"])
+    week = threat_report([], monitor.store, hours=168)
+    assert len(week["timeline"]) in (7, 8)

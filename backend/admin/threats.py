@@ -38,6 +38,21 @@ def _iso(moment: datetime) -> str:
     return moment.astimezone(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
+def _buckets(since: datetime, now: datetime, hours: int) -> list[str]:
+    """Wszystkie przedziały okresu (także puste), żeby wykres miał ciągłą oś czasu."""
+    step = timedelta(hours=1) if hours <= 48 else timedelta(days=1)
+    out, moment = [], since
+    while moment <= now:
+        label = _bucket(moment, hours)
+        if not out or out[-1] != label:
+            out.append(label)
+        moment += step
+    last = _bucket(now, hours)
+    if out[-1] != last:
+        out.append(last)
+    return out
+
+
 def _bucket(moment: datetime, hours: int) -> str:
     """Godzina dla okna do 2 dni, inaczej doba."""
     if hours <= 48:
@@ -252,7 +267,9 @@ def threat_report(
                 "manipulation": counts["manipulation"],
                 "critical": counts["critical"],
             }
-            for bucket, counts in sorted(timeline.items())
+            for bucket, counts in (
+                (bucket, timeline.get(bucket, Counter())) for bucket in _buckets(since, now, hours)
+            )
         ],
         "prompt_injection": {
             "by_source": dict(Counter(str(e.get("source") or "?") for e in injections)),
