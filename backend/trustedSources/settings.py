@@ -2,10 +2,14 @@
 
 import os
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from dotenv import load_dotenv
 
-load_dotenv()
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+load_dotenv(PROJECT_ROOT / ".env", override=False)
+# Wsteczna kompatybilność dla istniejącego lokalnego backend/.env.
+load_dotenv(PROJECT_ROOT / "backend" / ".env", override=False)
 
 
 def _float(name: str, default: float) -> float:

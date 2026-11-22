@@ -48,7 +48,7 @@ for hit in check.matches:                     # StatementCheck z ustawionym .mat
 .venv\Scripts\python -m knownDisinfo "NATO przygotowuje atak na Rosję"   # pełne sprawdzenie
 ```
 
-## Konfiguracja (`backend/.env`)
+## Konfiguracja (główny `.env` projektu)
 
 | Zmienna | Domyślnie | Znaczenie |
 |---|---|---|

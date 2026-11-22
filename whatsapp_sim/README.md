@@ -59,7 +59,7 @@ the start page opens this view with the typed message ready to send
   as example data.
 - Without `--demo` the adapter runs the real pipeline and needs
   `FREELLM_API_KEY` (plus `FREELLM_BASE_URL`, `FREELLM_MODEL`) and
-  `GOOGLE_FACT_CHECK_API_KEY` in `backend/.env` (the main app's file). Missing
+  `GOOGLE_FACT_CHECK_API_KEY` in the project-root `.env` (see `.env.example`). Missing
   keys are reported in the chat instead of failing silently.
 - `SPRAWDZTO_MODE=demo|live`, `--host`, and `--port` are also supported.
 

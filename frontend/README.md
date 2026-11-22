@@ -41,7 +41,8 @@ i nie potrzebuje backendu. Pasek „DEMO” na górze pokazuje wszystkie
 scenariusze: wynik ze źródłami, analiza dat i manipulacji, link, opinia,
 „napisz więcej”, „poza zakresem” i awaria.
 
-Żeby lokalnie łączyć się z backendem, ustaw w `.env.local` (wzór w `.env.example`):
+Żeby lokalnie łączyć się z backendem, ustaw `VITE_API_MODE=live` w głównym pliku
+`.env` projektu (wzór w głównym `.env.example`):
 
 ```
 VITE_API_MODE=live

@@ -74,7 +74,7 @@ UNSUPPORTED_TEXT = (
 TIMEOUT_TEXT = "⏱️ Sprawdzanie trwa zbyt długo. Spróbuj ponownie za chwilę."
 NOT_CONFIGURED_TEXT = (
     "⚠️ Serwer SprawdzTo nie ma skonfigurowanego modelu językowego.\n"
-    "_Ustaw FREELLM_API_KEY w backend/.env albo uruchom adapter w trybie demo (--demo)._"
+    "_Ustaw FREELLM_API_KEY w głównym pliku .env albo uruchom adapter w trybie demo (--demo)._"
 )
 ANALYSIS_FAILED_TEXT = (
     "😕 Nie udało mi się przeanalizować tej wiadomości. Spróbuj ponownie za chwilę."

@@ -127,7 +127,7 @@ Pakiety oceny są w `analysis/`, który zostaje dołączony do `sys.path` (inną
 
 | Ocena | Plik konfiguracji | Zmienne |
 |---|---|---|
-| inputu (`inputDataAnalysis`) | `analysis/inputDataAnalysis/.env` | `LLM_API_KEY`, `LLM_BASE_URL`, `LLM_MODEL` |
-| tez (`prawdowid_analysis`) | `analysis/.env`, potem `backend/.env` | `FREELLM_*` (lub starsze `OPENAI_*`, `LLM_MODEL`) |
+| inputu (`inputDataAnalysis`) | główny `.env` | wspólne `FREELLM_API_KEY`, `FREELLM_BASE_URL`, `FREELLM_MODEL`; opcjonalnie `LLM_TIMEOUT`, `LLM_TEMPERATURE`, `LLM_MAX_RETRIES` |
+| tez (`prawdowid_analysis`) | główny `.env` | te same `FREELLM_*` (akceptuje też starsze `OPENAI_*`, `LLM_MODEL`) |
 
-Oba pliki definiują `LLM_MODEL`. Konfiguracja oceny inputu ładuje się pierwsza, więc każda ocena używa swojego modelu. Werdykt korzysta wyłącznie z pobranych artykułów i fact-checków (`use_corpus=False`), bo `analysis/data/sources` zawiera tylko przykłady testowe.
+Obie oceny używają jednego modelu z `FREELLM_*`; parametry generowania oceny inputu można dostroić osobno. Starszy `backend/.env` jest czytany jako zapas. Werdykt korzysta wyłącznie z pobranych artykułów i fact-checków (`use_corpus=False`), bo `analysis/data/sources` zawiera tylko przykłady testowe.

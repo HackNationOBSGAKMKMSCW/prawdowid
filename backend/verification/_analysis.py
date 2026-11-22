@@ -52,9 +52,8 @@ def _import(name: str) -> ModuleType:
 def input_analysis() -> ModuleType:
     """``inputDataAnalysis`` with its LLM settings loaded first.
 
-    Both ``analysis/.env`` (verdict) and ``analysis/inputDataAnalysis/.env`` define ``LLM_MODEL``
-    and neither overrides an existing variable. Loading the input-analysis settings before the
-    verdict reads its file pins each module to its own model.
+    Both analysis stages use the shared model configuration from the project-root ``.env``.
+    Input-analysis-specific generation parameters remain independently configurable.
     """
     module = _import("inputDataAnalysis")
     with contextlib.suppress(RuntimeError):  # missing config surfaces on the first call instead
