@@ -499,6 +499,7 @@ class ProxyContextAnalyzer(BaseTextAnalyzer):
                     {"role": "user", "content": user_payload},
                 ],
                 temperature=0.1,
+                reasoning_effort="none"
             )
             if not response.choices:
                 raise AnalysisError("The language model returned no choices.")
