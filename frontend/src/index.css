@@ -249,6 +249,114 @@ a:focus-visible {
   color: var(--c-on-navy);
 }
 
+/* ---------- Konto ---------- */
+
+.account-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 220px;
+  margin-left: auto;
+  text-decoration: none;
+}
+
+.account-link__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-link[aria-current='page'] {
+  background: var(--c-navy);
+  color: var(--c-on-navy);
+}
+
+.title-s {
+  margin: 0;
+  font: 800 24px/1.2 var(--font);
+}
+
+.account-form {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.account-form__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.account-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.account-field__label {
+  font: 700 20px var(--font);
+}
+
+.account-field__hint {
+  margin: 0;
+  font-size: 17px;
+  line-height: 1.45;
+  color: var(--c-text-subtle);
+}
+
+.input {
+  width: 100%;
+  min-height: 56px;
+  border: 2px solid var(--c-line-strong);
+  border-radius: var(--radius-control);
+  padding: 10px 16px;
+  font: 400 21px/1.4 var(--font);
+  color: var(--c-text);
+  background: var(--c-surface);
+}
+
+.input:focus {
+  outline: none;
+  border-color: var(--c-navy);
+  box-shadow: 0 0 0 4px var(--c-focus-ring);
+}
+
+.account-history {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.account-history__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.account-history__item {
+  border-top: 1px solid var(--c-line);
+  padding: 14px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.account-history__text {
+  font-size: 19px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.account-history__meta {
+  font-size: 17px;
+  color: var(--c-text-subtle);
+}
+
 /* ---------- Układ stron ---------- */
 
 .page {

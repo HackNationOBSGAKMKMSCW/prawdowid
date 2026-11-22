@@ -5,11 +5,13 @@ import DemoBar from './components/DemoBar.tsx';
 import Footer from './components/Footer.tsx';
 import Header from './components/Header.tsx';
 import ViewSwitch from './components/ViewSwitch.tsx';
+import { AccountProvider } from './lib/AccountProvider.tsx';
 import { AnnouncerProvider } from './lib/announcer.tsx';
 import { CheckerContext, useChecker, useCheckerState } from './lib/checker.ts';
 import { SpeechProvider } from './lib/SpeechProvider.tsx';
 import { usePreferences } from './lib/usePreferences.ts';
 import AccessibilityPage from './pages/AccessibilityPage.tsx';
+import AccountPage from './pages/AccountPage.tsx';
 import HelpPage from './pages/HelpPage.tsx';
 import NotFound from './pages/NotFound.tsx';
 import SourcesPage from './pages/SourcesPage.tsx';
@@ -29,19 +31,21 @@ export default function App() {
   const checker = useCheckerState();
 
   return (
-    <CheckerContext.Provider value={checker}>
-      <Routes>
-        <Route
-          path="/whatsapp"
-          element={
-            <Suspense fallback={null}>
-              <WhatsAppView />
-            </Suspense>
-          }
-        />
-        <Route path="*" element={<WebApp prefs={prefs} />} />
-      </Routes>
-    </CheckerContext.Provider>
+    <AccountProvider>
+      <CheckerContext.Provider value={checker}>
+        <Routes>
+          <Route
+            path="/whatsapp"
+            element={
+              <Suspense fallback={null}>
+                <WhatsAppView />
+              </Suspense>
+            }
+          />
+          <Route path="*" element={<WebApp prefs={prefs} />} />
+        </Routes>
+      </CheckerContext.Provider>
+    </AccountProvider>
   );
 }
 
@@ -70,6 +74,7 @@ function WebApp({ prefs }: { prefs: ReturnType<typeof usePreferences> }) {
               <Routes>
                 <Route path="/" element={<CheckPage />} />
                 <Route path="/zrodla" element={<SourcesPage />} />
+                <Route path="/konto" element={<AccountPage />} />
                 <Route path="/pomoc" element={<HelpPage />} />
                 <Route path="/deklaracja-dostepnosci" element={<AccessibilityPage />} />
                 <Route path="*" element={<NotFound />} />
