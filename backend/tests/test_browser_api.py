@@ -57,11 +57,15 @@ class FakeStore:
     async def record_result(self, result_id: UUID, input_type: str) -> None:
         self.results[result_id] = input_type
 
-    async def save_report(self, result_id: UUID, reason: str, comment: str | None) -> bool:
+    async def save_report(
+        self, result_id: UUID, reason: str, comment: str | None
+    ) -> api_store.ReportOutcome:
         if result_id not in self.results:
-            return False
-        self.reports.setdefault(result_id, (reason, comment))
-        return True
+            return api_store.ReportOutcome.MISSING
+        if result_id in self.reports:
+            return api_store.ReportOutcome.DUPLICATE
+        self.reports[result_id] = (reason, comment)
+        return api_store.ReportOutcome.SAVED
 
     async def close(self) -> None:
         return None

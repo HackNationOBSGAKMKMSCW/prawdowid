@@ -708,11 +708,14 @@ class Monitor:
         """Zgłoszenie błędu w wyniku (np. ``POST /api/check/{id}/report``).
 
         Wpis dostaje flagę ``zgloszenie:<powód>`` (filtr w historii weryfikacji) i treść
-        zgłoszenia. ``False``, gdy zapytania nie ma w dzienniku (np. już usunięte).
+        zgłoszenia. Jak w bazie API liczy się pierwsze zgłoszenie: kolejne dla tego samego wpisu
+        niczego nie zmieniają. ``False``, gdy zapytania nie ma w dzienniku (np. już usunięte).
         """
         query = self.store.get_query(query_id)
         if query is None:
             return False
+        if query.get("report"):
+            return True
         flags = [*(query.get("flags") or []), f"zgloszenie:{reason}"]
         report = {"reason": reason, "comment": comment or None, "ts": iso(self.now())}
         self.store.update_query(query_id, flags=flags, report=report)

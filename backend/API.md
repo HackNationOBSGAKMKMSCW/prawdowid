@@ -145,7 +145,8 @@ panel and the website share one process and one database:
   channel `web`) with the submitted text, the claims and verdicts, and the
   number of cited sources. The journal entry ID is the result ID without dashes,
   so `POST /api/check/{id}/report` adds the reason and comment to the same entry
-  (flag `zgloszenie:<reason>`). Entries are deleted after the panel's retention
+  (flag `zgloszenie:<reason>`); as in the API store, only the first report for
+  a result reaches the entry, and later ones leave it unchanged. Entries are deleted after the panel's retention
   period (`monitoring.retention_days`).
 - The same rules as for the WhatsApp bot apply: information gaps, possible
   disinformation campaigns and repeated dangerous queries raise alerts. A request

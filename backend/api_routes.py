@@ -13,6 +13,7 @@ from uuid import UUID, uuid4
 
 from api_adapter import InvalidVerificationResult, VerificationFailed, to_check_response
 from api_models import CheckResponse, ErrorDetail, ErrorResponse, ReportRequest
+from api_store import ReportOutcome
 from articleScraping.safe_http import is_public_address, resolve_host
 from articleScraping.url_validation import InvalidUrlError, validate_url
 from fastapi import APIRouter, Query, Request, Response
@@ -191,7 +192,7 @@ async def _journal_failure(journal, journal_id: str | None, code: str) -> None:
 @router.post("/check/{result_id}/report", status_code=204)
 async def report_check(result_id: UUID, body: ReportRequest, request: Request) -> Response:
     try:
-        saved = await request.app.state.store.save_report(
+        outcome = await request.app.state.store.save_report(
             result_id,
             body.reason,
             body.comment,
@@ -203,10 +204,12 @@ async def report_check(result_id: UUID, body: ReportRequest, request: Request) -
             type(exc).__name__,
         )
         raise ApiFailure(503, "storage_unavailable", "The report could not be stored.") from None
-    if not saved:
+    if outcome is ReportOutcome.MISSING:
         raise ApiFailure(404, "result_not_found", "The result was not found or has expired.")
+    # Powtórzone zgłoszenie (retry, bezpośrednie wywołanie API) nic nie zmienia: w bazie zostaje
+    # pierwsze, więc i dziennik admina dostaje tylko pierwsze. Odpowiedź dalej 204 (idempotencja).
     journal = getattr(request.app.state, "journal", None)
-    if journal is not None:
+    if journal is not None and outcome is ReportOutcome.SAVED:
         from admin.web import query_id_for
 
         await journal.report(query_id_for(result_id), body.reason, body.comment)

@@ -274,8 +274,11 @@ def test_web_check_report_on_postgres(clean_db, tmp_path):
 
     assert monitor.add_report(query_id, reason="bad_source", comment="Link nie działa.")
     assert not monitor.add_report("nie-ma-takiego", reason="other")
+    assert monitor.add_report(query_id, reason="other")  # powtórka: zostaje pierwsze zgłoszenie
     entry = monitor.store.get_query(query_id)
     assert "zgloszenie:bad_source" in entry["flags"]
+    assert "zgloszenie:other" not in entry["flags"]
+    assert entry["report"]["reason"] == "bad_source"
     assert entry["report"]["comment"] == "Link nie działa."
     items, total = monitor.store.list_queries(flag="zgloszenie")
     assert total == 1 and items[0]["report"]["reason"] == "bad_source"

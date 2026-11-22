@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from uuid import UUID
+
 import pytest
 from admin import AdminStore, Monitor
 from admin.settings import AdminSettings
@@ -76,6 +78,42 @@ def test_report_is_attached_to_the_same_entry(service):
 
     flagged = client.get("/api/admin/queries", params={"flag": "zgloszenie"}, headers=AUTH)
     assert flagged.json()["total"] == 1
+
+
+def test_repeated_report_keeps_the_first_one_in_the_journal(service):
+    client, monitor, _, _ = service
+    result_id = client.get("/api/check", params={"text": "Szczepionki powodują autyzm."}).json()["id"]
+    store = client.app.state.store
+
+    first = client.post(f"/api/check/{result_id}/report", json={"reason": "bad_source"})
+    again = client.post(
+        f"/api/check/{result_id}/report", json={"reason": "other", "comment": "Jeszcze raz."}
+    )
+    assert first.status_code == 204
+    assert again.status_code == 204  # powtórka jest idempotentna, strona nie widzi błędu
+
+    assert store.reports[UUID(result_id)] == ("bad_source", None)
+    entry = client.get(f"/api/admin/queries/{result_id.replace('-', '')}", headers=AUTH).json()
+    assert entry["report"]["reason"] == "bad_source"
+    assert entry["report"]["comment"] is None
+    assert [flag for flag in entry["flags"] if flag.startswith("zgloszenie")] == [
+        "zgloszenie:bad_source"
+    ]
+
+
+def test_journal_keeps_the_first_report_for_an_entry(service):
+    client, monitor, _, _ = service
+    result_id = client.get("/api/check", params={"text": "Szczepionki powodują autyzm."}).json()["id"]
+    query_id = result_id.replace("-", "")
+
+    assert monitor.add_report(query_id, reason="wrong_verdict", comment="Źle.")
+    assert monitor.add_report(query_id, reason="other")
+
+    entry = monitor.store.get_query(query_id)
+    assert entry["report"]["reason"] == "wrong_verdict"
+    assert [flag for flag in entry["flags"] if flag.startswith("zgloszenie")] == [
+        "zgloszenie:wrong_verdict"
+    ]
 
 
 def test_high_risk_request_is_refused_without_running_the_pipeline(service):

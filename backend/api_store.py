@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import ssl
 from datetime import UTC, datetime, timedelta
+from enum import Enum
 from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from uuid import UUID
@@ -33,6 +34,14 @@ def _dsn_and_ssl(database_url: str) -> tuple[str, bool | str | ssl.SSLContext]:
     else:
         ssl_option = ssl_mode
     return dsn, ssl_option
+
+
+class ReportOutcome(Enum):
+    """What ``save_report`` did: one report per result, the first one is kept."""
+
+    MISSING = "missing"  # no such result, or it has expired
+    SAVED = "saved"  # this call stored the report
+    DUPLICATE = "duplicate"  # the result already had a report; nothing changed
 
 
 class PostgresStore:
@@ -84,7 +93,7 @@ class PostgresStore:
 
     async def save_report(
         self, result_id: UUID, reason: str, comment: str | None
-    ) -> bool:
+    ) -> ReportOutcome:
         async with self.pool.acquire() as connection, connection.transaction():
             exists = await connection.fetchval(
                 """
@@ -96,7 +105,7 @@ class PostgresStore:
                 result_id,
             )
             if exists is None:
-                return False
+                return ReportOutcome.MISSING
             inserted = await connection.execute(
                 """
                 INSERT INTO api_check_reports (result_id, reason, comment)
@@ -107,17 +116,18 @@ class PostgresStore:
                 reason,
                 comment,
             )
-            if inserted.endswith(" 1"):
-                await connection.execute(
-                    """
-                    UPDATE api_check_results
-                    SET expires_at = GREATEST(expires_at, NOW() + ($2 * INTERVAL '1 day'))
-                    WHERE id = $1
-                    """,
-                    result_id,
-                    self.retention_days,
-                )
-        return True
+            if not inserted.endswith(" 1"):
+                return ReportOutcome.DUPLICATE
+            await connection.execute(
+                """
+                UPDATE api_check_results
+                SET expires_at = GREATEST(expires_at, NOW() + ($2 * INTERVAL '1 day'))
+                WHERE id = $1
+                """,
+                result_id,
+                self.retention_days,
+            )
+        return ReportOutcome.SAVED
 
     async def delete_expired(self) -> int:
         status = await self.pool.execute(
