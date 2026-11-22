@@ -1,7 +1,7 @@
 # Sprawdź.To (Prawdowid) - dokumentacja techniczna
 
-<center><b><a href="https://78-10-195-255.sslip.io">DEMO</a></b></center> <br>
-<center><b><a href="https://78-10-195-255.sslip.io/admin/login">DEMO ADMIN</a></b></center>
+<center><h3><a href="https://78-10-195-255.sslip.io">DEMO</a></h3></center> <br>
+<center><b><a href="https://78-10-195-255.sslip.io/admin/login">DEMO ADMIN</a></b></center> <br> <br>
 
 OPIS
 Zespół: Interpoland
