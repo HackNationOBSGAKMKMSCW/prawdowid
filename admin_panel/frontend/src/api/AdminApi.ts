@@ -4,9 +4,6 @@ import type {
   ApiCapabilities,
   AvailableModels,
   ConfigChange,
-  EndUser,
-  EndUserDetail,
-  EndUserFilter,
   GapStatus,
   PurgeResult,
   RuntimeConfig,
@@ -128,13 +125,6 @@ export interface AdminApi {
 
   // ── Features of the real backend (backend/admin) ──────────────────────────
   // Gated by `capabilities.features`; sources without them reject the call.
-
-  /** `endUsers`: people who write to the service, by pseudonym. */
-  listEndUsers(filter?: EndUserFilter): Promise<EndUser[]>;
-  getEndUser(key: string): Promise<EndUserDetail>;
-  /** `hours: null` blocks with no end date. */
-  blockEndUser(key: string, hours: number | null, reason?: string): Promise<EndUser>;
-  unblockEndUser(key: string): Promise<EndUser>;
 
   /** `gapLifecycle`: move an information gap through its states. */
   updateGapStatus(clusterId: string, status: GapStatus, note?: string): Promise<QueryCluster>;

@@ -44,7 +44,6 @@ export default function ChecksPage() {
   const { checkFlags, checkOutcomes } = api.capabilities;
   // Siła dowodów i tokeny: tylko źródła danych, które je zapisują (tryb demo).
   const showStrength = supports('checkCost');
-  const showUser = supports('endUsers');
 
   const query: CheckQuery = { ...filters, search, clusterId, page, pageSize: 25 };
   const checks = useAsync(() => api.listChecks(query), [JSON.stringify(query)]);
@@ -201,7 +200,6 @@ export default function ChecksPage() {
                       <tr>
                         <th>Czas</th>
                         <th>Kanał</th>
-                        {showUser && <th>Użytkownik</th>}
                         <th className="col-wide">Zapytanie</th>
                         <th>Wynik</th>
                         {showStrength && <th>Siła</th>}
@@ -215,17 +213,6 @@ export default function ChecksPage() {
                         <tr key={c.id} className="clickable" onClick={() => setPicked(c.id)}>
                           <td className="nowrap small">{fmtDateTime(c.createdAt)}</td>
                           <td className="small">{channelLabel(c.channel)}</td>
-                          {showUser && (
-                            <td className="small mono">
-                              {c.userKey ? (
-                                <Link to={`/end-users?focus=${encodeURIComponent(c.userKey)}`} onClick={(e) => e.stopPropagation()}>
-                                  {c.userLabel ?? c.userKey}
-                                </Link>
-                              ) : (
-                                '—'
-                              )}
-                            </td>
-                          )}
                           <td>
                             <button type="button" className="link-btn" onClick={(e) => { e.stopPropagation(); setPicked(c.id); }}>
                               {truncate(c.query, 80)}
@@ -474,14 +461,6 @@ function CheckDetail({ check }: { check: CheckRecord }) {
             <dt>Czas odpowiedzi</dt>
             <dd>{fmtDuration(check.durationMs)}</dd>
           </div>
-          {check.userKey && (
-            <div>
-              <dt>Użytkownik</dt>
-              <dd>
-                <Link to={`/end-users?focus=${encodeURIComponent(check.userKey)}`}>{check.userLabel ?? check.userKey}</Link>
-              </dd>
-            </div>
-          )}
           {check.requestId && (
             <div>
               <dt>Request ID</dt>

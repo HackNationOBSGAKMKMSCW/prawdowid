@@ -1,6 +1,6 @@
 import { Link, useNavigate } from 'react-router-dom';
 import { getApi, supports } from '../api/index.ts';
-import type { Alert, ModelProvider, ModeratorCase, PipelineAssignment, QueryCluster, Source } from '../api/types.ts';
+import type { Alert, ModelProvider, ModeratorCase, PipelineAssignment, QueryCluster, Source, TechSummary, TrustedSite } from '../api/types.ts';
 import { useAuth } from '../auth/AuthContext.tsx';
 import { Icon, type IconName } from '../components/icons.tsx';
 import { ALERT_TYPE, HEALTH, PIPELINE_ROLE, ROLE_LABEL, SEVERITY, type Tone } from '../components/labels.ts';
@@ -46,6 +46,15 @@ export default function DashboardPage() {
         : Promise.resolve(null),
     [],
   );
+  // Backend: trusted sites whose last check failed, and model / search errors from the logs.
+  const trusted = useAsync<TrustedSite[]>(
+    () => (supports('trustedSites') && can('sources:read') ? api.listTrustedSites() : Promise.resolve([])),
+    [],
+  );
+  const tech = useAsync<TechSummary | null>(
+    () => (supports('techEvents') && can('security:read') ? api.getTechSummary(24) : Promise.resolve(null)),
+    [],
+  );
 
   const openAlerts = alerts.data ?? [];
   const urgent = openAlerts.filter((a) => URGENT.has(a.severity) && a.status !== 'escalated');
@@ -61,7 +70,16 @@ export default function DashboardPage() {
     .map((a) => ({ a, p: models.data?.providers.find((p) => p.id === a.providerId) }))
     .filter((x): x is { a: PipelineAssignment; p: ModelProvider } => !!x.p && x.p.health !== 'ok');
   const sourceProblems = (sources.data ?? []).filter((s) => s.status !== 'excluded' && !s.lastFetchOk);
-  const systemIssues = modelProblems.length + sourceProblems.length + (stats.data?.technicalErrors ? 1 : 0);
+  const siteProblems = (trusted.data ?? []).filter((s) => s.enabled && s.lastCheck && !s.lastCheck.ok);
+  const llmErrors = Object.values(tech.data?.llm.by_model ?? {}).reduce((n, m) => n + (m.errors ?? 0), 0);
+  const searchErrors = Object.values(tech.data?.search.errors ?? {}).reduce((n, v) => n + (v ?? 0), 0);
+  const systemIssues =
+    modelProblems.length +
+    sourceProblems.length +
+    siteProblems.length +
+    (llmErrors ? 1 : 0) +
+    (searchErrors ? 1 : 0) +
+    (stats.data?.technicalErrors ? 1 : 0);
 
   const reloadAll = () => {
     alerts.reload();
@@ -86,7 +104,7 @@ export default function DashboardPage() {
   };
 
   const firstName = user?.name.split(' ')[0] ?? '';
-  const blockedUsers = stats.data?.blockedUsers ?? 0;
+  const dangerous = stats.data?.dangerousQueries ?? 0;
   const allClear = critical.length + urgent.length + gapsWithoutCase.length + waitingCases.length + systemIssues === 0;
 
   return (
@@ -121,8 +139,15 @@ export default function DashboardPage() {
         {withCases ? (
           <AttentionTile to="/cases" icon="folder" tone="warning" count={waitingCases.length} label={plural(waitingCases.length, ['sprawa czeka', 'sprawy czekają', 'spraw czeka'])} ok="Sprawy są w toku" />
         ) : (
-          supports('endUsers') && (
-            <AttentionTile to="/end-users" icon="lock" tone="warning" count={blockedUsers} label={plural(blockedUsers, ['zablokowany użytkownik', 'zablokowanych użytkowników', 'zablokowanych użytkowników'])} ok="Nikt nie jest zablokowany" />
+          supports('threats') && (
+            <AttentionTile
+              to="/threats"
+              icon="shield"
+              tone="warning"
+              count={dangerous}
+              label={plural(dangerous, ['zapytanie o treści niebezpieczne (24 h)', 'zapytania o treści niebezpieczne (24 h)', 'zapytań o treści niebezpieczne (24 h)'])}
+              ok="Brak treści niebezpiecznych (24 h)"
+            />
           )
         )}
         <AttentionTile
@@ -173,11 +198,6 @@ export default function DashboardPage() {
                           <button type="button" className="btn btn-sm btn-primary" disabled={busy} onClick={() => escalate(a.id)}>
                             Utwórz sprawę
                           </button>
-                        )}
-                        {a.userKey && supports('endUsers') && (
-                          <Link to={`/end-users?focus=${encodeURIComponent(a.userKey)}`} className="btn btn-sm">
-                            Użytkownik
-                          </Link>
                         )}
                         {can('alerts:write') && a.status === 'new' && (
                           <button type="button" className="btn btn-sm" disabled={busy} onClick={() => acknowledge(a)}>
@@ -253,7 +273,7 @@ export default function DashboardPage() {
                             <span className="list-title">{g.label}</span>
                             <span className="muted small">
                               {lifecycle
-                                ? `${g.uniqueSessions} ${plural(g.uniqueSessions, ['osoba pytała', 'osoby pytały', 'osób pytało'])} · ${fmtPct(g.noEvidenceRatio)} bez dowodów`
+                                ? `${g.uniqueSessions} ${plural(g.uniqueSessions, ['zapytanie', 'zapytania', 'zapytań'])} · ${fmtPct(g.noEvidenceRatio)} bez dowodów`
                                 : `${fmtPct(g.noEvidenceRatio)} bez dowodów`}
                               {g.riskTopics.length ? ` · ${g.riskTopics[0]}` : ''}
                             </span>
@@ -295,6 +315,39 @@ export default function DashboardPage() {
                 </Link>
               </li>
             ))}
+            {siteProblems.map((s) => (
+              <li key={s.url}>
+                <StatusDot tone="warning" />
+                <span>
+                  <strong>Strona zaufana:</strong> {s.name || s.domain} — {s.lastCheck?.error || 'nieudane sprawdzenie'}
+                </span>
+                <Link to="/trusted-sites" className="small">
+                  Sprawdź
+                </Link>
+              </li>
+            ))}
+            {llmErrors > 0 && (
+              <li>
+                <StatusDot tone="warning" />
+                <span>
+                  <strong>{llmErrors}</strong> {plural(llmErrors, ['błąd modelu językowego', 'błędy modelu językowego', 'błędów modelu językowego'])} (24 h)
+                </span>
+                <Link to="/logs" className="small">
+                  Logi
+                </Link>
+              </li>
+            )}
+            {searchErrors > 0 && (
+              <li>
+                <StatusDot tone="warning" />
+                <span>
+                  <strong>{searchErrors}</strong> {plural(searchErrors, ['błąd wyszukiwania źródeł', 'błędy wyszukiwania źródeł', 'błędów wyszukiwania źródeł'])} (24 h)
+                </span>
+                <Link to="/logs" className="small">
+                  Logi
+                </Link>
+              </li>
+            )}
             {!!stats.data?.technicalErrors && (
               <li>
                 <StatusDot tone="warning" />
@@ -318,7 +371,7 @@ export default function DashboardPage() {
               <li>
                 <StatusDot tone="good" />
                 <span>
-                  {supports('providers') ? 'Wszystkie modele i źródła działają poprawnie.' : 'Brak błędów technicznych w ostatnich 24 godzinach.'}
+                  {supports('providers') ? 'Wszystkie modele i źródła działają poprawnie.' : tech.loading || trusted.loading ? 'Sprawdzam…' : 'Brak błędów technicznych w ostatnich 24 godzinach.'}
                 </span>
               </li>
             )}
@@ -366,12 +419,6 @@ export default function DashboardPage() {
                   <div>
                     <span className="mini-value">{s.refused}</span>
                     <span className="muted small">odrzuconych</span>
-                  </div>
-                )}
-                {s.users !== undefined && (
-                  <div>
-                    <span className="mini-value">{fmtInt(s.users)}</span>
-                    <span className="muted small">{plural(s.users, ['osoba', 'osoby', 'osób'])}</span>
                   </div>
                 )}
                 {s.dangerousQueries !== undefined && (

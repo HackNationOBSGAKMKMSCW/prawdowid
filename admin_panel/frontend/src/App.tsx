@@ -11,7 +11,6 @@ import CaseDetailPage from './pages/CaseDetailPage.tsx';
 import CasesPage from './pages/CasesPage.tsx';
 import ChecksPage from './pages/ChecksPage.tsx';
 import DashboardPage from './pages/DashboardPage.tsx';
-import EndUsersPage from './pages/EndUsersPage.tsx';
 import RuntimeConfigPage from './pages/RuntimeConfigPage.tsx';
 import TechLogsPage from './pages/TechLogsPage.tsx';
 import ThresholdsPage from './pages/ThresholdsPage.tsx';
@@ -54,7 +53,6 @@ export default function App() {
             <Route path="repeated" element={guarded('clusters:read', <RepeatedPage />, 'clusters')} />
             <Route path="threats" element={guarded('security:read', <ThreatsPage />, 'threats')} />
             <Route path="security" element={guarded('security:read', <SecurityPage />, 'securityEvents')} />
-            <Route path="end-users" element={guarded('endusers:read', <EndUsersPage />, 'endUsers')} />
             <Route path="logs" element={guarded('security:read', <TechLogsPage />, 'techEvents')} />
             <Route path="cases" element={guarded('cases:read', <CasesPage />, 'cases')} />
             <Route path="cases/:id" element={guarded('cases:read', <CaseDetailPage />, 'cases')} />

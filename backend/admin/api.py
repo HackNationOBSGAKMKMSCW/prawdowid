@@ -39,11 +39,6 @@ class GapUpdate(BaseModel):
     note: str | None = Field(default=None, max_length=1000)
 
 
-class BlockRequest(BaseModel):
-    hours: int | None = Field(default=24, ge=1, le=24 * 3650, description="None = bezterminowo")
-    reason: str | None = Field(default=None, max_length=500)
-
-
 class PurgeRequest(BaseModel):
     older_than_days: int | None = Field(default=None, ge=1, le=3650)
 
@@ -122,11 +117,10 @@ def create_router(
             "latest_alerts": monitor.store.list_alerts(status="otwarty", limit=10),
         }
 
-    # --- logi użytkowników -------------------------------------------------------------
+    # --- dziennik zapytań (anonimowy) --------------------------------------------------
 
     @router.get("/queries", dependencies=[need("checks:read")])
     def queries(
-        user: str | None = None,
         flag: str | None = Query(None, description="np. niebezpieczne, luka_informacyjna, falsz"),
         verdict: str | None = None,
         status: str | None = None,
@@ -137,7 +131,6 @@ def create_router(
         offset: int = Query(0, ge=0),
     ) -> dict[str, Any]:
         items, total = monitor.store.list_queries(
-            user_key=user,
             flag=flag,
             verdict=verdict,
             status=status,
@@ -197,50 +190,6 @@ def create_router(
         return {"file": str(path), "log_available": path.is_file(), **report}
 
     # --- użytkownicy -------------------------------------------------------------------
-
-    @router.get("/users", dependencies=[need("endusers:read")])
-    def users(
-        flagged: bool = False, blocked: bool = False, limit: int = Query(100, ge=1, le=1000)
-    ) -> dict[str, Any]:
-        items = monitor.store.list_users(
-            flagged=flagged, blocked_at=iso(monitor.now()) if blocked else None, limit=limit
-        )
-        return {"items": items}
-
-    @router.get("/users/{user_key}", dependencies=[need("endusers:read")])
-    def user(user_key: str) -> dict[str, Any]:
-        item = monitor.store.get_user(user_key)
-        if item is None:
-            raise not_found(f"użytkownik {user_key}")
-        recent, total = monitor.store.list_queries(user_key=user_key, limit=50)
-        alerts = [
-            alert
-            for alert in monitor.store.list_alerts(alert_type="niebezpieczny_uzytkownik")
-            if alert["subject"] == user_key
-        ]
-        return {**item, "total_queries": total, "recent_queries": recent, "alerts": alerts}
-
-    @router.post("/users/{user_key}/block")
-    def block(
-        user_key: str, body: BlockRequest, principal: Principal = need("endusers:write")
-    ) -> dict[str, Any]:
-        try:
-            result = monitor.block_user(user_key, body.hours, body.reason)
-        except KeyError:
-            raise not_found(f"użytkownik {user_key}") from None
-        record(
-            principal, "enduser.blocked", "end_user", user_key, hours=body.hours, reason=body.reason
-        )
-        return result
-
-    @router.post("/users/{user_key}/unblock")
-    def unblock(user_key: str, principal: Principal = need("endusers:write")) -> dict[str, Any]:
-        try:
-            result = monitor.unblock_user(user_key)
-        except KeyError:
-            raise not_found(f"użytkownik {user_key}") from None
-        record(principal, "enduser.unblocked", "end_user", user_key)
-        return result
 
     # --- alerty ------------------------------------------------------------------------
 

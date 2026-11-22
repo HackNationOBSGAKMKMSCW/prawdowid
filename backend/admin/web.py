@@ -2,12 +2,11 @@
 
 Każde sprawdzenie ze strony trafia do tego samego rejestru co wiadomości z bota WhatsApp
 (kanał ``web``), więc panel widzi je w historii weryfikacji, statystykach, lukach
-informacyjnych, alertach dezinformacji i u użytkowników serwisu. Zgłoszenie błędu
-w wyniku dopisuje się do tego samego wpisu (identyfikator wyniku = identyfikator zapytania).
+informacyjnych i alertach. Zgłoszenie błędu w wyniku dopisuje się do tego samego wpisu
+(identyfikator wyniku = identyfikator zapytania).
 
-Użytkownik strony jest anonimowy: jego pseudonim to HMAC adresu IP (``AdminSettings.user_key``),
-a w panelu widać tylko końcówkę adresu. Za proxy adres klienta podaje uvicorn
-(``--proxy-headers --forwarded-allow-ips=...``).
+Użytkownik strony jest w pełni anonimowy: do rejestru nie trafia ani adres IP, ani żaden
+wyliczony z niego pseudonim.
 
 Błąd monitora nigdy nie psuje sprawdzenia: zapis jest pomijany i zostaje ostrzeżenie w logach.
 Jedyny wyjątek to świadoma odmowa (zablokowany użytkownik, prośba o instrukcje przemocy).
@@ -68,12 +67,6 @@ def claims_from_response(response: Any) -> tuple[list[ClaimInput], str | None, i
     return claims, overall_verdict(c.verdict for c in response.claims), total
 
 
-def client_id(request: Any) -> str:
-    client = getattr(request, "client", None)
-    host = getattr(client, "host", None) or "nieznany"
-    return f"web:{host}"
-
-
 class CheckJournal:
     """Zapis sprawdzeń ze strony w dzienniku panelu; bezpieczny przy awarii monitora."""
 
@@ -87,7 +80,6 @@ class CheckJournal:
         try:
             return await run_in_threadpool(
                 self.monitor.screen,
-                user_id=client_id(request),
                 text=text,
                 channel=CHANNEL,
                 request_id=request_id,

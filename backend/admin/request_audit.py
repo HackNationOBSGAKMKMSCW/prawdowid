@@ -38,14 +38,11 @@ def monitor_reporter(get_monitor: Callable[[], Any], channel: str) -> Reporter:
         client_ip: str | None,
         request_id: str | None,
     ) -> None:
-        from .settings import user_label
-
+        del client_ip  # adres IP to dane osobowe: nie trafia do alertu
         monitor = get_monitor()
-        source = monitor.settings.user_key(f"ip:{client_ip}") if client_ip else None
         monitor.register_sql_injection(
             channel=channel,
-            source=source,
-            source_label=user_label(f"ip:{client_ip}") if client_ip else None,
+            source=None,
             patterns=detection.patterns,
             locations=detection.locations,
             method=method,

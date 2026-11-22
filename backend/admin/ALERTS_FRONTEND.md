@@ -11,9 +11,7 @@ Oba zdarzenia trafiają do tej samej tabeli powiadomień co pozostałe alerty pa
 
 - Dopóki alert jest otwarty (`otwarty` albo `w_analizie`), każde kolejne wykrycie zwiększa `count`, aktualizuje `last_seen` i dopisuje wpis na początek `details.wystapienia` (maks. 20 ostatnich).
 - Gdy admin zmieni stan na `rozwiazany` albo `falszywy_alarm`, następne wykrycie otwiera **nowy** alert.
-- `users` to liczba różnych źródeł w `details.zrodla` (lista ma maks. 500 pozycji):
-  - przy dezinformacji źródłem jest użytkownik: numer z WhatsApp albo klient strony (pseudonim adresu IP). Każdy liczy się raz;
-  - przy SQL injection źródłem jest pseudonim adresu IP (HMAC) pobranego z pierwszego adresu w `X-Forwarded-For` (aplikacja stoi za proxy), a przy WhatsApp pseudonim numeru.
+- Alerty nie zawierają danych o osobach: nie ma numeru, adresu IP ani pseudonimu. `users` jest zawsze 0, `details.zrodla` jest puste, a `count` liczy każde zapytanie lub żądanie osobno.
 - Jedno żądanie to jedno wystąpienie, nawet gdy składnię wykryją oba mechanizmy: middleware HTTP (pola żądania) i monitor treści (`tresc_wiadomosci`). Wystąpienia łączą się po `request_id`, a `pola` zawierają wtedy oba miejsca.
 - SQL injection **niczego nie blokuje**. Zapytania do bazy są parametryzowane, więc to tylko powiadomienie.
 - Skan i zapis alertu odbywają się w tle, po przyjęciu żądania, więc alert pojawia się w panelu z opóźnieniem rzędu milisekund. Przy zalewie prób (np. skaner podatności) nadmiarowe zgłoszenia są pomijane, zamiast przeciążać bazę.
@@ -90,10 +88,9 @@ Zapytanie powiązane z alertem ma flagę `rosyjska_dezinformacja`, więc da się
       "pola": ["body.password"],          // query.<nazwa>, body.<ścieżka>, form.<nazwa>, sciezka, tresc_wiadomosci
       "metoda": "POST",
       "sciezka": "/api/admin/auth/login",
-      "zrodlo": "***ent",                 // maska pseudonimu źródła
       "query_id": null                    // ustawione dla wiadomości z bota
     }],
-    "zrodla": ["d4de1644ddf12ded"]
+    "zrodla": []                          // zawsze puste: bez danych o nadawcy
   }
 }
 ```

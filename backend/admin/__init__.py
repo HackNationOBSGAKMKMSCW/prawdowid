@@ -7,7 +7,7 @@ Integracja z potokiem (np. bot WhatsApp)::
     from admin import ClaimInput, get_monitor
 
     monitor = get_monitor()
-    decision = monitor.screen(user_id=sender, text=text, channel="whatsapp")
+    decision = monitor.screen(text=text, channel="whatsapp")  # anonimowo: bez numeru nadawcy
     if not decision.allowed:
         reply(decision.message)
     else:

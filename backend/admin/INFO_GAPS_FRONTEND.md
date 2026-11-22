@@ -23,14 +23,9 @@ brak ──(1. zapytanie bez pokrycia)──► podejrzenie ──(próg)──�
 - Gdy o temat pojawi się rozstrzygnięcie ze źródłami (prawda albo fałsz), luka **zamyka się sama**, a alert dostaje stan `rozwiazany`.
 - Po zamknięciu lub odrzuceniu licznik zaczyna się od nowa, od chwili decyzji.
 
-Tryb liczenia ustawia `monitoring.info_gap_count_by`:
-- `auto` (domyślnie), próg `info_gap_min_users`:
-  - rozpoznany użytkownik liczy się **raz**, niezależnie od tego, ile razy pyta. Na WhatsApp to numer, a na stronie klient rozpoznany po pseudonimie adresu IP (strona nie ma logowania);
-  - zapytanie z kanału anonimowego (bez żadnego identyfikatora) liczy się **osobno**.
-
-  Przykład: 2 osoby z WhatsApp i 1 klient strony, który pytał 4 razy, dają 3.
-- `zapytania`: każde zapytanie, także od tej samej osoby. Próg `info_gap_min_queries`.
-- `osoby`: tylko różne pseudonimy. Próg `info_gap_min_users`. Cała strona liczy się wtedy jako jedna osoba, więc ruch ze strony praktycznie nie tworzy luk.
+Liczy się **każde zapytanie** bez pokrycia; próg to `monitoring.info_gap_min_queries`. Panel nie zbiera
+danych o osobach pytających (numerów, adresów IP, pseudonimów), więc nie da się liczyć „różnych osób”.
+Pola `info_gap_count_by` i `info_gap_min_users` zostały tylko dla zgodności i nic nie zmieniają.
 
 Wartość porównywana z progiem to pole `count` w `ranking` albo `details.wartosc` w alercie.
 
@@ -109,9 +104,9 @@ Zwraca tematy posortowane malejąco po liczbie zapytań bez pokrycia w oknie, **
       "gap_note": null,             // notatka admina
       "gap_since": "2026-11-22T04:25:07.112Z",
       "queries": 3,                 // zapytania bez pokrycia w oknie
-      "users": 1,                   // różne pseudonimy (cała strona = 1)
-      "reporters": 3,               // zgłaszający w trybie auto: użytkownicy raz + zapytania anonimowe
-      "count": 3,                   // wartość porównywana z progiem w bieżącym trybie
+      "users": 0,                   // zawsze 0: bez danych o osobach
+      "reporters": 3,               // = queries (każde zapytanie osobno)
+      "count": 3,                   // wartość porównywana z progiem (zapytania)
       "last_seen": "2026-11-22T04:25:07.112Z",
       "over_threshold": true,       // czy przekracza próg w bieżącym trybie
       "trend": [                    // dzień po dniu (UTC), od początku okna do dziś, także zera
@@ -176,7 +171,7 @@ Zwraca pola tematu, `tokens` (słowa kluczowe) i `claims`, czyli do 200 ostatnic
 Alert powstaje przy przejściu w stan `aktywna`:
 - `subject` to `topic_id`, czyli link do `/topics/{subject}`;
 - `count` to liczba zapytań bez pokrycia;
-- `users` to liczba różnych pseudonimów;
+- `users` jest zawsze 0 (bez danych o osobach);
 - `details.wartosc` to wartość porównana z progiem;
 - `details.liczone_po` i `details.prog` mówią, według jakiej reguły alert powstał;
 - `severity` ma wartość `wysoka`, gdy licznik przekracza 3-krotność progu, a w innym przypadku `srednia`.
@@ -189,9 +184,7 @@ Dashboard (`GET /api/admin/dashboard`) ma nowe pole `uncovered_queries` (w oknie
 
 ```json
 {
-  "info_gap_count_by": "auto",
   "info_gap_min_queries": 3,
-  "info_gap_min_users": 3,
   "info_gap_window_hours": 168
 }
 ```

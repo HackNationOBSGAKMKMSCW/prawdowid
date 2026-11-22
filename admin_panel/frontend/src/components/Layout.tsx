@@ -35,7 +35,6 @@ export const NAV: { section: string; items: NavItem[] }[] = [
       { to: '/repeated', label: 'Powtarzające się zapytania', icon: 'repeat', permission: 'clusters:read', feature: 'clusters' },
       { to: '/threats', label: 'Zagrożenia', icon: 'shield', permission: 'security:read', feature: 'threats' },
       { to: '/security', label: 'Bezpieczeństwo', icon: 'shield', permission: 'security:read', feature: 'securityEvents' },
-      { to: '/end-users', label: 'Użytkownicy serwisu', icon: 'users', permission: 'endusers:read', feature: 'endUsers', counter: 'blocked' },
       { to: '/logs', label: 'Logi techniczne', icon: 'shield', permission: 'security:read', feature: 'techEvents' },
     ],
   },
@@ -56,7 +55,7 @@ export const NAV: { section: string; items: NavItem[] }[] = [
       { to: '/rules', label: 'Reguły alertów', icon: 'sliders', permission: 'rules:read', feature: 'alertRules' },
       { to: '/thresholds', label: 'Reguły i progi', icon: 'sliders', permission: 'settings:read', feature: 'runtimeConfig' },
       { to: '/settings', label: 'Kanały i prywatność', icon: 'settings', permission: 'settings:read', feature: 'channels' },
-      { to: '/users', label: 'Użytkownicy', icon: 'users', permission: 'users:read', feature: 'staffUsers' },
+      { to: '/users', label: 'Konta panelu', icon: 'users', permission: 'users:read', feature: 'staffUsers' },
       { to: '/audit', label: 'Dziennik audytu', icon: 'audit', permission: 'audit:read' },
     ],
   },
@@ -67,7 +66,6 @@ interface Counts {
   critical: number;
   gaps: number;
   cases: number;
-  blocked: number;
 }
 
 const CountsContext = createContext<() => void>(() => {});
@@ -120,15 +118,13 @@ export default function Layout() {
       can('alerts:read') ? api.listAlerts({ status: 'open' }) : Promise.resolve([]),
       can('clusters:read') ? api.listClusters({ onlyGaps: true, light: true }) : Promise.resolve([]),
       can('cases:read') && supports('cases') ? api.listCases({ status: 'open' }) : Promise.resolve([]),
-      can('endusers:read') && supports('endUsers') ? api.listEndUsers('blocked') : Promise.resolve([]),
     ])
-      .then(([alerts, gaps, cases, blocked]) =>
+      .then(([alerts, gaps, cases]) =>
         setCounts({
           alerts: alerts.filter((a) => a.status === 'new').length,
           critical: alerts.filter((a) => a.severity === 'critical' && a.status === 'new').length,
           gaps: gaps.filter((g) => (g.gapStatus ? g.gapStatus === 'active' : g.isInformationGap)).length,
           cases: cases.length,
-          blocked: blocked.length,
         }),
       )
       .catch(() => {
@@ -175,7 +171,7 @@ export default function Layout() {
                         {count > 0 && (
                           <span
                             className={`nav-count ${urgent ? 'is-urgent' : ''}`}
-                            aria-label={item.counter === 'blocked' ? `${count} zablokowanych` : `${count} nowych`}
+                            aria-label={`${count} nowych`}
                           >
                             {count}
                           </span>

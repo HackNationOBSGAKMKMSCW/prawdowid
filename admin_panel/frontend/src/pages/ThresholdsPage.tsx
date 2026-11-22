@@ -8,9 +8,15 @@ import { Async, Card, Field, Modal, PageHeader, Toggle, useAction, useToast } fr
 import { useAsync } from '../hooks/useAsync.ts';
 import { fmtDateTime } from '../utils/format.ts';
 
-type NumberKey = {
-  [K in keyof MonitoringSettings]: MonitoringSettings[K] extends number ? K : never;
-}[keyof MonitoringSettings];
+type NumberKey =
+  | 'info_gap_min_queries'
+  | 'info_gap_window_hours'
+  | 'disinfo_min_users'
+  | 'disinfo_window_hours'
+  | 'dangerous_alert_after'
+  | 'dangerous_window_hours'
+  | 'injection_alert_after'
+  | 'retention_days';
 
 interface NumberField {
   key: NumberKey;
@@ -25,29 +31,28 @@ const GROUPS: { title: string; subtitle: string; fields: NumberField[] }[] = [
   {
     title: 'Luka informacyjna',
     subtitle:
-      'Temat bez rozstrzygnięcia (brak źródeł albo niewystarczające dane) staje się luką, gdy pyta o niego dość różnych osób. Pierwsze rozstrzygnięcie oparte na źródłach zamyka lukę automatycznie.',
+      'Temat bez rozstrzygnięcia (brak źródeł albo niewystarczające dane) staje się luką, gdy pytano o niego dość razy. Liczymy zapytania, nie osoby: panel nie zbiera danych o użytkownikach aplikacji. Pierwsze rozstrzygnięcie oparte na źródłach zamyka lukę automatycznie.',
     fields: [
-      { key: 'info_gap_min_users', label: 'Różne osoby', hint: 'tyle osób musi zapytać o ten sam temat', min: 1, max: 10_000 },
+      { key: 'info_gap_min_queries', label: 'Zapytania', hint: 'tyle razy trzeba zapytać o ten sam temat', min: 1, max: 10_000 },
       { key: 'info_gap_window_hours', label: 'Okno czasu', hint: 'w jakim okresie liczymy pytania', min: 1, max: 8760, unit: 'h' },
     ],
   },
   {
     title: 'Możliwy atak dezinformacyjny',
-    subtitle: 'Wiele różnych osób w krótkim czasie pyta o twierdzenie ocenione jako fałsz. Od dwukrotności progu alert ma wysoki priorytet.',
+    subtitle: 'W krótkim czasie wiele zapytań o twierdzenie ocenione jako fałsz. Od dwukrotności progu alert ma wysoki priorytet.',
     fields: [
-      { key: 'disinfo_min_users', label: 'Różne osoby', hint: 'próg alertu', min: 2, max: 100_000 },
+      { key: 'disinfo_min_users', label: 'Zapytania', hint: 'próg alertu', min: 2, max: 100_000 },
       { key: 'disinfo_window_hours', label: 'Okno czasu', hint: 'w jakim okresie liczymy pytania', min: 1, max: 2160, unit: 'h' },
     ],
   },
   {
-    title: 'Treści niebezpieczne',
+    title: 'Treści niebezpieczne i prompt injection',
     subtitle:
-      'Terroryzm, materiały wybuchowe, broń, broń masowego rażenia, przemoc masowa. Pytanie o fakt jest sprawdzane i oznaczane; prośba o instrukcję lub zdobycie to wysokie ryzyko.',
+      'Terroryzm, materiały wybuchowe, broń, broń masowego rażenia, przemoc masowa. Pytanie o fakt jest sprawdzane i oznaczane; prośba o instrukcję lub zdobycie to wysokie ryzyko. Alerty są zbiorcze: nikogo nie identyfikujemy ani nie blokujemy.',
     fields: [
-      { key: 'dangerous_alert_after', label: 'Alert po', hint: 'zapytaniach o treści niebezpieczne jednej osoby', min: 1, max: 1000 },
-      { key: 'dangerous_block_after', label: 'Blokada po', hint: 'zapytaniach wysokiego ryzyka jednej osoby', min: 1, max: 1000 },
-      { key: 'dangerous_window_hours', label: 'Okno czasu', hint: 'dla obu progów powyżej', min: 1, max: 2160, unit: 'h' },
-      { key: 'dangerous_block_hours', label: 'Długość blokady', hint: 'automatycznej', min: 1, max: 8760, unit: 'h' },
+      { key: 'dangerous_alert_after', label: 'Alert po', hint: 'zapytaniach o treści niebezpieczne (łącznie)', min: 1, max: 1000 },
+      { key: 'dangerous_window_hours', label: 'Okno czasu', hint: 'dla obu progów w tej sekcji', min: 1, max: 2160, unit: 'h' },
+      { key: 'injection_alert_after', label: 'Prompt injection: alert po', hint: 'próbach manipulacji modelem (łącznie)', min: 1, max: 1000 },
     ],
   },
 ];
@@ -59,7 +64,7 @@ export default function ThresholdsPage() {
     <>
       <PageHeader
         title="Reguły i progi"
-        description="Kiedy backend tworzy alerty o lukach informacyjnych, możliwej dezinformacji i niebezpiecznych użytkownikach, kiedy blokuje, i jak długo przechowuje zapytania. Zmiany działają od następnego zapytania."
+        description="Kiedy backend tworzy alerty o lukach informacyjnych, możliwej dezinformacji, treściach niebezpiecznych i prompt injection, oraz jak długo przechowuje zapytania. Zmiany działają od następnego zapytania."
       />
       <Async state={config}>
         {/* Keyed by the saved values: after a save the form starts from the new config. */}
@@ -128,15 +133,8 @@ function ThresholdsForm({ config, onSaved }: { config: RuntimeConfig; onSaved: (
               </Field>
             ))}
           </div>
-          {group.title === 'Treści niebezpieczne' && (
+          {group.title.startsWith('Treści niebezpieczne') && (
             <div className="stack">
-              <Toggle
-                checked={form.auto_block}
-                disabled={!editable}
-                onChange={(v) => setForm({ ...form, auto_block: v })}
-                label="Automatyczna blokada"
-                description="Po przekroczeniu progu zapytań wysokiego ryzyka użytkownik jest czasowo blokowany."
-              />
               <Toggle
                 checked={form.refuse_high_risk}
                 disabled={!editable}
@@ -207,7 +205,7 @@ function ThresholdsForm({ config, onSaved }: { config: RuntimeConfig; onSaved: (
           </>
         }
       >
-        <p>Zapytania użytkowników i ich twierdzenia starsze niż podana liczba dni zostaną trwale usunięte.</p>
+        <p>Zapytania i ich twierdzenia starsze niż podana liczba dni zostaną trwale usunięte.</p>
         <Field label="Starsze niż (dni)">
           <input type="number" min={1} max={3650} value={purgeDays} onChange={(e) => setPurgeDays(e.target.value)} />
         </Field>

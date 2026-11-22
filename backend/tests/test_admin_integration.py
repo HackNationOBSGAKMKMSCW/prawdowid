@@ -54,7 +54,8 @@ def test_check_is_recorded_in_the_admin_journal(service):
     assert entry["verdict"] == "falsz"
     assert entry["claims"][0]["text"] == "Szczepionki powodują autyzm."
     assert entry["claims"][0]["sources_count"] == 1
-    assert entry["user_label"].startswith("***")  # adres klienta nie trafia do panelu wprost
+    # adres klienta nie trafia do panelu ani wprost, ani jako pseudonim
+    assert entry["user_key"] == "anonim" and entry["user_label"] is None
 
     listed = client.get("/api/admin/queries", headers=AUTH).json()
     assert [item["id"] for item in listed["items"]] == [entry["id"]]
@@ -89,20 +90,14 @@ def test_high_risk_request_is_refused_without_running_the_pipeline(service):
     assert items[0]["status"] == "odrzucone"
 
 
-def test_client_blocked_in_the_panel_cannot_check(service):
+def test_no_client_data_and_no_blocking(service):
+    """Strona jest anonimowa: nie ma rejestru klientów ani blokad, kolejne sprawdzenia przechodzą."""
     client, _, calls, _ = service
     client.get("/api/check", params={"text": "Szczepionki powodują autyzm."})
-    user = client.get("/api/admin/users", headers=AUTH).json()["items"][0]
-
-    blocked = client.post(
-        f"/api/admin/users/{user['user_key']}/block", json={"hours": 1}, headers=AUTH
-    )
-    assert blocked.status_code == 200
-
+    assert client.get("/api/admin/users", headers=AUTH).status_code == 404
     again = client.get("/api/check", params={"text": "Czy prąd zdrożeje?"})
-    assert again.status_code == 403
-    assert again.json()["error"]["code"] == "user_blocked"
-    assert len(calls) == 1
+    assert again.status_code == 200
+    assert len(calls) == 2
 
 
 def test_failed_analysis_is_recorded_as_an_error(service):
@@ -165,7 +160,7 @@ def test_known_disinformation_in_a_check_raises_an_admin_alert(service):
         "/api/admin/alerts", params={"type": "rosyjska_dezinformacja"}, headers=AUTH
     ).json()["items"]
     assert len(alerts) == 1
-    assert alerts[0]["count"] == 2 and alerts[0]["users"] == 1  # ten sam klient
+    assert alerts[0]["count"] == 2  # każde zapytanie osobno (bez danych o kliencie)
     occurrence = alerts[0]["details"]["wystapienia"][-1]
     assert occurrence["query_id"] == first["id"].replace("-", "")
     assert occurrence["kanal"] == "web" and occurrence["request_id"]

@@ -2,29 +2,33 @@
 
 Przepływ dla jednego zapytania::
 
-    decision = monitor.screen(user_id=..., text=..., channel="whatsapp")
+    decision = monitor.screen(text=..., channel="whatsapp")
     if not decision.allowed:
-        return decision.message  # zablokowany / treść wysokiego ryzyka
+        return decision.message  # prośba o instrukcje przemocy (treść wysokiego ryzyka)
     ...  # textAnalysis -> apiReading -> werdykt
     result = monitor.complete(decision.query_id, claims=[...], verdict=...)
     # result.message: komunikat o luce informacyjnej do dołączenia do odpowiedzi
 
+Bez danych o użytkownikach aplikacji: nie zapisujemy numerów telefonów, adresów IP,
+pseudonimów ani końcówek identyfikatorów. Każde zapytanie jest anonimowe
+(``user_key = ANONYMOUS_KEY``), więc nie ma rejestru użytkowników ani blokad, a reguły liczą
+zapytania, nie osoby.
+
 Reguły (progi w ``RuntimeConfig.monitoring``, zmieniane przez admina):
 
 * **luka informacyjna** — twierdzenie bez rozstrzygnięcia (``brak_wystarczajacych_danych``,
-  ``nieweryfikowalny`` albo brak jakichkolwiek źródeł). Liczenie (``info_gap_count_by``):
-  ``"auto"`` (domyślnie) — rozpoznana osoba (np. WhatsApp) liczy się raz, a każde anonimowe
-  zapytanie ze strony osobno, próg ``info_gap_min_users``; ``"osoby"`` — tylko różne
-  pseudonimy; ``"zapytania"`` — każde zapytanie, próg ``info_gap_min_queries``. Po
-  przekroczeniu progu w oknie czasu temat przechodzi w stan ``aktywna`` i powstaje alert.
-  Pierwsze rozstrzygnięcie ze źródłami zamyka lukę.
-* **kampania dezinformacyjna** — co najmniej ``disinfo_min_users`` różnych osób pyta w
-  krótkim oknie o twierdzenie ocenione jako fałsz.
-* **niebezpieczny użytkownik** — powtarzające się zapytania o terroryzm, broń, materiały
-  wybuchowe itp. (``safety.classify``): alert, a przy zamiarze operacyjnym blokada czasowa.
+  ``nieweryfikowalny`` albo brak jakichkolwiek źródeł). Gdy o ten sam temat zapytano co
+  najmniej ``info_gap_min_queries`` razy w oknie ``info_gap_window_hours``, temat przechodzi
+  w stan ``aktywna`` i powstaje alert. Pierwsze rozstrzygnięcie ze źródłami zamyka lukę.
+* **kampania dezinformacyjna** — co najmniej ``disinfo_min_users`` zapytań w krótkim oknie
+  o twierdzenie ocenione jako fałsz (nazwa pola historyczna: liczone są zapytania).
+* **treści niebezpieczne** — zapytania o terroryzm, broń, materiały wybuchowe itp.
+  (``safety.classify``): od ``dangerous_alert_after`` takich zapytań w oknie
+  ``dangerous_window_hours`` alert zbiorczy; prośba o instrukcję lub zdobycie (wysokie
+  ryzyko) jest odrzucana, gdy ``refuse_high_risk``.
 * **próba prompt injection** — tekst z poleceniami dla modelu (``observability.injection``):
-  flaga ``prompt_injection``, zdarzenie w logach, a od ``injection_alert_after`` prób jednej
-  osoby w oknie ``dangerous_window_hours`` alert. Tekst nadal jest sprawdzany jako dane.
+  flaga ``prompt_injection``, zdarzenie w logach, a od ``injection_alert_after`` prób w oknie
+  ``dangerous_window_hours`` alert zbiorczy. Tekst nadal jest sprawdzany jako dane.
 * **rosyjska dezinformacja** — twierdzenie z zapytania jest w bazie EUvsDisinfo (MCP):
   jeden alert na przypadek z bazy, każde kolejne zapytanie zwiększa licznik.
 * **SQL injection** — próba wstrzyknięcia SQL w parametrach żądania albo w treści
@@ -45,7 +49,7 @@ from typing import Any
 from . import topics
 from .runtime import MonitoringConfig, RuntimeConfigStore
 from .safety import classify
-from .settings import AdminSettings, user_label
+from .settings import AdminSettings
 from .sqli import scan_text
 from .store import AdminStore, new_id
 
@@ -59,7 +63,7 @@ ALERT_STATUSES = ("otwarty", "w_analizie", "rozwiazany", "falszywy_alarm")
 ALERT_TYPES = (
     "luka_informacyjna",
     "kampania_dezinformacyjna",
-    "niebezpieczny_uzytkownik",
+    "tresci_niebezpieczne",
     "prompt_injection",
     "rosyjska_dezinformacja",
     "sql_injection",
@@ -69,13 +73,8 @@ OCCURRENCE_LIMIT = 20
 SOURCES_LIMIT = 500
 DISINFO_LABEL = "Zweryfikowana rosyjska dezinformacja"
 INJECTION_FLAG = "prompt_injection"
-PERMANENT = "9999-12-31T23:59:59.000Z"
 TOPIC_LOOKBACK = timedelta(days=30)
 
-MESSAGE_BLOCKED = (
-    "Twoje zapytania są czasowo wstrzymane z powodu powtarzających się pytań o treści "
-    "niebezpieczne. Jeśli to pomyłka, skontaktuj się z administratorem serwisu."
-)
 MESSAGE_HIGH_RISK = (
     "Nie mogę pomóc w tej sprawie. Serwis sprawdza prawdziwość informacji i nie udziela "
     "instrukcji dotyczących broni, materiałów wybuchowych ani przemocy."
@@ -112,21 +111,16 @@ def times(count: int) -> str:
     return "1 raz" if count == 1 else f"{count} razy"
 
 
-ANONYMOUS_USER = "web"  # wspólny pseudonim zapisów anonimowych (strona bez logowania)
+# Jedyna wartość ``user_key`` w rejestrze: nie identyfikuje nikogo (migracja 0010 nadpisała nią
+# wcześniejsze pseudonimy).
+ANONYMOUS_KEY = "anonim"
 
 
 def gap_measure(
-    cfg: MonitoringConfig, *, users: int, queries: int, reporters: int | None = None
+    cfg: MonitoringConfig, *, users: int = 0, queries: int, reporters: int | None = None
 ) -> tuple[int, int]:
-    """(wartość liczona, próg) według ``info_gap_count_by``.
-
-    ``reporters`` (tryb ``auto``): rozpoznane osoby raz + każde anonimowe zapytanie osobno.
-    """
-    if cfg.info_gap_count_by == "osoby":
-        return users, cfg.info_gap_min_users
-    if cfg.info_gap_count_by == "zapytania":
-        return queries, cfg.info_gap_min_queries
-    return (users if reporters is None else reporters), cfg.info_gap_min_users
+    """(liczba zapytań bez rozstrzygnięcia, próg). Bez danych o osobach liczymy zapytania."""
+    return queries, cfg.info_gap_min_queries
 
 
 def _log(event: str, level: str = "info", **fields: Any) -> None:
@@ -261,7 +255,7 @@ class Monitor:
 
     @property
     def anonymous_key(self) -> str:
-        return self.settings.user_key(ANONYMOUS_USER)
+        return ANONYMOUS_KEY
 
     @property
     def config(self) -> MonitoringConfig:
@@ -275,26 +269,26 @@ class Monitor:
     def screen(
         self,
         *,
-        user_id: str,
         text: str,
         channel: str = "api",
         request_id: str | None = None,
         account_id: int | None = None,
         query_id: str | None = None,
-        anonymous: bool = False,
+        user_id: str | None = None,
+        anonymous: bool = True,
     ) -> ScreenDecision:
         """Zarejestruj zapytanie i zdecyduj, czy wolno je przetwarzać.
 
+        Zapis jest anonimowy: ``user_id`` (np. numer telefonu, adres IP) i ``anonymous`` są
+        przyjmowane tylko dla zgodności wywołań i niczego nie zapisują. Odmowa zależy wyłącznie
+        od treści (prośba o instrukcje przemocy).
+
         ``query_id``: własny identyfikator (np. id wyniku z ``/api/check``), żeby późniejsze
         zgłoszenie błędu trafiło do tego samego wpisu; domyślnie nowy.
-
-        ``anonymous=True`` (kanał bez identyfikacji osoby): wszyscy dzielą jeden pseudonim
-        kanału, więc nie ma rejestru użytkownika, blokad ani odmowy; flagi bezpieczeństwa
-        zostają tylko informacyjne. Zapytanie liczy się do luk informacyjnych jak każde inne.
         """
+        del user_id, anonymous  # nie zbieramy danych o użytkownikach aplikacji
         now, cfg = self.now(), self.config
         ts = iso(now)
-        key = self.anonymous_key if anonymous else self.settings.user_key(user_id)
         safety = classify(text)
         query_id = (query_id or new_id())[:32]
         flags = [f"niebezpieczne:{name}" for name in safety.categories]
@@ -308,8 +302,8 @@ class Monitor:
         self.store.insert_query(
             id=query_id,
             ts=ts,
-            user_key=key,
-            user_label=user_label(user_id),
+            user_key=ANONYMOUS_KEY,
+            user_label=None,
             channel=channel[:32],
             text=text[: self.settings.max_text_length],
             text_sha=hashlib.sha256(text.encode("utf-8", "replace")).hexdigest()[:16],
@@ -320,14 +314,13 @@ class Monitor:
             account_id=account_id,
         )
         decision = ScreenDecision(query_id=query_id, allowed=True, safety=safety.as_dict())
-        if sqli_patterns and not anonymous:
+        if sqli_patterns:
             # Ten sam tekst widzi też middleware HTTP (``request_audit``); po ``request_id``
             # oba zgłoszenia łączą się w jedno wystąpienie alertu.
             try:  # powiadomienie nigdy nie zmienia decyzji ani nie psuje zapytania
                 self.register_sql_injection(
                     channel=channel,
-                    source=key,
-                    source_label=user_label(user_id),
+                    source=None,
                     patterns=sqli_patterns,
                     locations=["tresc_wiadomosci"],
                     query_id=query_id,
@@ -336,38 +329,21 @@ class Monitor:
             except Exception as exc:  # noqa: BLE001
                 _log("admin_alert_failed", "warning", error_type=type(exc).__name__)
         if injection is not None:
-            _log_injection(text, injection, user_key=key, query_id=query_id, channel=channel[:32])
-        if anonymous:
-            if safety.dangerous:
-                _log("admin_sensitive_query", "warning", user_key=key, **safety.as_dict())
-            return decision
-        self.store.touch_user(key, user_label(user_id), ts, dangerous=safety.dangerous)
+            _log_injection(text, injection, query_id=query_id, channel=channel[:32])
+            self._watch_injection(now, cfg)
+        if safety.dangerous:
+            self._watch_dangerous_content(now, cfg)
 
-        if injection is not None:
-            self._watch_injection(key, now, cfg)
-
-        blocked_until = self._blocked_until(key, ts)
-        if blocked_until is None and safety.dangerous:
-            blocked_until = self._watch_dangerous_user(key, now, cfg)
-
-        if blocked_until is not None:
-            decision.allowed = False
-            decision.reason = "uzytkownik_zablokowany"
-            decision.message = MESSAGE_BLOCKED
-            decision.blocked_until = blocked_until
-        elif safety.severity == "wysoki" and cfg.refuse_high_risk:
+        if safety.severity == "wysoki" and cfg.refuse_high_risk:
             decision.allowed = False
             decision.reason = "niebezpieczna_tresc"
             decision.message = MESSAGE_HIGH_RISK
-
-        if not decision.allowed:
             flags.append(f"odrzucone:{decision.reason}")
             self.store.update_query(query_id, status="odrzucone", flags=flags, completed_at=ts)
             _log(
                 "admin_query_refused",
                 "warning",
                 reason=decision.reason,
-                user_key=key,
                 query_id=query_id,
                 channel=channel[:32],
                 **safety.as_dict(),
@@ -376,75 +352,53 @@ class Monitor:
             _log(
                 "admin_sensitive_query",
                 "warning",
-                user_key=key,
                 query_id=query_id,
                 channel=channel[:32],
                 **safety.as_dict(),
             )
         return decision
 
-    def _blocked_until(self, user_key: str, ts: str) -> str | None:
-        user = self.store.get_user(user_key)
-        until = user and user.get("blocked_until")
-        return until if until and until > ts else None
-
-    def _watch_dangerous_user(
-        self, user_key: str, now: datetime, cfg: MonitoringConfig
-    ) -> str | None:
-        """Alert przy powtarzających się zapytaniach; blokada przy zamiarze operacyjnym."""
+    def _watch_dangerous_content(self, now: datetime, cfg: MonitoringConfig) -> None:
+        """Alert zbiorczy, gdy w oknie przybywa zapytań o treści niebezpieczne."""
         since = iso(now - timedelta(hours=cfg.dangerous_window_hours))
-        total = self.store.dangerous_count(user_key, since)
-        high = self.store.dangerous_count(user_key, since, severity="wysoki")
-        blocked_until = None
-        if cfg.auto_block and high >= cfg.dangerous_block_after:
-            blocked_until = iso(now + timedelta(hours=cfg.dangerous_block_hours))
-            self.store.set_block(
-                user_key,
-                blocked_until,
-                f"automatycznie: {high} zapytań wysokiego ryzyka w ciągu "
-                f"{cfg.dangerous_window_hours} h",
-            )
-            _log("admin_user_blocked", "warning", user_key=user_key, until=blocked_until)
-        if total >= cfg.dangerous_alert_after or blocked_until:
-            categories = self._recent_categories(user_key, since)
-            self._upsert_alert(
-                "niebezpieczny_uzytkownik",
-                user_key,
-                now,
-                title=f"Powtarzające się zapytania o treści niebezpieczne ({total})",
-                severity="wysoka" if high else "srednia",
-                count=total,
-                users=1,
-                details={
-                    "okno_h": cfg.dangerous_window_hours,
-                    "wysokie_ryzyko": high,
-                    "kategorie": categories,
-                    "zablokowany_do": blocked_until,
-                },
-            )
-        return blocked_until
-
-    def _watch_injection(self, user_key: str, now: datetime, cfg: MonitoringConfig) -> None:
-        """Alert, gdy jedna osoba powtarza próby sterowania modelem."""
-        since = iso(now - timedelta(hours=cfg.dangerous_window_hours))
-        _, attempts = self.store.list_queries(
-            user_key=user_key, flag=INJECTION_FLAG, since=since, limit=1
+        total = self.store.dangerous_count(since)
+        if total < cfg.dangerous_alert_after:
+            return
+        high = self.store.dangerous_count(since, severity="wysoki")
+        self._upsert_alert(
+            "tresci_niebezpieczne",
+            "wszystkie",
+            now,
+            title=f"Zapytania o treści niebezpieczne ({total})",
+            severity="wysoka" if high else "srednia",
+            count=total,
+            users=0,
+            details={
+                "okno_h": cfg.dangerous_window_hours,
+                "wysokie_ryzyko": high,
+                "kategorie": self._recent_categories(since),
+            },
         )
+
+    def _watch_injection(self, now: datetime, cfg: MonitoringConfig) -> None:
+        """Alert zbiorczy, gdy w oknie powtarzają się próby sterowania modelem."""
+        since = iso(now - timedelta(hours=cfg.dangerous_window_hours))
+        _, attempts = self.store.list_queries(flag=INJECTION_FLAG, since=since, limit=1)
         if attempts >= cfg.injection_alert_after:
             self._upsert_alert(
                 "prompt_injection",
-                user_key,
+                "wszystkie",
                 now,
                 title=f"Powtarzające się próby prompt injection ({attempts})",
                 severity="wysoka" if attempts >= 2 * cfg.injection_alert_after else "srednia",
                 count=attempts,
-                users=1,
+                users=0,
                 details={"okno_h": cfg.dangerous_window_hours},
             )
 
-    def _recent_categories(self, user_key: str, since: str) -> dict[str, int]:
+    def _recent_categories(self, since: str) -> dict[str, int]:
         counts: dict[str, int] = {}
-        queries, _ = self.store.list_queries(user_key=user_key, since=since, limit=200)
+        queries, _ = self.store.list_queries(flag="niebezpieczne", since=since, limit=500)
         for query in queries:
             for name in (query.get("safety") or {}).get("categories", []):
                 counts[name] = counts.get(name, 0) + 1
@@ -525,10 +479,7 @@ class Monitor:
         )
         message = None
         if active_gaps:
-            if cfg.info_gap_count_by == "zapytania":
-                asked = f"pytano o niego już {times(max(s.info_gap_queries for s in active_gaps))}"
-            else:
-                asked = f"pytało o niego już {persons(max(s.info_gap_count for s in active_gaps))}"
+            asked = f"pytano o niego już {times(max(s.info_gap_queries for s in active_gaps))}"
             message = (
                 "Ten temat jest oznaczony jako luka informacyjna: nie mamy wiarygodnych źródeł, "
                 f"a {asked}. Zgłosiliśmy go do uzupełnienia."
@@ -540,17 +491,18 @@ class Monitor:
     def record(
         self,
         *,
-        user_id: str,
         text: str,
         channel: str = "api",
         claims: Sequence[ClaimInput] = (),
         verdict: str | None = None,
         sources_count: int | None = None,
         error: str | None = None,
-        anonymous: bool = False,
+        user_id: str | None = None,
+        anonymous: bool = True,
     ) -> tuple[ScreenDecision, CompletionResult | None]:
-        """Zapis po fakcie (gdy potok już się wykonał): screen + complete."""
-        decision = self.screen(user_id=user_id, text=text, channel=channel, anonymous=anonymous)
+        """Zapis po fakcie (gdy potok już się wykonał): screen + complete. Anonimowo."""
+        del user_id, anonymous
+        decision = self.screen(text=text, channel=channel)
         if not decision.allowed:
             return decision, None
         result = self.complete(
@@ -579,17 +531,16 @@ class Monitor:
     def _update_gap(
         self, topic_id: str, now: datetime, cfg: MonitoringConfig
     ) -> tuple[str, int, int, int]:
-        """Policz zapytania i osoby bez pokrycia w oknie; przy progu: luka aktywna + alert."""
+        """Policz zapytania bez pokrycia w oknie; przy progu: luka aktywna + alert."""
         topic = self.store.topic_row(topic_id) or {}
         status = topic.get("gap_status", "brak")
         since = iso(now - timedelta(hours=cfg.info_gap_window_hours))
         if status in ("zamknieta", "odrzucona") and (topic.get("gap_updated_at") or "") > since:
             since = topic["gap_updated_at"]  # po decyzji admina liczymy od nowa
         counts = self.store.gap_counts(topic_id, "luka", since, self.anonymous_key)
-        users, queries = counts["users"], counts["queries"]
-        counted, threshold = gap_measure(
-            cfg, users=users, queries=queries, reporters=counts["reporters"]
-        )
+        # Bez danych o osobach: liczba „osób” zawsze 0, liczą się zapytania.
+        users, queries = 0, counts["queries"]
+        counted, threshold = gap_measure(cfg, queries=queries, reporters=counts["reporters"])
         ts = iso(now)
         counters = {"gap_users": users, "gap_queries": queries}
 
@@ -619,7 +570,7 @@ class Monitor:
                 details={
                     "temat": topic.get("label"),
                     "okno_h": cfg.info_gap_window_hours,
-                    "liczone_po": cfg.info_gap_count_by,
+                    "liczone_po": "zapytania",
                     "prog": threshold,
                     "wartosc": counted,
                 },
@@ -645,8 +596,8 @@ class Monitor:
 
     def _watch_disinformation(self, topic_id: str, now: datetime, cfg: MonitoringConfig) -> bool:
         since = iso(now - timedelta(hours=cfg.disinfo_window_hours))
-        users = self.store.distinct_users(topic_id, "falsz", since)
-        if users < cfg.disinfo_min_users:
+        queries = self.store.distinct_queries(topic_id, "falsz", since)
+        if queries < cfg.disinfo_min_users:  # pole historyczne: liczymy zapytania
             return False
         topic = self.store.topic_row(topic_id) or {}
         self._upsert_alert(
@@ -654,9 +605,9 @@ class Monitor:
             topic_id,
             now,
             title=f"Możliwy atak dezinformacyjny: {topic.get('label', '')[:120]}",
-            severity="wysoka" if users >= 2 * cfg.disinfo_min_users else "srednia",
-            count=self.store.claim_count(topic_id, "falsz", since),
-            users=users,
+            severity="wysoka" if queries >= 2 * cfg.disinfo_min_users else "srednia",
+            count=queries,
+            users=0,
             details={"temat": topic.get("label"), "okno_h": cfg.disinfo_window_hours},
         )
         return True
@@ -747,13 +698,12 @@ class Monitor:
         threshold = gap_measure(cfg, users=0, queries=0)[1]
         items = []
         for row in rows:
-            counted = gap_measure(
-                cfg, users=row["users"], queries=row["queries"], reporters=row["reporters"]
-            )[0]
+            counted = gap_measure(cfg, queries=row["queries"], reporters=row["reporters"])[0]
             bucket = per_topic.get(row["topic_id"], {})
             items.append(
                 {
                     **row,
+                    "users": 0,  # bez danych o osobach
                     "last_seen": _iso_value(row["last_seen"]),
                     "gap_since": _iso_value(row.get("gap_since")),
                     "count": counted,
@@ -764,7 +714,7 @@ class Monitor:
         return {
             "generated_at": iso(now),
             "window_hours": hours,
-            "count_by": cfg.info_gap_count_by,
+            "count_by": "zapytania",
             "threshold": threshold,
             "total": total,
             "limit": limit,
@@ -813,12 +763,8 @@ class Monitor:
         """
         alert_ids = []
         query = self.store.get_query(query_id) if query_id else None
-        user_key = (query or {}).get("user_key")
-        # Rozpoznana osoba liczy się raz; anonimowe zapytanie (strona) — każde osobno.
-        if user_key and user_key != self.anonymous_key:
-            reporter = user_key
-        else:
-            reporter = f"zapytanie:{query_id}" if query_id else None
+        # Bez danych o osobach: każde zapytanie liczy się osobno.
+        reporter = f"zapytanie:{query_id}" if query_id else None
         for match in matches:
             url = str(match.get("url") or match.get("case_id") or "").strip()
             if not url:
@@ -998,19 +944,6 @@ class Monitor:
                 updated_at=ts,
             )
         return self.store.get_topic(topic_id)
-
-    def block_user(self, user_key: str, hours: int | None, reason: str | None) -> dict:
-        if self.store.get_user(user_key) is None:
-            raise KeyError(user_key)
-        until = PERMANENT if hours is None else iso(self.now() + timedelta(hours=hours))
-        self.store.set_block(user_key, until, reason or "decyzja administratora")
-        return self.store.get_user(user_key)
-
-    def unblock_user(self, user_key: str) -> dict:
-        if self.store.get_user(user_key) is None:
-            raise KeyError(user_key)
-        self.store.set_block(user_key, None, None)
-        return self.store.get_user(user_key)
 
     def purge_expired(self) -> dict[str, int]:
         before = iso(self.now() - timedelta(days=self.config.retention_days))

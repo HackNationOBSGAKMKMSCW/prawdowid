@@ -1,7 +1,8 @@
 """Most między botem a monitorem panelu admina (``backend/admin``).
 
-Bot przed sprawdzeniem pyta monitor, czy wolno przetwarzać wiadomość (blokady,
-treści wysokiego ryzyka), a po sprawdzeniu zapisuje wynik. Na tej podstawie monitor
+Bot przed sprawdzeniem pyta monitor, czy wolno przetwarzać wiadomość (prośby o instrukcje
+przemocy są odrzucane), a po sprawdzeniu zapisuje wynik. Numer telefonu nadawcy nie trafia
+do monitora: rejestr panelu jest anonimowy. Na tej podstawie monitor
 wykrywa luki informacyjne i możliwe ataki dezinformacyjne. Awaria monitora nigdy nie
 przerywa rozmowy: bot wtedy działa dalej bez rejestru.
 """
@@ -32,7 +33,7 @@ _MONITOR_VERDICT: dict[OverallVerdict, str | None] = {
 
 
 class AdminMonitor(Protocol):
-    def screen(self, *, user_id: str, text: str, channel: str = ...) -> Any: ...
+    def screen(self, *, text: str, channel: str = ...) -> Any: ...
 
     def complete(self, query_id: str, **kwargs: Any) -> Any: ...
 
@@ -124,11 +125,15 @@ class AdminSession:
         self.completed = False
 
     def screen(self, user_id: str, text: str) -> str | None:
-        """Zwraca komunikat odmowy albo ``None``, gdy wiadomość można sprawdzić."""
+        """Zwraca komunikat odmowy albo ``None``, gdy wiadomość można sprawdzić.
+
+        ``user_id`` (numer nadawcy) służy tylko rozmowie — do monitora go nie przekazujemy.
+        """
+        del user_id
         if self.monitor is None:
             return None
         try:
-            decision = self.monitor.screen(user_id=user_id, text=text, channel="whatsapp")
+            decision = self.monitor.screen(text=text, channel="whatsapp")
         except Exception as exc:  # noqa: BLE001
             print(f"[whatsappAdapter] Monitor admina: błąd ({type(exc).__name__}).", flush=True)
             return None

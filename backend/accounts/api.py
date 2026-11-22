@@ -36,6 +36,8 @@ from .trusted import SourceError, TrustedSourceRepository
 
 # Konta zakłada administrator w panelu; tylko role panelu (konta „user” nie mają dostępu).
 Role = Literal["analyst", "admin"]
+# Panel zarządza tylko kontami panelu; konta aplikacji (rola ``user``) są dla niego niewidoczne.
+PANEL_ROLES: tuple[str, ...] = ("analyst", "admin")
 
 
 @dataclass(frozen=True)
@@ -363,7 +365,7 @@ def create_management_router(
 
     def account_or_404(user_id: int) -> User:
         user = accounts.get_user(user_id)
-        if user is None:
+        if user is None or user.role not in PANEL_ROLES:
             raise HTTPException(404, f"Nie znaleziono konta {user_id}.")
         return user
 
@@ -374,7 +376,8 @@ def create_management_router(
         q: str | None = Query(None, max_length=100),
         _: Principal = Depends(guard.require("users:read")),
     ) -> list[dict[str, Any]]:
-        return [user.public() for user in accounts.list_users(role=role, active=active, search=q)]
+        users = accounts.list_users(role=role, roles=PANEL_ROLES, active=active, search=q)
+        return [user.public() for user in users]
 
     @router.post("/accounts", tags=["accounts"])
     def create_account(

@@ -1,8 +1,9 @@
 """Trwały rejestr panelu admina w SQLite (stdlib, jeden plik, tryb WAL).
 
-Tabele: ``queries`` (zapytania użytkowników), ``claims`` (twierdzenia z werdyktem i
-tematem), ``topics`` (grupy podobnych twierdzeń + stan luki informacyjnej), ``users``
-(pseudonimy, liczniki, blokady), ``alerts`` (zdarzenia dla admina), ``config_audit``.
+Tabele: ``user_queries`` (zapytania, anonimowe), ``query_claims`` (twierdzenia z werdyktem
+i tematem), ``query_topics`` (grupy podobnych twierdzeń + stan luki informacyjnej),
+``monitor_alerts`` (zdarzenia dla admina), ``config_audit``. Bez danych o użytkownikach
+aplikacji: ``user_key`` ma zawsze wartość ``monitor.ANONYMOUS_KEY``, ``user_label`` jest pusty.
 """
 
 from __future__ import annotations
@@ -68,17 +69,6 @@ CREATE TABLE IF NOT EXISTS query_topics (
 );
 CREATE INDEX IF NOT EXISTS ix_query_topics_seen ON query_topics(last_seen);
 
-CREATE TABLE IF NOT EXISTS end_users (
-    user_key TEXT PRIMARY KEY,
-    label TEXT,
-    first_seen TEXT NOT NULL,
-    last_seen TEXT NOT NULL,
-    queries INTEGER NOT NULL DEFAULT 0,
-    dangerous INTEGER NOT NULL DEFAULT 0,
-    blocked_until TEXT,
-    block_reason TEXT
-);
-
 CREATE TABLE IF NOT EXISTS monitor_alerts (
     id TEXT PRIMARY KEY,
     type TEXT NOT NULL,
@@ -112,6 +102,14 @@ LATER_COLUMNS = {
     "user_queries": {"report": "TEXT"},  # zgłoszenia błędów ze strony
     "query_topics": {"gap_queries": "INTEGER NOT NULL DEFAULT 0"},
 }
+
+_FORGET_END_USERS = """
+UPDATE user_queries SET user_key = 'anonim', user_label = NULL
+    WHERE user_key <> 'anonim' OR user_label IS NOT NULL;
+UPDATE query_claims SET user_key = 'anonim' WHERE user_key <> 'anonim';
+DELETE FROM monitor_alerts WHERE type = 'niebezpieczny_uzytkownik';
+DROP TABLE IF EXISTS end_users;
+"""
 
 OPEN_ALERT_STATUSES = ("otwarty", "w_analizie")
 GAP_SORTS = {"zapytania": "gap_queries", "osoby": "gap_users", "auto": "gap_queries"}
@@ -166,6 +164,8 @@ class AdminStore:
                 for name, definition in columns.items():
                     if name not in present:
                         self._db.execute(f"ALTER TABLE {table} ADD COLUMN {name} {definition}")
+            # Starsze pliki: bez danych o użytkownikach aplikacji (jak migracja 0010 w PostgreSQL).
+            self._db.executescript(_FORGET_END_USERS)
             self._db.commit()
 
     def close(self) -> None:
@@ -235,7 +235,6 @@ class AdminStore:
     def list_queries(
         self,
         *,
-        user_key: str | None = None,
         account_id: int | None = None,
         flag: str | None = None,
         verdict: str | None = None,
@@ -247,9 +246,6 @@ class AdminStore:
         offset: int = 0,
     ) -> tuple[list[dict[str, Any]], int]:
         where, params = [], []
-        if user_key:
-            where.append("user_key = ?")
-            params.append(user_key)
         if account_id is not None:
             where.append("account_id = ?")
             params.append(account_id)
@@ -433,14 +429,6 @@ class AdminStore:
         )[0]
         return {"uncovered_queries": int(uncovered), "total_queries": int(completed)}
 
-    def distinct_users(self, topic_id: str, kind: str, since: str) -> int:
-        row = self._one(
-            "SELECT COUNT(DISTINCT user_key) FROM query_claims WHERE topic_id = ? AND kind = ? "
-            "AND ts >= ?",
-            [topic_id, kind, since],
-        )
-        return int(row[0])
-
     def claim_count(self, topic_id: str, kind: str, since: str) -> int:
         row = self._one(
             "SELECT COUNT(*) FROM query_claims WHERE topic_id = ? AND kind = ? AND ts >= ?",
@@ -448,49 +436,15 @@ class AdminStore:
         )
         return int(row[0])
 
-    # --- użytkownicy -------------------------------------------------------------------
+    # --- treści niebezpieczne (zbiorczo, bez danych o osobach) ---------------------------
 
-    def touch_user(self, user_key: str, label: str, ts: str, *, dangerous: bool) -> None:
-        self._execute(
-            "INSERT INTO end_users (user_key, label, first_seen, last_seen, queries, dangerous) "
-            "VALUES (?, ?, ?, ?, 1, ?) ON CONFLICT(user_key) DO UPDATE SET "
-            "last_seen = excluded.last_seen, queries = end_users.queries + 1, "
-            "dangerous = end_users.dangerous + excluded.dangerous",
-            [user_key, label, ts, ts, int(dangerous)],
-        )
-
-    def get_user(self, user_key: str) -> dict[str, Any] | None:
-        return _row(self._one("SELECT * FROM end_users WHERE user_key = ?", [user_key]))
-
-    def list_users(
-        self, *, flagged: bool = False, blocked_at: str | None = None, limit: int = 100
-    ) -> list[dict[str, Any]]:
-        where = []
-        params: list[Any] = []
-        if flagged:
-            where.append("dangerous > 0")
-        if blocked_at:
-            where.append("blocked_until > ?")
-            params.append(blocked_at)
-        clause = f"WHERE {' AND '.join(where)}" if where else ""
-        rows = self._all(
-            f"SELECT * FROM end_users {clause} ORDER BY dangerous DESC, last_seen DESC LIMIT ?",
-            [*params, limit],
-        )
-        return [dict(row) for row in rows]
-
-    def set_block(self, user_key: str, until: str | None, reason: str | None) -> None:
-        self._execute(
-            "UPDATE end_users SET blocked_until = ?, block_reason = ? WHERE user_key = ?",
-            [until, reason, user_key],
-        )
-
-    def dangerous_count(self, user_key: str, since: str, *, severity: str | None = None) -> int:
-        sql = f"SELECT COUNT(*) FROM user_queries WHERE user_key = ? AND ts >= ? AND {self._SEVERITY} "
+    def dangerous_count(self, since: str, *, severity: str | None = None) -> int:
+        """Zapytania o treści niebezpieczne od ``since`` (``severity``: tylko dany poziom)."""
+        sql = f"SELECT COUNT(*) FROM user_queries WHERE ts >= ? AND {self._SEVERITY} "
         if severity:
-            row = self._one(sql + "= ?", [user_key, since, severity])
+            row = self._one(sql + "= ?", [since, severity])
         else:
-            row = self._one(sql + "IN ('sredni', 'wysoki')", [user_key, since])
+            row = self._one(sql + "IN ('sredni', 'wysoki')", [since])
         return int(row[0])
 
     # --- alerty ------------------------------------------------------------------------
@@ -573,7 +527,7 @@ class AdminStore:
         rows = self._all("SELECT * FROM config_audit ORDER BY id DESC LIMIT ?", [limit])
         return [_row(row, ("old", "new")) for row in rows]
 
-    def stats(self, since: str, now: str) -> dict[str, Any]:
+    def stats(self, since: str, now: str | None = None) -> dict[str, Any]:
         def scalar(sql: str, params: Iterable[Any] = ()) -> int:
             return int(self._one(sql, params)[0])
 
@@ -599,7 +553,6 @@ class AdminStore:
         }
         return {
             "queries": scalar("SELECT COUNT(*) FROM user_queries WHERE ts >= ?", [since]),
-            "users": scalar("SELECT COUNT(DISTINCT user_key) FROM user_queries WHERE ts >= ?", [since]),
             "dangerous_queries": scalar(
                 "SELECT COUNT(*) FROM user_queries WHERE ts >= ? "
                 f"AND {self._SEVERITY} IN ('sredni', 'wysoki')",
@@ -612,7 +565,6 @@ class AdminStore:
                 "SELECT COUNT(*) FROM query_topics WHERE gap_status IN ('aktywna', 'w_uzupelnianiu')"
             ),
             "uncovered_queries": scalar(_UNCOVERED_QUERIES, [since]),
-            "blocked_users": scalar("SELECT COUNT(*) FROM end_users WHERE blocked_until > ?", [now]),
         }
 
     def purge(self, before: str) -> dict[str, int]:
@@ -677,8 +629,16 @@ _JSON_COLUMNS = frozenset({"flags", "safety", "tokens", "details", "old", "new",
 
 
 def _json_as_text(row: Any) -> Any:
+    """Kolumny jsonb jako tekst JSON; pozostałe wiersze bez zmian.
+
+    Wiersza bez kolumn JSON nie przebudowujemy: agregaty bez aliasu (np. dwa ``COUNT(...)``)
+    mają w PostgreSQL tę samą nazwę ``count``, więc przebudowa po nazwach gubiła wartości
+    i odczyt ``row[2]`` kończył się ``IndexError`` (luki informacyjne nie powstawały).
+    """
     if row is None:
         return None
+    if not any(c in _JSON_COLUMNS and row[c] is not None for c in row):
+        return row
     from database import Row
 
     columns = list(row.keys())

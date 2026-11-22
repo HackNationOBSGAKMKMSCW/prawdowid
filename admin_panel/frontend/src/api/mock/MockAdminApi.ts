@@ -17,8 +17,6 @@ import type {
   AvailableModels,
   CheckFlag,
   ConfigChange,
-  EndUser,
-  EndUserDetail,
   Feature,
   PurgeResult,
   RuntimeConfig,
@@ -910,18 +908,6 @@ export class MockAdminApi implements AdminApi {
     return Promise.reject(unsupported('Zmiana hasła'));
   }
 
-  listEndUsers(): Promise<EndUser[]> {
-    return Promise.reject(unsupported('Użytkownicy serwisu'));
-  }
-  getEndUser(): Promise<EndUserDetail> {
-    return Promise.reject(unsupported('Użytkownicy serwisu'));
-  }
-  blockEndUser(): Promise<EndUser> {
-    return Promise.reject(unsupported('Blokada użytkownika'));
-  }
-  unblockEndUser(): Promise<EndUser> {
-    return Promise.reject(unsupported('Blokada użytkownika'));
-  }
   updateGapStatus(): Promise<QueryCluster> {
     return Promise.reject(unsupported('Stan luki informacyjnej'));
   }

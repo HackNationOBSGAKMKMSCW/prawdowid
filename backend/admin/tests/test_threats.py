@@ -91,14 +91,14 @@ def test_report_combines_the_three_threats(monitor, logs):
     report = threat_report(logs, monitor.store, hours=24, now=monitor.now() + timedelta(seconds=1))
 
     summary = report["summary"]
-    assert summary["prompt_injection"] == 1 and summary["prompt_injection_users"] == 1
+    assert summary["prompt_injection"] == 1 and "prompt_injection_users" not in summary
     assert summary["manipulation_campaigns"] == 1
     assert summary["critical_queries"] >= 2 and summary["refused"] >= 1
     injection = report["prompt_injection"]["recent"][0]
     assert injection["channel"] == "whatsapp" and injection["text"] == INJECTION
-    assert injection["user_label"] == "***"
+    assert "user_label" not in injection and "user_key" not in injection  # bez danych o osobie
     campaign = report["manipulation"]["campaigns"][0]
-    assert campaign["users"] >= 2 and campaign["status"] == "otwarty"
+    assert campaign["count"] >= 2 and campaign["status"] == "otwarty"
     assert "mikrochipy" in campaign["claim"]
     critical = report["critical"]
     assert critical["by_category"] and any(item["refused"] for item in critical["recent"])

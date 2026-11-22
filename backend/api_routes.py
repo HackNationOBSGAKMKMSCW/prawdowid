@@ -174,10 +174,7 @@ async def check(
 
 
 def _refusal(reason: str | None) -> ApiFailure:
-    if reason == "uzytkownik_zablokowany":
-        return ApiFailure(
-            403, "user_blocked", "Checks from this client are temporarily suspended."
-        )
+    del reason  # jedyny powód odmowy: treść wysokiego ryzyka (nikogo nie blokujemy)
     return ApiFailure(
         422, "request_refused", "This request asks for harmful instructions and was not checked."
     )

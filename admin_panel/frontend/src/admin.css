@@ -1580,6 +1580,17 @@ input[type='checkbox'] {
   margin-bottom: 6px;
 }
 
+.alert-occurrences {
+  margin: 8px 0;
+}
+.alert-occurrences summary {
+  cursor: pointer;
+  color: var(--text-2);
+}
+.alert-occurrences .threat-list {
+  margin-top: 6px;
+}
+
 .alert-rule,
 .alert-notify {
   display: flex;

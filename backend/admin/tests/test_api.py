@@ -102,9 +102,9 @@ def test_user_logs_and_filters(env):
     query_id = found["items"][0]["id"]
     detail = client.get(f"/api/admin/queries/{query_id}", headers=AUTH).json()
     assert detail["claims"][0]["verdict"] == "prawda"
-    user_key = detail["user_key"]
-    user = client.get(f"/api/admin/users/{user_key}", headers=AUTH).json()
-    assert user["total_queries"] == 1 and user["label"] == "***100"
+    # bez danych o użytkownikach aplikacji: ani pseudonimu, ani końcówki numeru
+    assert detail["user_key"] == "anonim" and detail["user_label"] is None
+    assert client.get("/api/admin/users", headers=AUTH).status_code == 404
 
     dashboard = client.get("/api/admin/dashboard", headers=AUTH).json()
     assert dashboard["queries"] == 2 and dashboard["dangerous_queries"] == 1
@@ -126,12 +126,12 @@ def test_info_gap_and_alert_workflow(env):
         monitor.record(user_id=user, text=claim, claims=[ClaimInput(claim, None, 0)])
 
     gaps = client.get("/api/admin/info-gaps", headers=AUTH).json()["items"]
-    assert len(gaps) == 1 and gaps[0]["gap_users"] == 3
+    assert len(gaps) == 1 and gaps[0]["gap_queries"] == 3
     topic_id = gaps[0]["id"]
 
     alerts = client.get("/api/admin/alerts?type=luka_informacyjna", headers=AUTH).json()["items"]
     detail = client.get(f"/api/admin/alerts/{alerts[0]['id']}", headers=AUTH).json()
-    assert detail["topic"]["by_kind"]["luka"]["users"] == 3
+    assert detail["topic"]["by_kind"]["luka"]["claims"] == 3 and detail["count"] == 3
 
     updated = client.post(
         f"/api/admin/info-gaps/{topic_id}",
@@ -147,19 +147,18 @@ def test_info_gap_and_alert_workflow(env):
     assert bad.status_code == 422
 
 
-def test_block_endpoints(env):
+def test_no_end_user_endpoints(env):
+    """Rejestr użytkowników aplikacji i blokady zostały usunięte."""
     client, monitor, _ = env
     decision = monitor.screen(user_id="+48300", text="pytanie")
-    key = monitor.store.get_query(decision.query_id)["user_key"]
-    blocked = client.post(
-        f"/api/admin/users/{key}/block", headers=AUTH, json={"hours": None, "reason": "spam"}
-    ).json()
-    assert blocked["blocked_until"].startswith("9999")
-    assert not monitor.screen(user_id="+48300", text="pytanie").allowed
-    client.post(f"/api/admin/users/{key}/unblock", headers=AUTH)
-    assert monitor.screen(user_id="+48300", text="pytanie").allowed
-    listed = client.get("/api/admin/users?flagged=false", headers=AUTH).json()["items"]
-    assert listed[0]["user_key"] == key
+    assert monitor.store.get_query(decision.query_id)["user_key"] == "anonim"
+    for method, path in (
+        ("get", "/api/admin/users"),
+        ("get", "/api/admin/users/anonim"),
+        ("post", "/api/admin/users/anonim/block"),
+        ("post", "/api/admin/users/anonim/unblock"),
+    ):
+        assert getattr(client, method)(path, headers=AUTH).status_code in (404, 405), path
 
 
 def test_change_models_and_apis(env):
@@ -267,12 +266,12 @@ def test_uncovered_ranking_and_summary(env):
     _web(monitor, "Wisła jest najdłuższą rzeką w Polsce", "prawda")
 
     ranking = client.get("/api/admin/info-gaps/ranking", headers=AUTH).json()
-    assert ranking["count_by"] == "auto" and ranking["threshold"] == 3
+    assert ranking["count_by"] == "zapytania" and ranking["threshold"] == 3
     assert ranking["total"] == 2
     first, second = ranking["items"]
     assert first["label"].startswith("W Pcimiu") and first["queries"] == 3
     assert first["gap_status"] == "aktywna" and first["over_threshold"] is True
-    assert first["count"] == 3  # tryb auto: każde anonimowe zapytanie liczy się osobno
+    assert first["count"] == 3  # każde zapytanie liczy się osobno (bez danych o osobach)
     assert second["queries"] == 1 and second["over_threshold"] is False
     assert second["gap_status"] == "podejrzenie"
     assert ranking["items"][0]["trend"][-1]["queries"] == 3
@@ -309,15 +308,16 @@ def test_uncovered_endpoints_require_permission_and_validate(env):
     assert empty["top"] == []
 
 
-def test_count_mode_is_configurable(env):
+def test_gap_threshold_counts_queries(env):
+    """Próg luki to liczba zapytań; dawne „osoby” nic nie zmieniają (nie ma danych o osobach)."""
     client, monitor, _ = env
-    patch = {"monitoring": {"info_gap_count_by": "osoby", "info_gap_min_users": 2}}
+    patch = {"monitoring": {"info_gap_count_by": "osoby", "info_gap_min_queries": 2}}
     assert client.patch("/api/admin/config", headers=AUTH, json=patch).status_code == 200
-    for _ in range(3):
-        _web(monitor, GAP)  # jedna „osoba” (strona) — w trybie osób to za mało
+    for _ in range(2):
+        _web(monitor, GAP)
     ranking = client.get("/api/admin/info-gaps/ranking", headers=AUTH).json()
-    assert ranking["threshold"] == 2 and ranking["items"][0]["over_threshold"] is False
-    assert ranking["items"][0]["gap_status"] == "podejrzenie"
+    assert ranking["threshold"] == 2 and ranking["items"][0]["over_threshold"] is True
+    assert ranking["items"][0]["gap_status"] == "aktywna"
 
     bad = {"monitoring": {"info_gap_count_by": "sesje"}}
     assert client.patch("/api/admin/config", headers=AUTH, json=bad).status_code == 422

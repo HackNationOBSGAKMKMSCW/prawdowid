@@ -10,7 +10,7 @@ import { useAsync } from '../hooks/useAsync.ts';
 import { fmtDate, fmtRelative } from '../utils/format.ts';
 
 const ROLE_INFO: Record<Role, string> = {
-  admin: 'Pełna kontrola nad serwisem: modele, źródła, reguły, blokady, konta i hasła.',
+  admin: 'Pełna kontrola nad panelem: modele, źródła, reguły, konta i hasła.',
   analyst:
     'Panel obserwacyjny: pulpit, statystyki, alerty, luki, historia weryfikacji, logi i źródła — tylko do odczytu, z eksportem.',
   user: 'Konto bez dostępu do panelu.',
@@ -81,10 +81,10 @@ export default function UsersPage() {
   return (
     <>
       <PageHeader
-        title="Użytkownicy i role"
+        title="Konta panelu i role"
         description={
           withPasswords
-            ? 'Konta z dostępem do panelu i ich role. Hasła i tokeny sesji są w bazie tylko jako skróty (scrypt, SHA-256).'
+            ? 'Konta z dostępem do panelu i ich role. Hasła i tokeny sesji są w bazie tylko jako skróty (scrypt, SHA-256). Konta aplikacji nie są tu pokazywane.'
             : 'Kto ma dostęp do panelu i kogo można wskazać jako odbiorcę alertów lub spraw.'
         }
         actions={
@@ -98,7 +98,7 @@ export default function UsersPage() {
                 setInviting(true);
               }}
             >
-              <Icon name="plus" size={16} /> Dodaj użytkownika
+              <Icon name="plus" size={16} /> Dodaj konto
             </button>
           )
         }
@@ -119,7 +119,7 @@ export default function UsersPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {list.map((u) => (
+                    {list.filter((u) => PANEL_ROLES.includes(u.role)).map((u) => (
                       <tr key={u.id}>
                         <td>
                           <strong>{u.name}</strong> {u.id === me?.id && <Badge tone="info">to Ty</Badge>}

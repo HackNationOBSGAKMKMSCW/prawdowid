@@ -23,11 +23,11 @@ def test_migrations_create_all_tables_and_are_idempotent(db):
         "user_queries",
         "query_claims",
         "query_topics",
-        "end_users",
         "monitor_alerts",
         "config_audit",
         "schema_migrations",
     } <= tables
+    assert "end_users" not in tables  # 0010: bez rejestru użytkowników aplikacji
     assert migrate(db) == []  # druga próba nic nie robi
     assert all(row["applied_at"] and not row["changed"] for row in status(db))
 
@@ -230,7 +230,7 @@ def test_query_journal_on_postgres(clean_db, tmp_path):
     claim = "W Pcimiu Dolnym zamknięto wszystkie szkoły w listopadzie"
     for user in ("a", "b", "c"):
         _, result = monitor.record(user_id=user, text=claim, claims=[ClaimInput(claim, None, 0)])
-    assert result.info_gap and result.claims[0].info_gap_users == 3
+    assert result.info_gap and result.claims[0].info_gap_queries == 3
 
     runtime.update({"monitoring": {"disinfo_min_users": 2}})
     false = "Szczepionki zawierają mikrochipy 5G"
@@ -246,15 +246,40 @@ def test_query_journal_on_postgres(clean_db, tmp_path):
     stats = monitor.store.stats("2000-01-01T00:00:00Z", "2100-01-01T00:00:00Z")
     assert stats["queries"] == 6 and stats["dangerous_queries"] == 1
     assert stats["open_alerts"] == {"luka_informacyjna": 1, "kampania_dezinformacyjna": 1}
-    key = items[0]["user_key"]
-    assert monitor.store.dangerous_count(key, "2000-01-01T00:00:00Z", severity="wysoki") == 1
-    monitor.block_user(key, None, "test")
-    assert not monitor.screen(user_id="z", text="Ile wynosi VAT?").allowed
+    assert monitor.store.dangerous_count("2000-01-01T00:00:00Z", severity="wysoki") == 1
+    # bez danych o użytkownikach: same znaczniki „anonim”, bez końcówek numerów
+    rows = clean_db.fetch_all("SELECT DISTINCT user_key, user_label FROM user_queries")
+    assert [(r["user_key"], r["user_label"]) for r in rows] == [("anonim", None)]
+    assert monitor.screen(user_id="z", text="Ile wynosi VAT?").allowed  # brak blokad
     monitor.store.add_audit(
         "2026-11-22T00:00:00Z", "test", [{"field": "a", "old": None, "new": "x"}]
     )
     assert monitor.store.list_audit()[0]["new"] == "x"
     assert monitor.store.purge("2100-01-01T00:00:00Z")["queries"] == 7
+
+
+def test_migration_0010_forgets_end_user_data(db):
+    """Dane zapisane przed 0010 (pseudonimy, końcówki numerów, blokady) znikają."""
+    from database.migrate import discover
+
+    db.execute(
+        "INSERT INTO user_queries (id, ts, user_key, user_label, channel, status) "
+        "VALUES ('q-stare', now(), 'a1b2c3d4e5f6a7b8', '***456', 'whatsapp', 'zakonczone')"
+    )
+    db.execute(
+        "INSERT INTO monitor_alerts (id, type, subject, severity, status, title, first_seen, "
+        "last_seen, details, updated_at) VALUES ('al-sqli', 'sql_injection', 'kanal:web', "
+        "'wysoka', 'otwarty', 'x', now(), now(), "
+        "'{\"zrodla\": [\"a1b2\"], \"wystapienia\": [{\"zrodlo\": \"***0.1\", \"metoda\": \"GET\"}]}', "
+        "now())"
+    )
+    db.execute(next(m.sql for m in discover() if m.name == "no_end_user_data"))
+    row = db.fetch_one("SELECT user_key, user_label FROM user_queries WHERE id = 'q-stare'")
+    assert (row["user_key"], row["user_label"]) == ("anonim", None)
+    details = db.fetch_one("SELECT details FROM monitor_alerts WHERE id = 'al-sqli'")["details"]
+    assert "zrodla" not in details and details["wystapienia"] == [{"metoda": "GET"}]
+    db.execute("DELETE FROM user_queries WHERE id = 'q-stare'")
+    db.execute("DELETE FROM monitor_alerts WHERE id = 'al-sqli'")
 
 
 def test_web_check_report_on_postgres(clean_db, tmp_path):
@@ -363,16 +388,23 @@ def test_api_accounts_sources_and_activity(api):
     assert created.status_code == 200, created.text
     ana_id = created.json()["id"]
     ana = _login(api, "ana@example.pl")
+    # analityk ma tylko podgląd (rola obserwacyjna), źródła zmienia administrator
     assert (
         api.post(
             "/api/admin/sources", headers=ana, json={"url": "https://www.pap.pl/", "name": "PAP"}
+        ).status_code
+        == 403
+    )
+    assert (
+        api.post(
+            "/api/admin/sources", headers=admin, json={"url": "https://www.pap.pl/", "name": "PAP"}
         ).status_code
         == 200
     )
     assert (
         api.patch(
             "/api/admin/sources",
-            headers=ana,
+            headers=admin,
             params={"url": "https://www.pap.pl/"},
             json={"enabled": False},
         ).json()["enabled"]
@@ -401,6 +433,24 @@ def test_api_accounts_sources_and_activity(api):
         "source.updated",
         "source.seeded",
     } <= everything
+
+
+def test_panel_does_not_show_or_manage_app_accounts(api, clean_db):
+    """Konta aplikacji (rola ``user``) są dla panelu niewidoczne; konta panelu zostają."""
+    admin = _login(api, "admin@example.pl")
+    listed = api.get("/api/admin/accounts", headers=admin).json()
+    assert {u["email"] for u in listed} == {"admin@example.pl", "analityk@example.pl"}
+    assert api.get("/api/admin/accounts", headers=admin, params={"q": "jan"}).json() == []
+
+    jan = clean_db.fetch_one("SELECT id FROM users WHERE email = 'jan@example.pl'")["id"]
+    changed = api.patch(f"/api/admin/accounts/{jan}", headers=admin, json={"active": False})
+    assert changed.status_code == 404
+    reset = api.post(
+        f"/api/admin/accounts/{jan}/password", headers=admin, json={"password": PASSWORD + "x"}
+    )
+    assert reset.status_code == 404
+    assert api.delete(f"/api/admin/accounts/{jan}", headers=admin).status_code == 404
+    assert clean_db.fetch_one("SELECT is_active FROM users WHERE id = %s", [jan])["is_active"]
 
 
 def test_service_accounts_register_login_and_own_queries(clean_db, tmp_path):

@@ -7,6 +7,7 @@ import { safetyLabel } from '../../components/labels.ts';
 import { fmtDateTime, plural } from '../../utils/format.ts';
 import type {
   Alert,
+  AlertOccurrence,
   AlertStatus,
   AlertType,
   AuditEntry,
@@ -14,7 +15,6 @@ import type {
   CheckOutcome,
   CheckRecord,
   ClaimResult,
-  EndUser,
   GapStatus,
   InputKind,
   MonitoringSettings,
@@ -41,7 +41,6 @@ import type {
   RawSourceStatus,
   RawTopic,
   RawTrustedSource,
-  RawUser,
 } from './raw.ts';
 
 const HOUR = 3_600_000;
@@ -131,7 +130,6 @@ function mapFlags(flags: string[] | null): CheckFlag[] {
 }
 
 const REFUSAL: Record<string, string> = {
-  uzytkownik_zablokowany: 'Użytkownik jest zablokowany — wiadomość nie została sprawdzona.',
   niebezpieczna_tresc:
     'Prośba o instrukcje lub zdobycie broni, materiałów wybuchowych albo przemocy — odrzucona bez sprawdzania.',
 };
@@ -195,8 +193,6 @@ export function mapQuery(q: RawQuery): CheckRecord {
     tokens: 0,
     costPln: 0,
     errorMessage: outcome === 'refused' ? refusalReason(q.flags) : (q.error ?? undefined),
-    userKey: q.user_key,
-    userLabel: q.user_label ?? undefined,
     sourcesCount: q.sources_count,
     requestId: q.request_id,
     report: q.report ? { reason: q.report.reason, comment: q.report.comment ?? null, at: q.report.ts ?? null } : null,
@@ -208,8 +204,10 @@ export function mapQuery(q: RawQuery): CheckRecord {
 const ALERT_TYPE_FROM_BACKEND: Record<string, AlertType> = {
   luka_informacyjna: 'information_gap',
   kampania_dezinformacyjna: 'disinformation',
-  niebezpieczny_uzytkownik: 'dangerous_user',
+  tresci_niebezpieczne: 'dangerous_content',
   prompt_injection: 'prompt_injection',
+  rosyjska_dezinformacja: 'known_disinformation',
+  sql_injection: 'sql_injection',
 };
 
 export const ALERT_TYPE_TO_BACKEND: Partial<Record<AlertType, string>> = Object.fromEntries(
@@ -240,10 +238,41 @@ export const ALERT_STATUS_TO_BACKEND: Record<AlertStatus, string> = {
   dismissed: 'falszywy_alarm',
 };
 
-const persons = (n: number) => `${n} ${plural(n, ['osoba', 'osoby', 'osób'])}`;
-const asked = (n: number) => `${n} ${plural(n, ['osoba pytała', 'osoby pytały', 'osób pytało'])}`;
 const queries = (n: number) => `${n} ${plural(n, ['zapytanie', 'zapytania', 'zapytań'])}`;
+/** „od 1 zapytania”, „od 3 zapytań” (dopełniacz). */
+const fromQueries = (n: number) => `${n} ${n === 1 ? 'zapytania' : 'zapytań'}`;
 const num = (value: unknown): number => (typeof value === 'number' ? value : Number(value) || 0);
+const text = (value: unknown): string => (typeof value === 'string' ? value : '');
+
+function categoryList(raw: unknown): string[] {
+  return Object.entries((raw as Record<string, number> | undefined) ?? {})
+    .sort((x, y) => y[1] - x[1])
+    .map(([name, n]) => `${safetyLabel(name)} (${n})`);
+}
+
+/** Ostatnie wystąpienia alertów-zdarzeń (``details.wystapienia``), najnowsze pierwsze. */
+function occurrencesOf(a: RawAlert, type: AlertType): AlertOccurrence[] {
+  const list = Array.isArray(a.details?.wystapienia) ? (a.details.wystapienia as Record<string, unknown>[]) : [];
+  return list.slice(0, 10).map((o) => {
+    const channel = text(o.kanal);
+    if (type === 'sql_injection') {
+      const fields = Array.isArray(o.pola) ? (o.pola as string[]).join(', ') : '';
+      const patterns = Array.isArray(o.wzorce) ? (o.wzorce as string[]).join(', ') : '';
+      return {
+        at: text(o.ts),
+        text: [text(o.metoda), text(o.sciezka)].filter(Boolean).join(' ') || 'treść wiadomości',
+        detail: [fields && `pola: ${fields}`, patterns && `wzorce: ${patterns}`].filter(Boolean).join(' · '),
+        queryId: text(o.query_id) || undefined,
+      };
+    }
+    return {
+      at: text(o.ts),
+      text: text(o.twierdzenie) || 'twierdzenie z zapytania',
+      detail: [channel && `kanał: ${channel}`, text(o.uzasadnienie)].filter(Boolean).join(' · '),
+      queryId: text(o.query_id) || undefined,
+    };
+  });
+}
 
 function describeAlert(a: RawAlert, type: AlertType, m: MonitoringSettings | null) {
   const d = a.details ?? {};
@@ -252,47 +281,70 @@ function describeAlert(a: RawAlert, type: AlertType, m: MonitoringSettings | nul
   let description: string;
   let rule: string;
 
-  if (type === 'dangerous_user') {
-    const high = num(d.wysokie_ryzyko);
-    const categories = Object.entries((d.kategorie as Record<string, number> | undefined) ?? {})
-      .sort((x, y) => y[1] - x[1])
-      .map(([name, n]) => `${safetyLabel(name)} (${n})`);
-    const blockedUntil = typeof d.zablokowany_do === 'string' ? d.zablokowany_do : null;
-    description =
-      `Jedna osoba wysłała ${queries(a.count)} o treści niebezpieczne w ciągu ${windowH} h` +
-      (high ? `, w tym ${high} wysokiego ryzyka (prośby o instrukcje lub zdobycie)` : '') +
-      '.' +
-      (blockedUntil ? ` Zablokowana automatycznie do ${fmtDateTime(blockedUntil)}.` : '');
-    rule = m
-      ? `alert od ${m.dangerous_alert_after} takich zapytań w ${m.dangerous_window_hours} h; ` +
-        (m.auto_block
-          ? `blokada na ${m.dangerous_block_hours} h od ${m.dangerous_block_after} zapytań wysokiego ryzyka`
-          : 'automatyczna blokada wyłączona')
-      : 'powtarzające się zapytania o treści niebezpieczne';
-    metrics['Zapytania'] = a.count;
-    metrics['Wysokiego ryzyka'] = high;
-    if (categories.length) metrics['Kategorie'] = categories.join(', ');
-    if (blockedUntil) metrics['Zablokowany do'] = fmtDateTime(blockedUntil);
-  } else if (type === 'disinformation') {
-    description =
-      `W ciągu ${windowH} h ${asked(a.users)} o twierdzenie ocenione jako fałsz ` +
-      `(${queries(a.count)}). Może to być skoordynowane rozpowszechnianie dezinformacji.`;
-    rule = m
-      ? `≥ ${persons(m.disinfo_min_users)} w ${m.disinfo_window_hours} h pyta o twierdzenie ocenione jako fałsz; ` +
-        `od ${persons(2 * m.disinfo_min_users)} — wysoki priorytet`
-      : 'wiele różnych osób pyta o twierdzenie ocenione jako fałsz';
-    metrics['Różne osoby'] = a.users;
-    metrics['Zapytania'] = a.count;
-  } else {
-    description =
-      `${asked(a.users)} o temat, którego system nie rozstrzygnął — brak źródeł albo ` +
-      `niewystarczające dane (${queries(a.count)} w oknie ${windowH} h).`;
-    rule = m
-      ? `≥ ${persons(m.info_gap_min_users)} w ${m.info_gap_window_hours} h pyta o temat bez rozstrzygnięcia; ` +
-        `od ${persons(3 * m.info_gap_min_users)} — wysoki priorytet`
-      : 'kilka różnych osób pyta o temat bez rozstrzygnięcia';
-    metrics['Różne osoby'] = a.users;
-    metrics['Zapytania bez dowodów'] = a.count;
+  switch (type) {
+    case 'dangerous_content': {
+      const high = num(d.wysokie_ryzyko);
+      const categories = categoryList(d.kategorie);
+      description =
+        `W ciągu ${windowH} h przyszło ${queries(a.count)} o treści niebezpieczne (terroryzm, broń, ` +
+        `materiały wybuchowe…)` +
+        (high ? `, w tym ${high} wysokiego ryzyka — prośby o instrukcje lub zdobycie, odrzucone bez sprawdzania` : '') +
+        '. Alert jest zbiorczy: nie zbieramy danych o tym, kto pyta.';
+      rule = m
+        ? `alert od ${fromQueries(m.dangerous_alert_after)} w ${m.dangerous_window_hours} h; ` +
+          (m.refuse_high_risk ? 'prośby o instrukcje są odrzucane' : 'odrzucanie próśb o instrukcje wyłączone')
+        : 'wiele zapytań o treści niebezpieczne w krótkim czasie';
+      metrics['Zapytania'] = a.count;
+      metrics['Wysokiego ryzyka'] = high;
+      if (categories.length) metrics['Kategorie'] = categories.join(', ');
+      break;
+    }
+    case 'prompt_injection':
+      description =
+        `W ciągu ${windowH} h wykryto ${queries(a.count)} z poleceniami dla modelu (prompt injection). ` +
+        'Treść potraktowano jako dane do sprawdzenia, polecenia zignorowano.';
+      rule = m
+        ? `alert od ${m.injection_alert_after} ${m.injection_alert_after === 1 ? 'próby' : 'prób'} w ${m.dangerous_window_hours} h`
+        : 'powtarzające się próby sterowania modelem';
+      metrics['Próby'] = a.count;
+      break;
+    case 'disinformation':
+      description =
+        `W ciągu ${windowH} h ${queries(a.count)} dotyczyło twierdzenia ocenionego jako fałsz. ` +
+        'Może to być skoordynowane rozpowszechnianie dezinformacji.';
+      rule = m
+        ? `≥ ${queries(m.disinfo_min_users)} w ${m.disinfo_window_hours} h o twierdzenie ocenione jako fałsz; ` +
+          `od ${fromQueries(2 * m.disinfo_min_users)} — wysoki priorytet`
+        : 'wiele zapytań o twierdzenie ocenione jako fałsz';
+      metrics['Zapytania'] = a.count;
+      break;
+    case 'known_disinformation': {
+      const caseInfo = (d.przypadek ?? {}) as Record<string, unknown>;
+      description =
+        text(d.opis) ||
+        'Zapytano o twierdzenie, które baza EUvsDisinfo dokumentuje jako prokremlowską dezinformację.';
+      rule = `twierdzenie znalezione w bazie ${text(d.zrodlo) || 'EUvsDisinfo'}; każde kolejne zapytanie zwiększa licznik`;
+      metrics['Zapytania'] = a.count;
+      if (text(caseInfo.tytul)) metrics['Przypadek w bazie'] = text(caseInfo.tytul);
+      break;
+    }
+    case 'sql_injection':
+      description =
+        text(d.opis) ||
+        'Wykryto składnię SQL injection w danych wejściowych. Zapytania do bazy są parametryzowane, więc nic nie zostało wykonane.';
+      rule = `każda próba na kanale ${text(d.kanal) || '—'} zwiększa licznik; w alercie nie ma wartości pól ani adresu nadawcy`;
+      metrics['Próby'] = a.count;
+      if (text(d.kanal)) metrics['Kanał'] = text(d.kanal);
+      break;
+    default:
+      description =
+        `O temat, którego system nie rozstrzygnął (brak źródeł albo niewystarczające dane), ` +
+        `zapytano ${a.count} ${plural(a.count, ['raz', 'razy', 'razy'])} w oknie ${windowH} h.`;
+      rule = m
+        ? `≥ ${queries(m.info_gap_min_queries)} w ${m.info_gap_window_hours} h o temat bez rozstrzygnięcia; ` +
+          `od ${fromQueries(3 * m.info_gap_min_queries)} — wysoki priorytet`
+        : 'kilka zapytań o temat bez rozstrzygnięcia';
+      metrics['Zapytania bez dowodów'] = a.count;
   }
   if (windowH) metrics['Okno'] = `${windowH} h`;
   metrics['Pierwsze zgłoszenie'] = fmtDateTime(a.first_seen);
@@ -303,6 +355,7 @@ export function mapAlert(a: RawAlert, monitoring: MonitoringSettings | null): Al
   const type = ALERT_TYPE_FROM_BACKEND[a.type] ?? 'system';
   const { description, rule, metrics } = describeAlert(a, type, monitoring);
   const aboutTopic = type === 'information_gap' || type === 'disinformation';
+  const caseInfo = (a.details?.przypadek ?? {}) as Record<string, unknown>;
   return {
     id: a.id,
     type,
@@ -314,12 +367,13 @@ export function mapAlert(a: RawAlert, monitoring: MonitoringSettings | null): Al
     createdAt: a.first_seen,
     updatedAt: a.last_seen,
     clusterId: aboutTopic ? a.subject : undefined,
-    userKey: type === 'dangerous_user' ? a.subject : undefined,
     checkIds: [],
     queryCount: a.count,
     metrics,
     notified: [],
     note: a.note ?? undefined,
+    occurrences: occurrencesOf(a, type),
+    link: text(caseInfo.url) ? { label: 'Przypadek w bazie EUvsDisinfo', url: text(caseInfo.url) } : undefined,
   };
 }
 
@@ -364,7 +418,6 @@ export function mapTopic(gap: RawGap, topic: RawTopic | null, now = Date.now()):
     if (verdict) verdicts[verdict] = (verdicts[verdict] ?? 0) + 1;
   }
 
-  const users = new Set(claims.map((c) => c.user_key).filter(Boolean)).size;
   const status = GAP_FROM_BACKEND[gap.gap_status];
   return {
     id: gap.id,
@@ -373,7 +426,8 @@ export function mapTopic(gap: RawGap, topic: RawTopic | null, now = Date.now()):
     total,
     inWindow,
     previousWindow,
-    uniqueSessions: Math.max(users, gap.gap_users ?? 0),
+    // Anonymous: the backend counts queries, not people.
+    uniqueSessions: gap.gap_queries ?? total,
     noEvidence,
     noEvidenceRatio: total ? noEvidence / total : 0,
     verdicts,
@@ -389,25 +443,6 @@ export function mapTopic(gap: RawGap, topic: RawTopic | null, now = Date.now()):
     gapNote: gap.gap_note ?? undefined,
     gapSince: gap.gap_since ?? undefined,
     gapUpdatedAt: gap.gap_updated_at ?? undefined,
-  };
-}
-
-// ── end users ───────────────────────────────────────────────────────────────
-
-export function mapUser(u: RawUser, now = Date.now()): EndUser {
-  const until = u.blocked_until;
-  const blocked = !!until && Date.parse(until) > now;
-  return {
-    key: u.user_key,
-    label: u.label || '***',
-    firstSeen: u.first_seen,
-    lastSeen: u.last_seen,
-    queries: u.queries,
-    dangerous: u.dangerous,
-    blockedUntil: until,
-    blockReason: u.block_reason,
-    blocked,
-    permanent: blocked && !!until && until.startsWith('9999'),
   };
 }
 
@@ -447,7 +482,13 @@ const FIELD_LABEL: Record<string, string> = {
   'apis.article_scraping_enabled': 'Pobieranie artykułów',
   'apis.article_extractor': 'Ekstraktor artykułów',
   'monitoring.retention_days': 'Retencja danych (dni)',
-  'monitoring.auto_block': 'Automatyczna blokada',
+  'monitoring.info_gap_min_queries': 'Luka: zapytania',
+  'monitoring.info_gap_window_hours': 'Luka: okno czasu (h)',
+  'monitoring.disinfo_min_users': 'Dezinformacja: zapytania',
+  'monitoring.disinfo_window_hours': 'Dezinformacja: okno czasu (h)',
+  'monitoring.dangerous_alert_after': 'Treści niebezpieczne: alert po',
+  'monitoring.dangerous_window_hours': 'Treści niebezpieczne: okno czasu (h)',
+  'monitoring.injection_alert_after': 'Prompt injection: alert po',
   'monitoring.refuse_high_risk': 'Odrzucanie treści wysokiego ryzyka',
 };
 
@@ -531,8 +572,6 @@ const ACTION_LABEL: Record<string, string> = {
   'config.updated': 'Zmiana konfiguracji',
   'alert.status_changed': 'Zmiana statusu alertu',
   'info_gap.status_changed': 'Zmiana stanu luki informacyjnej',
-  'enduser.blocked': 'Blokada użytkownika serwisu',
-  'enduser.unblocked': 'Odblokowanie użytkownika serwisu',
   'maintenance.purged': 'Usunięcie starych danych',
   'source.created': 'Nowe źródło zaufane',
   'source.updated': 'Zmiana źródła zaufanego',
@@ -544,8 +583,6 @@ const SUBJECT_LABEL: Record<string, string> = {
   user: 'konto',
   alert: 'alert',
   topic: 'temat',
-  end_user: 'użytkownik serwisu',
-  enduser: 'użytkownik serwisu',
   config: 'konfiguracja',
   source: 'źródło',
   token: 'token',
@@ -635,8 +672,6 @@ const counts = (v: unknown): Record<string, number> => (v && typeof v === 'objec
 
 function subject(raw: RawRecord) {
   return {
-    userKey: str(raw.user_key),
-    userLabel: str(raw.user_label),
     channel: str(raw.channel),
     queryId: str(raw.query_id),
     text: str(raw.text),
@@ -658,12 +693,9 @@ export function mapThreats(raw: RawRecord): ThreatReport {
     eventsScanned: num(raw.events_scanned),
     summary: {
       promptInjection: num(summary.prompt_injection),
-      promptInjectionUsers: num(summary.prompt_injection_users),
       manipulationCampaigns: num(summary.manipulation_campaigns),
       criticalQueries: num(summary.critical_queries),
-      criticalUsers: num(summary.critical_users),
       refused: num(summary.refused),
-      blockedUsers: num(summary.blocked_users),
     },
     timeline: records(raw.timeline).map((b) => ({
       bucket: String(b.bucket),
@@ -694,7 +726,6 @@ export function mapThreats(raw: RawRecord): ThreatReport {
       topicId: str(c.topic_id),
       status: str(c.status),
       severity: str(c.severity),
-      users: num(c.users),
       count: c.count === null || c.count === undefined ? null : num(c.count),
       signals: num(c.signals),
       firstSignal: String(c.first_signal),
@@ -711,13 +742,6 @@ export function mapThreats(raw: RawRecord): ThreatReport {
         severity: str(e.severity),
         categories: Array.isArray(e.categories) ? e.categories.map(String) : [],
         requestId: str(e.request_id),
-      })),
-      blocked: records(critical.blocked).map((b) => ({
-        at: String(b.ts),
-        userKey: str(b.user_key),
-        userLabel: str(b.user_label),
-        until: str(b.until),
-        stillBlocked: b.still_blocked === true,
       })),
     },
   };

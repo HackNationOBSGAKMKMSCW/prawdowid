@@ -148,14 +148,11 @@ panel and the website share one process and one database:
   (flag `zgloszenie:<reason>`). Entries are deleted after the panel's retention
   period (`monitoring.retention_days`).
 - The same rules as for the WhatsApp bot apply: information gaps, possible
-  disinformation campaigns and repeated dangerous queries raise alerts. A request
-  for weapon or explosive instructions is refused (`422 request_refused`) and a
-  client blocked in the panel gets `403 user_blocked`, both before the pipeline runs.
-- A website client is known to the panel only by a pseudonym (HMAC of the client
-  IP address, `ADMIN_USER_SALT`); the panel shows the last characters of the
-  address. Behind a reverse proxy, run uvicorn with `--proxy-headers
-  --forwarded-allow-ips=<proxy address>`, otherwise all clients share the proxy's
-  address and a block would stop everyone.
+  disinformation campaigns, dangerous content and prompt injection raise alerts.
+  A request for weapon or explosive instructions is refused (`422 request_refused`)
+  before the pipeline runs. Nobody is blocked.
+- No data about the person asking is stored: no IP address, pseudonym or other
+  identifier (`user_key` is always `anonim`). All rules count queries, not people.
 - Model, API-key and threshold changes made in the panel apply to `/api/check`
   immediately; trusted-site changes reload the search registry.
 - The panel itself (`admin_panel/frontend`) calls `/api/admin` on the same
@@ -186,7 +183,6 @@ to public launch traffic.
 
 | Status | Codes |
 | --- | --- |
-| `403` | `user_blocked` |
 | `404` | `result_not_found` |
 | `413` | `request_too_large` |
 | `422` | `invalid_request`, `invalid_url`, `unsafe_url`, `url_unavailable`, `request_refused` |

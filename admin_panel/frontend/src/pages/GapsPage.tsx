@@ -114,8 +114,9 @@ export default function GapsPage() {
         <div className="rule-strip">
           <Icon name="sliders" size={16} />
           <span>
-            Luka = co najmniej <strong>{m.info_gap_min_users}</strong> różnych osób w ciągu{' '}
-            <strong>{m.info_gap_window_hours} h</strong> pyta o temat, którego system nie rozstrzygnął (brak źródeł albo
+            Luka = co najmniej <strong>{m.info_gap_min_queries}</strong>{' '}
+            {plural(m.info_gap_min_queries, ['zapytanie', 'zapytania', 'zapytań'])} w ciągu{' '}
+            <strong>{m.info_gap_window_hours} h</strong> o temat, którego system nie rozstrzygnął (brak źródeł albo
             niewystarczające dane). Pierwsze rozstrzygnięcie oparte na źródłach zamyka lukę automatycznie.
           </span>
           {can('settings:read') && (
@@ -183,7 +184,7 @@ export default function GapsPage() {
                 title="Obserwowane"
                 subtitle={
                   lifecycle
-                    ? 'Pytania bez rozstrzygnięcia, ale od zbyt małej liczby osób, by uznać temat za lukę.'
+                    ? 'Pytania bez rozstrzygnięcia, ale za mało zapytań, by uznać temat za lukę.'
                     : 'Wysoki odsetek braku dowodów, ale za mało zapytań, by uznać to za lukę.'
                 }
                 padded={false}
@@ -215,7 +216,7 @@ function GapTable({ rows, onOpen, withCases }: { rows: QueryCluster[]; onOpen: (
             <th>Temat</th>
             <th className="num">Bez dowodów</th>
             <th>Trend 48 h</th>
-            <th>{withCases ? 'Kanały' : 'Osoby'}</th>
+            <th>{withCases ? 'Kanały' : 'Zapytania'}</th>
             <th>Ostatnie</th>
             <th>{withCases ? 'Sprawa' : 'Stan'}</th>
           </tr>
@@ -247,7 +248,7 @@ function GapTable({ rows, onOpen, withCases }: { rows: QueryCluster[]; onOpen: (
                   ? Object.entries(c.channels)
                       .map(([k, v]) => `${channelLabel(k)} ${v}`)
                       .join(' · ')
-                  : `${c.uniqueSessions} ${plural(c.uniqueSessions, ['osoba', 'osoby', 'osób'])}`}
+                  : `${c.uniqueSessions} ${plural(c.uniqueSessions, ['zapytanie', 'zapytania', 'zapytań'])}`}
               </td>
               <td className="small nowrap">{fmtRelative(c.lastSeen)}</td>
               <td>

@@ -18,7 +18,6 @@ import {
   mapEvent,
   mapQuery,
   mapTopic,
-  mapUser,
   mapVerdict,
   outcomeFilter,
   outcomeOf,
@@ -38,8 +37,6 @@ import type {
   RawSourceStatus,
   RawTopic,
   RawTrustedSource,
-  RawUser,
-  RawUserDetail,
 } from './backend/raw.ts';
 import { buildPath, type EndpointKey } from './endpoints.ts';
 import type {
@@ -56,9 +53,6 @@ import type {
   ClusterQuery,
   ConfigChange,
   DashboardStats,
-  EndUser,
-  EndUserDetail,
-  EndUserFilter,
   GapStatus,
   ModelProvider,
   ModeratorCase,
@@ -152,7 +146,6 @@ export class HttpAdminApi implements AdminApi {
     features: new Set([
       'staffUsers',
       'passwords',
-      'endUsers',
       'gapLifecycle',
       'runtimeConfig',
       'techEvents',
@@ -377,11 +370,9 @@ export class HttpAdminApi implements AdminApi {
       criticalAlerts: (stats.latest_alerts ?? []).filter((a) => a.severity === 'krytyczna').length,
       informationGaps: stats.active_info_gaps,
       quality: [],
-      users: stats.users,
       refused: statuses.odrzucone ?? 0,
       pending: statuses.w_toku ?? 0,
       dangerousQueries: stats.dangerous_queries,
-      blockedUsers: stats.blocked_users,
     };
   }
 
@@ -491,42 +482,6 @@ export class HttpAdminApi implements AdminApi {
 
   deleteCheck(): Promise<void> {
     return Promise.reject(unsupported('Usuwanie pojedynczego zapisu'));
-  }
-
-  // ── end users ─────────────────────────────────────────────────────────────
-
-  async listEndUsers(filter: EndUserFilter = 'all'): Promise<EndUser[]> {
-    const { items } = await this.request<{ items: RawUser[] }>('users', {
-      query: { flagged: filter === 'flagged' || undefined, blocked: filter === 'blocked' || undefined, limit: 1000 },
-    });
-    const now = Date.now();
-    return items.map((u) => mapUser(u, now));
-  }
-
-  async getEndUser(key: string): Promise<EndUserDetail> {
-    const [row, monitoring] = await Promise.all([
-      this.request<RawUserDetail>('user', { params: { key } }),
-      this.monitoringSettings(),
-    ]);
-    return {
-      ...mapUser(row),
-      totalQueries: row.total_queries,
-      recentQueries: row.recent_queries.map(mapQuery),
-      alerts: row.alerts.map((a) => mapAlert(a, monitoring)),
-    };
-  }
-
-  async blockEndUser(key: string, hours: number | null, reason?: string): Promise<EndUser> {
-    const row = await this.request<RawUser>('userBlock', {
-      method: 'POST',
-      params: { key },
-      body: { hours, reason: reason?.trim() || null },
-    });
-    return mapUser(row);
-  }
-
-  async unblockEndUser(key: string): Promise<EndUser> {
-    return mapUser(await this.request<RawUser>('userUnblock', { method: 'POST', params: { key } }));
   }
 
   // ── runtime configuration ─────────────────────────────────────────────────
