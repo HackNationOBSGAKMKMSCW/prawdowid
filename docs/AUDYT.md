@@ -217,7 +217,7 @@ Wysiłek: S < 2 h, M ≈ pół dnia, L > dzień.
 - Poprawki porządkowe:
   - `.env.example` z modelem lokalnym;
   - usunąć odwołania do `render.yaml` i „Render cron”;
-  - adres w `vercel.json:10`.
+  - ~~adres w `vercel.json:10`~~: backend działa teraz jako funkcja Vercela (`api/index.py`), zob. `URUCHOMIENIE.md`.
 - Opis do 4000 znaków, PDF do 12 slajdów, film do 3 min.
 
 ### P3: funkcje premiowane (dopiero po P0)

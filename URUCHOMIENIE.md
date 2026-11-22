@@ -115,17 +115,55 @@ i `analityk@sprawdz.to.demo`, hasło `demo1234`).
 
 ## Wdrożenie
 
-- **Backend** jako osobna usługa (np. Render), z katalogu głównego repo:
-  - build: `pip install -r requirements.txt`,
-  - start: `uvicorn server:app --host 0.0.0.0 --port $PORT`,
-  - zmienne: `PYTHONPATH=backend:analysis:analysis/src`, `DATABASE_URL`, klucze modelu i API,
-    `CORS_ORIGINS=https://<domena-na-vercelu>`; na bazie produkcyjnej kroki z punktu 3.
-- **Strona i panel** na Vercelu, jeden projekt z katalogu głównego (`vercel.json`):
-  - w `vercel.json` zamień `TWOJ-BACKEND.onrender.com` na adres backendu,
-  - zmienne w Vercelu: `VITE_API_BASE_URL=https://<adres-backendu>/api`,
-    `VITE_CHECK_TIMEOUT_MS=360000`,
-  - strona jest pod `/`, panel pod `/admin`.
+Strona, panel i backend działają w jednym projekcie Vercela z katalogu głównego repo
+(`vercel.json`). Baza, model i API zewnętrzne są osobnymi usługami, osiągalnymi z internetu.
 
-Strona i WhatsApp łączą się z backendem bezpośrednio (stąd `CORS_ORIGINS`), bo jedno sprawdzenie
-trwa do kilku minut, a przekierowania Vercela do zewnętrznego serwera mają limit 120 s.
-Panel admina idzie przez przekierowanie `/api/admin` (krótkie zapytania, ta sama domena).
+| Część | Gdzie na Vercelu | Adres |
+|---|---|---|
+| Strona | statyczny build `frontend/` (`npm run build:live`) | `/` |
+| Panel admina | statyczny build `admin_panel/frontend/` | `/admin` |
+| Backend (FastAPI) | funkcja `api/index.py`, limit 300 s | `/api/*` |
+
+Strona i panel wołają `/api` w tej samej domenie, więc `VITE_API_BASE_URL` i `CORS_ORIGINS` nie
+są potrzebne.
+
+**Usługi zewnętrzne.** Funkcja Vercela nie widzi sieci prywatnej (Tailscale, LAN), więc każda
+usługa musi mieć publiczny adres:
+
+- **PostgreSQL** z TLS, np. Neon albo Supabase. Najlepiej adres poolera, bo funkcje otwierają
+  wiele krótkich połączeń.
+- **Model** z endpointem zgodnym z OpenAI, np. Gemini albo Ollama za tunelem z kluczem. Ollama
+  nie ma uwierzytelnienia, więc nie wystawiaj jej publicznie bez proxy z kluczem.
+- Google Fact Check i EUvsDisinfo: tylko klucze.
+
+**Zmienne w Vercelu** (Settings → Environment Variables):
+
+- `DATABASE_URL`;
+- `FREELLM_BASE_URL`, `FREELLM_API_KEY`, `FREELLM_MODEL`;
+- `GOOGLE_FACT_CHECK_API_KEY`;
+- `EUVSDISINFO_API_KEY`;
+- `ADMIN_USER_SALT`: losowy ciąg; bez niego pseudonimy w panelu używają publicznej soli
+  domyślnej;
+- opcjonalnie strojenie z `.env.example` (`ARTICLE_*`, `TRUSTED_*`, `MAX_CONCURRENT_CHECKS`).
+
+Pliku `.env` nie ma we wdrożeniu (`.vercelignore`), więc wszystko ustawia się w Vercelu.
+
+**Baza przed pierwszym wdrożeniem**, lokalnie z katalogu `backend/`, z `DATABASE_URL` nowej bazy:
+
+```bash
+python -m database migrate
+python -m database seed-sources
+python -m database create-user --email ... --name "..." --role admin
+```
+
+**Ograniczenia funkcji Vercela** (ustawione w `api/index.py`, każde da się nadpisać zmienną):
+
+- Jedno sprawdzenie może trwać najwyżej 300 s (`maxDuration`, maksimum na planie Hobby).
+  Backend przerywa analizę po 280 s (`CHECK_TIMEOUT_SECONDS`) i zwraca 504 `analysis_timeout`.
+- Dysk jest tylko do odczytu, poza `/tmp`. Logi (`LOG_FILE`), ustawienia z panelu
+  (`RUNTIME_CONFIG_FILE`) i zapasowy SQLite trafiają do `/tmp/prawdowid` i znikają razem z
+  instancją. Logi są też w zakładce Logs na Vercelu.
+  - Raport zagrożeń w panelu widzi tylko logi bieżącej instancji.
+  - Zmiany ustawień z panelu trzeba wpisać jako zmienne w Vercelu, żeby przetrwały.
+- Limit równoległych sprawdzeń (`MAX_CONCURRENT_CHECKS`), cache źródeł i limity zapytań działają
+  w obrębie jednej instancji, nie globalnie.
