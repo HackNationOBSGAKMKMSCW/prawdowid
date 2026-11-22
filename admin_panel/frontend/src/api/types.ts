@@ -63,7 +63,9 @@ export type CheckFlag =
   | 'no_evidence'
   | 'information_gap'
   | 'disinformation'
-  | 'refused';
+  | 'refused'
+  /** Someone reported a mistake in the result (`POST /api/check/{id}/report`). */
+  | 'user_report';
 
 export interface Evidence {
   id: string;
@@ -118,6 +120,14 @@ export interface CheckRecord {
   userLabel?: string;
   sourcesCount?: number | null;
   requestId?: string | null;
+  /** Mistake reported by the person who asked (website "Zgłoś błąd"). */
+  report?: UserReport | null;
+}
+
+export interface UserReport {
+  reason: 'wrong_verdict' | 'bad_source' | 'misunderstood' | 'other' | string;
+  comment: string | null;
+  at: ISODate | null;
 }
 
 export interface CheckQuery {
@@ -347,6 +357,35 @@ export type SourceInput = Pick<
   Source,
   'name' | 'url' | 'type' | 'tier' | 'language' | 'license' | 'updateFrequency' | 'qualification'
 >;
+
+/** A site the verification searches (backend: `trusted_sources`, key = URL). */
+export interface TrustedSite {
+  url: string;
+  name: string;
+  domain: string;
+  topics: string[];
+  description: string;
+  enabled: boolean;
+  /** How the site is searched (`govpl_search`, `fact_check_publisher`, …); null = not detected yet. */
+  adapter: string | null;
+  /** Set by hand in the table; automatic detection never overrides it. */
+  adapterLocked: boolean;
+  trust: 'official' | 'fact_checker' | string | null;
+  lastCheck: { at: ISODate; ok: boolean; error: string | null } | null;
+  /** False when the site is in the table but the running service has not loaded it yet. */
+  loaded: boolean;
+  createdAt: ISODate | null;
+  updatedAt: ISODate | null;
+}
+
+export interface TrustedSiteInput {
+  url: string;
+  name: string;
+  topics: string[];
+  description: string;
+}
+
+export type TrustedSitePatch = Partial<Pick<TrustedSite, 'name' | 'topics' | 'description' | 'enabled'>>;
 
 export interface SourcePatch {
   status?: SourceStatus;
@@ -594,7 +633,9 @@ export type Feature =
   | 'gapLifecycle'
   | 'runtimeConfig'
   | 'techEvents'
-  | 'retention';
+  | 'retention'
+  /** Trusted sites searched by the verification (`trusted_sources` table + live registry). */
+  | 'trustedSites';
 
 export interface ApiCapabilities {
   features: ReadonlySet<Feature>;

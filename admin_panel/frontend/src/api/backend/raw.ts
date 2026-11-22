@@ -38,8 +38,35 @@ export interface RawQuery {
   sources_count: number | null;
   completed_at: string | null;
   error: string | null;
+  /** Mistake reported from the website (`POST /api/check/{id}/report`). */
+  report?: { reason: string; comment: string | null; ts: string | null } | null;
   /** Only in `GET /queries/{id}`. */
   claims?: RawClaim[];
+}
+
+/** Row of `trusted_sources` (`GET /sources`). */
+export interface RawTrustedSource {
+  url: string;
+  name: string;
+  topics: string[] | null;
+  description: string | null;
+  adapter: string | null;
+  params: Record<string, unknown> | null;
+  enabled: boolean;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+/** The same site as the running verification sees it (`GET /sources/status`). */
+export interface RawSourceStatus {
+  id: string;
+  url: string;
+  name: string;
+  adapter: string;
+  trust: string;
+  enabled: boolean;
+  domains: string[];
+  last_check: { at: string; ok: boolean; error: string | null } | null;
 }
 
 export interface RawQueryPage {

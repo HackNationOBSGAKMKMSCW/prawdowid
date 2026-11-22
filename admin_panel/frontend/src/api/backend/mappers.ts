@@ -23,10 +23,25 @@ import type {
   SecretName,
   Severity,
   TechEvent,
+  TrustedSite,
   User,
   Verdict,
 } from '../types.ts';
-import type { RawAccount, RawActivity, RawAlert, RawAudit, RawClaim, RawConfig, RawEvent, RawGap, RawQuery, RawTopic, RawUser } from './raw.ts';
+import type {
+  RawAccount,
+  RawActivity,
+  RawAlert,
+  RawAudit,
+  RawClaim,
+  RawConfig,
+  RawEvent,
+  RawGap,
+  RawQuery,
+  RawSourceStatus,
+  RawTopic,
+  RawTrustedSource,
+  RawUser,
+} from './raw.ts';
 
 const HOUR = 3_600_000;
 
@@ -98,6 +113,7 @@ export const FLAG_TO_BACKEND: Partial<Record<CheckFlag, string>> = {
   no_evidence: 'brak_danych',
   information_gap: 'luka_informacyjna',
   disinformation: 'kampania_dezinformacyjna',
+  user_report: 'zgloszenie',
 };
 
 export const BACKEND_FLAGS = Object.keys(FLAG_TO_BACKEND) as CheckFlag[];
@@ -181,6 +197,7 @@ export function mapQuery(q: RawQuery): CheckRecord {
     userLabel: q.user_label ?? undefined,
     sourcesCount: q.sources_count,
     requestId: q.request_id,
+    report: q.report ? { reason: q.report.reason, comment: q.report.comment ?? null, at: q.report.ts ?? null } : null,
   };
 }
 
@@ -559,4 +576,49 @@ export function mapActivity(row: RawActivity): AuditEntry {
     target: subject,
     detail: [detail, row.ip_address ? `IP ${row.ip_address}` : ''].filter(Boolean).join(' · '),
   };
+}
+
+// ── trusted sites ───────────────────────────────────────────────────────────
+
+function hostOf(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '');
+  } catch {
+    return url;
+  }
+}
+
+/** Same URL for the table and the registry (the registry drops `#…` and lowercases the host). */
+function siteKey(url: string): string {
+  try {
+    const parsed = new URL(url);
+    parsed.hash = '';
+    return parsed.toString();
+  } catch {
+    return url;
+  }
+}
+
+/** A `trusted_sources` row joined with what the running verification knows about it. */
+export function mapTrustedSite(row: RawTrustedSource, status?: RawSourceStatus): TrustedSite {
+  return {
+    url: row.url,
+    name: row.name,
+    domain: hostOf(row.url),
+    topics: row.topics ?? [],
+    description: row.description ?? '',
+    enabled: row.enabled,
+    adapter: row.adapter ?? (status && status.adapter !== 'pending' ? status.adapter : null),
+    adapterLocked: !!row.adapter,
+    trust: status?.trust ?? null,
+    lastCheck: status?.last_check ?? null,
+    loaded: !!status,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+export function joinTrustedSites(rows: RawTrustedSource[], statuses: RawSourceStatus[]): TrustedSite[] {
+  const byUrl = new Map(statuses.map((s) => [siteKey(s.url), s]));
+  return rows.map((row) => mapTrustedSite(row, byUrl.get(siteKey(row.url))));
 }

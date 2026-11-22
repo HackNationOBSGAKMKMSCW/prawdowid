@@ -49,6 +49,7 @@ export const NAV: { section: string; items: NavItem[] }[] = [
     section: 'Konfiguracja',
     items: [
       { to: '/sources', label: 'Katalog źródeł', icon: 'database', permission: 'sources:read', feature: 'sources' },
+      { to: '/trusted-sites', label: 'Strony zaufane', icon: 'database', permission: 'sources:read', feature: 'trustedSites' },
       { to: '/models', label: 'Modele AI', icon: 'cpu', permission: 'models:read', feature: 'providers' },
       { to: '/runtime', label: 'Modele i źródła danych', icon: 'cpu', permission: 'models:read', feature: 'runtimeConfig' },
       { to: '/rules', label: 'Reguły alertów', icon: 'sliders', permission: 'rules:read', feature: 'alertRules' },

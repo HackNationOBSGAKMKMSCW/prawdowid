@@ -4,7 +4,7 @@ import { getApi, supports } from '../api/index.ts';
 import type { CheckFlag, CheckOutcome, CheckQuery, CheckRecord, Verdict } from '../api/types.ts';
 import { useAuth } from '../auth/AuthContext.tsx';
 import { Icon } from '../components/icons.tsx';
-import { channelLabel, FLAG, INPUT_KIND, OUTCOME, PIPELINE_ROLE, STRENGTH, VERDICT } from '../components/labels.ts';
+import { channelLabel, FLAG, INPUT_KIND, OUTCOME, PIPELINE_ROLE, REPORT_REASON, STRENGTH, VERDICT } from '../components/labels.ts';
 import { Async, Badge, Card, Drawer, EmptyState, Modal, PageHeader, Pagination, SearchInput, useAction } from '../components/ui.tsx';
 import { useAsync } from '../hooks/useAsync.ts';
 import { exportCsv, exportJson } from '../utils/export.ts';
@@ -370,6 +370,16 @@ function CheckDetail({ check }: { check: CheckRecord }) {
           <Icon name="lock" size={16} />
           <div>
             <strong>Zapytanie odrzucone — nie zostało sprawdzone.</strong> {check.errorMessage}
+          </div>
+        </div>
+      )}
+      {check.report && (
+        <div className="notice notice-warning">
+          <Icon name="alert" size={16} />
+          <div>
+            <strong>Zgłoszony błąd: {REPORT_REASON[check.report.reason] ?? check.report.reason}.</strong>{' '}
+            {check.report.comment ? `„${check.report.comment}”` : 'Bez komentarza.'}
+            {check.report.at && <span className="muted"> · {fmtDateTime(check.report.at)}</span>}
           </div>
         </div>
       )}

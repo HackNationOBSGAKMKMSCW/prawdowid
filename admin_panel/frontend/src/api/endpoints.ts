@@ -33,6 +33,9 @@ export const DEFAULT_ENDPOINTS = {
   activity: '/activity',
   configModels: '/config/models',
   purge: '/maintenance/purge',
+  sources: '/sources',
+  sourcesStatus: '/sources/status',
+  sourcesCheck: '/sources/check',
 } as const;
 
 export type EndpointKey = keyof typeof DEFAULT_ENDPOINTS;

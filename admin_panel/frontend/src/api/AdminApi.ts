@@ -14,6 +14,9 @@ import type {
   TechEvent,
   TechEventQuery,
   TechSummary,
+  TrustedSite,
+  TrustedSiteInput,
+  TrustedSitePatch,
   AlertRules,
   AlertStatus,
   AssignmentPatch,
@@ -143,6 +146,14 @@ export interface AdminApi {
   /** `techEvents`: observability log lines and their summary. */
   listTechEvents(query?: TechEventQuery): Promise<{ file: string; items: TechEvent[] }>;
   getTechSummary(sinceHours?: number): Promise<TechSummary>;
+
+  /** `trustedSites`: the sites the verification searches (keyed by URL). */
+  listTrustedSites(): Promise<TrustedSite[]>;
+  createTrustedSite(input: TrustedSiteInput): Promise<TrustedSite>;
+  updateTrustedSite(url: string, patch: TrustedSitePatch): Promise<TrustedSite>;
+  deleteTrustedSite(url: string): Promise<void>;
+  /** Fetches the site again and re-detects how to search it. */
+  checkTrustedSite(url: string): Promise<TrustedSite>;
 
   /** `retention`: delete stored queries older than N days (default: retention setting). */
   purgeOldData(olderThanDays?: number): Promise<PurgeResult>;

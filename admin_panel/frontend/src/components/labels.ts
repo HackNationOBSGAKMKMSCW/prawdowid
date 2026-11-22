@@ -68,6 +68,14 @@ export const FLAG: Record<CheckFlag, { label: string; tone: Tone }> = {
   information_gap: { label: 'Luka informacyjna', tone: 'serious' },
   disinformation: { label: 'Możliwa dezinformacja', tone: 'critical' },
   refused: { label: 'Odrzucone', tone: 'serious' },
+  user_report: { label: 'Zgłoszony błąd', tone: 'warning' },
+};
+
+export const REPORT_REASON: Record<string, string> = {
+  wrong_verdict: 'Błędna ocena',
+  bad_source: 'Złe lub niedziałające źródło',
+  misunderstood: 'Źle zrozumiana treść',
+  other: 'Inny powód',
 };
 
 export const ALERT_TYPE: Record<AlertType, { label: string; short: string }> = {

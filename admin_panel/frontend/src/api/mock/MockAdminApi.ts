@@ -24,6 +24,7 @@ import type {
   RuntimeConfig,
   TechEvent,
   TechSummary,
+  TrustedSite,
   AlertStatus,
   AssignmentPatch,
   AuditEntry,
@@ -936,6 +937,21 @@ export class MockAdminApi implements AdminApi {
   }
   getTechSummary(): Promise<TechSummary> {
     return Promise.reject(unsupported('Logi techniczne'));
+  }
+  listTrustedSites(): Promise<TrustedSite[]> {
+    return Promise.reject(unsupported('Strony zaufane'));
+  }
+  createTrustedSite(): Promise<TrustedSite> {
+    return Promise.reject(unsupported('Strony zaufane'));
+  }
+  updateTrustedSite(): Promise<TrustedSite> {
+    return Promise.reject(unsupported('Strony zaufane'));
+  }
+  deleteTrustedSite(): Promise<void> {
+    return Promise.reject(unsupported('Strony zaufane'));
+  }
+  checkTrustedSite(): Promise<TrustedSite> {
+    return Promise.reject(unsupported('Strony zaufane'));
   }
   purgeOldData(): Promise<PurgeResult> {
     return Promise.reject(unsupported('Retencja danych'));

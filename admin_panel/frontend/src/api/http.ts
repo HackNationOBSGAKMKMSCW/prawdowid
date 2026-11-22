@@ -8,6 +8,7 @@ import {
   BACKEND_FLAGS,
   FLAG_TO_BACKEND,
   GAP_TO_BACKEND,
+  joinTrustedSites,
   mapAccount,
   mapActivity,
   mapAlert,
@@ -33,7 +34,9 @@ import type {
   RawGap,
   RawQuery,
   RawQueryPage,
+  RawSourceStatus,
   RawTopic,
+  RawTrustedSource,
   RawUser,
   RawUserDetail,
 } from './backend/raw.ts';
@@ -74,6 +77,9 @@ import type {
   TechEvent,
   TechEventQuery,
   TechSummary,
+  TrustedSite,
+  TrustedSiteInput,
+  TrustedSitePatch,
   User,
   Verdict,
 } from './types.ts';
@@ -141,7 +147,16 @@ export class HttpAdminApi implements AdminApi {
   readonly mode = 'http' as const;
   readonly target: string;
   readonly capabilities: ApiCapabilities = {
-    features: new Set(['staffUsers', 'passwords', 'endUsers', 'gapLifecycle', 'runtimeConfig', 'techEvents', 'retention']),
+    features: new Set([
+      'staffUsers',
+      'passwords',
+      'endUsers',
+      'gapLifecycle',
+      'runtimeConfig',
+      'techEvents',
+      'retention',
+      'trustedSites',
+    ]),
     alertTypes: BACKEND_ALERT_TYPES,
     checkFlags: BACKEND_FLAGS,
     checkOutcomes: ['abstained', 'technical_error', 'refused', 'pending'],
@@ -559,6 +574,42 @@ export class HttpAdminApi implements AdminApi {
 
   purgeOldData(olderThanDays?: number): Promise<PurgeResult> {
     return this.request('purge', { method: 'POST', body: { older_than_days: olderThanDays ?? null } });
+  }
+
+  // ── trusted sites (trusted_sources + the verification's registry) ────────
+
+  async listTrustedSites(): Promise<TrustedSite[]> {
+    const [rows, statuses] = await Promise.all([
+      this.request<RawTrustedSource[]>('sources'),
+      // The panel backend outside the website API has no registry: show the table alone.
+      this.request<RawSourceStatus[]>('sourcesStatus').catch(() => [] as RawSourceStatus[]),
+    ]);
+    return joinTrustedSites(rows, statuses);
+  }
+
+  private async trustedSite(url: string): Promise<TrustedSite> {
+    const site = (await this.listTrustedSites()).find((s) => s.url === url);
+    if (!site) throw new ApiError('Nie znaleziono strony na liście.', 404);
+    return site;
+  }
+
+  async createTrustedSite(input: TrustedSiteInput): Promise<TrustedSite> {
+    const row = await this.request<RawTrustedSource>('sources', { method: 'POST', body: input });
+    return this.trustedSite(row.url);
+  }
+
+  async updateTrustedSite(url: string, patch: TrustedSitePatch): Promise<TrustedSite> {
+    await this.request<RawTrustedSource>('sources', { method: 'PATCH', query: { url }, body: patch });
+    return this.trustedSite(url);
+  }
+
+  async deleteTrustedSite(url: string): Promise<void> {
+    await this.request('sources', { method: 'DELETE', query: { url } });
+  }
+
+  async checkTrustedSite(url: string): Promise<TrustedSite> {
+    await this.request<RawSourceStatus>('sourcesCheck', { method: 'POST', query: { url } });
+    return this.trustedSite(url);
   }
 
   // ── panel accounts ────────────────────────────────────────────────────────

@@ -24,6 +24,7 @@ import RulesPage from './pages/RulesPage.tsx';
 import SecurityPage from './pages/SecurityPage.tsx';
 import SettingsPage from './pages/SettingsPage.tsx';
 import SourcesPage from './pages/SourcesPage.tsx';
+import TrustedSitesPage from './pages/TrustedSitesPage.tsx';
 import UsersPage from './pages/UsersPage.tsx';
 
 const guarded = (permission: Permission, element: ReactElement, feature?: Feature) => (
@@ -57,6 +58,7 @@ export default function App() {
             <Route path="cases/:id" element={guarded('cases:read', <CaseDetailPage />, 'cases')} />
             <Route path="checks" element={guarded('checks:read', <ChecksPage />)} />
             <Route path="sources" element={guarded('sources:read', <SourcesPage />, 'sources')} />
+            <Route path="trusted-sites" element={guarded('sources:read', <TrustedSitesPage />, 'trustedSites')} />
             <Route path="models" element={guarded('models:read', <ModelsPage />, 'providers')} />
             <Route path="runtime" element={guarded('models:read', <RuntimeConfigPage />, 'runtimeConfig')} />
             <Route path="rules" element={guarded('rules:read', <RulesPage />, 'alertRules')} />
