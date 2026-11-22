@@ -1,9 +1,10 @@
 import { type FormEvent, type KeyboardEvent, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { checkHealth } from '../api/client.ts';
-import { SOURCE_GROUPS, WHATSAPP_NUMBER } from '../content/sources.ts';
+import { WHATSAPP_NUMBER } from '../content/sources.ts';
 import { VERDICT_ORDER, VERDICTS } from '../content/verdicts.ts';
 import { useChecker } from '../lib/checker.ts';
+import { groupExamples, useTrustedSourceGroups } from '../lib/trustedSources.ts';
 
 const STEPS = [
   { lead: 'Wklejasz wiadomość', rest: ' albo link do artykułu.' },
@@ -25,6 +26,7 @@ function useServerUp(): boolean | null {
 export default function StartScreen() {
   const { input, setInput, error, run } = useChecker();
   const serverUp = useServerUp();
+  const sources = useTrustedSourceGroups();
 
   const onSubmit = (event: FormEvent) => {
     event.preventDefault();
@@ -155,14 +157,22 @@ export default function StartScreen() {
           Z jakich źródeł korzystamy
         </h2>
         <p className="panel__text">Lista źródeł jest jawna. Każdy może ją sprawdzić.</p>
-        <ul className="plain-list">
-          {SOURCE_GROUPS.map((group) => (
-            <li key={group.name} className="source-groups__item">
-              <strong className="source-groups__name">{group.name}</strong>
-              <span className="source-groups__examples">{group.examples}</span>
-            </li>
-          ))}
-        </ul>
+        {sources.status === 'ready' ? (
+          <ul className="plain-list">
+            {sources.groups.map((group) => (
+              <li key={group.id} className="source-groups__item">
+                <strong className="source-groups__name">{group.name}</strong>
+                <span className="source-groups__examples">{groupExamples(group)}</span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="note note--muted" role={sources.status === 'error' ? 'alert' : 'status'}>
+            {sources.status === 'error'
+              ? 'Nie udało się pobrać listy źródeł.'
+              : 'Wczytuję listę źródeł…'}
+          </p>
+        )}
         <Link to="/zrodla" className="panel__link">
           Zobacz pełną listę źródeł
         </Link>

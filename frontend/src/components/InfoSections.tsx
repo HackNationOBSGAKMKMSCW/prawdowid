@@ -1,9 +1,9 @@
-import { useEffect, useId, useState, type ReactNode } from 'react';
+import { useId, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { listTrustedSources, type TrustedSource } from '../api/client.ts';
-import { FULL_SOURCE_LIST, type FullSourceGroup, WHATSAPP_NUMBER } from '../content/sources.ts';
+import { WHATSAPP_NUMBER } from '../content/sources.ts';
 import { VERDICT_ORDER, VERDICTS } from '../content/verdicts.ts';
 import { plural } from '../lib/format.ts';
+import { useTrustedSourceGroups } from '../lib/trustedSources.ts';
 
 const countLabel = (n: number) => `${n} ${plural(n, 'źródło', 'źródła', 'źródeł')}`;
 
@@ -78,71 +78,33 @@ export function HowItWorksContent({ level }: { level: Level }) {
   );
 }
 
-/** Grupy dla `trust` z `GET /api/trusted-sources`, w tej kolejności. */
-const TRUST_GROUPS: { trust: string; id: string; name: string; why: string }[] = [
-  {
-    trust: 'official',
-    id: 'urzedowe',
-    name: 'Strony urzędowe i instytucje publiczne',
-    why: 'Oficjalne informacje państwa i instytucji: przepisy, komunikaty, decyzje, ostrzeżenia.',
-  },
-  {
-    trust: 'fact_checker',
-    id: 'fact-check',
-    name: 'Serwisy sprawdzające fakty',
-    why: 'Organizacje, które sprawdzają popularne twierdzenia i publikują swoje ustalenia.',
-  },
-  {
-    trust: 'other',
-    id: 'inne',
-    name: 'Inne wiarygodne źródła',
-    why: 'Pozostałe źródła z naszej listy.',
-  },
-];
-
-function groupSources(sources: TrustedSource[]): FullSourceGroup[] {
-  const known = new Set(TRUST_GROUPS.map((g) => g.trust));
-  return TRUST_GROUPS.map((group) => ({
-    id: group.id,
-    name: group.name,
-    why: group.why,
-    sources: sources
-      .filter((s) => s.trust === group.trust || (group.trust === 'other' && !known.has(s.trust)))
-      .sort((a, b) => a.name.localeCompare(b.name, 'pl'))
-      .map((s) => ({ name: s.name, url: s.url, note: s.description || s.topics.join(', ') || undefined })),
-  })).filter((group) => group.sources.length > 0);
-}
-
-/**
- * Lista z backendu (te same źródła, które przeszukuje weryfikacja); w trybie demo
- * albo gdy serwer nie odpowiada — lista wpisana w kodzie.
- */
-function useSourceGroups(): { groups: FullSourceGroup[]; live: boolean } {
-  const [live, setLive] = useState<FullSourceGroup[] | null>(null);
-  useEffect(() => {
-    const ctrl = new AbortController();
-    listTrustedSources(ctrl.signal).then(
-      (sources) => {
-        if (sources && sources.length) setLive(groupSources(sources));
-      },
-      () => {
-        // Bez serwera zostaje lista z kodu.
-      },
-    );
-    return () => ctrl.abort();
-  }, []);
-  return live ? { groups: live, live: true } : { groups: FULL_SOURCE_LIST, live: false };
-}
-
 export function SourcesContent({ level }: { level: Level }) {
-  const { groups, live } = useSourceGroups();
+  const list = useTrustedSourceGroups();
+  if (list.status === 'loading') {
+    return (
+      <p className="note note--muted" role="status">
+        Wczytuję listę źródeł…
+      </p>
+    );
+  }
+  if (list.status === 'error') {
+    return (
+      <p className="note" role="alert">
+        Nie udało się pobrać listy źródeł. Odśwież stronę za chwilę.
+      </p>
+    );
+  }
+  const { groups, demo } = list;
+  const total = groups.reduce((n, g) => n + g.sources.length, 0);
   return (
     <>
-      {live && (
-        <p className="note note--muted">
-          Aktualna lista z serwera: {countLabel(groups.reduce((n, g) => n + g.sources.length, 0))}.
-        </p>
-      )}
+      <p className="note note--muted">
+        {demo
+          ? 'Przykładowa lista (tryb demonstracyjny).'
+          : total
+            ? `Aktualna lista: ${countLabel(total)}.`
+            : 'Lista źródeł jest teraz pusta.'}
+      </p>
       {groups.map((group) => (
         <Section key={group.id} level={level} title={group.name}>
           <p className="panel__text">{group.why}</p>

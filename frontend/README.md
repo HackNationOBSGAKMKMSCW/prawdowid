@@ -5,7 +5,8 @@ Aplikacja webowa Prawdowida z dwoma widokami, przełączanymi u góry ekranu:
 - **Strona** (`/`) – użytkownik wkleja wiadomość albo link i dostaje wynik z
   werdyktem dla każdego zdania oraz źródłami. Interfejs według projektu „Prawdowid v4”.
 - **WhatsApp** (`/whatsapp`) – symulator czatu z Prawdowidem
-  (`src/whatsapp/`), rozmawia z adapterem z `whatsapp_sim/backend`. Nic nie trafia
+  (`src/whatsapp/`). Ten sam backend i ta sama weryfikacja co na stronie, wynik
+  podany jak wiadomości czatu (`whatsapp_sim/backend`). Nic nie trafia
   do prawdziwego WhatsAppa. Numer na stronie startowej otwiera ten widok z
   wpisaną wiadomością (`/whatsapp?text=…`).
 
@@ -43,23 +44,23 @@ scenariusze: wynik ze źródłami, analiza dat i manipulacji, link, opinia,
 
 ### Z prawdziwym backendem
 
-Dwa procesy backendu i frontend w trybie `live` (każde w osobnym terminalu, z
+Jeden backend i frontend w trybie `live` (każde w osobnym terminalu, z
 katalogu głównego repo):
 
 ```bash
-# 1. API strony: /api/check, /api/check/{id}/report, /api/health, /api/trusted-sources
+# 1. backend: strona (/api/check, /api/check/{id}/report, /api/health, /api/trusted-sources)
+#    i symulator WhatsApp (/api/whatsapp/*), ta sama weryfikacja dla obu
 #    (DATABASE_URL i klucze modeli w głównym .env, wzór: .env.example; zob. backend/API.md)
 PYTHONPATH=backend:analysis:analysis/src uvicorn server:app --port 8000
 
-# 2. symulator WhatsApp (widok /whatsapp): /api/whatsapp/*
-cd whatsapp_sim/backend && python -m whatsappAdapter --port 8001   # albo --demo
-
-# 3. frontend połączony z backendem
+# 2. frontend połączony z backendem
 cd frontend && npm run dev:live    # http://localhost:5173
 ```
 
-Vite przekazuje `/api/whatsapp` na port 8001, a resztę `/api` na port 8000
-(`API_PROXY_TARGET`, `WHATSAPP_PROXY_TARGET` w głównym `.env`, wzór w głównym `.env.example`).
+Vite przekazuje całe `/api` na port 8000 (`API_PROXY_TARGET` w głównym `.env`, wzór w
+głównym `.env.example`). Osobny adapter WhatsApp, np. offline demo
+(`cd whatsapp_sim/backend && python -m whatsappAdapter --demo`, port 8001), włącza się
+przez `WHATSAPP_PROXY_TARGET=http://127.0.0.1:8001`.
 `npm run build:live` buduje stronę w trybie `live`; na serwerze `/api` musi
 prowadzić do `server:app` (ta sama domena albo `VITE_API_BASE_URL` + `CORS_ORIGINS`).
 
@@ -85,8 +86,12 @@ W trybie `live`:
 
 Podstrony: `/zrodla` (pełna lista źródeł), `/pomoc`, `/deklaracja-dostepnosci`.
 
-Link `/?q=<tekst>` od razu sprawdza podany tekst – z tego korzysta przycisk
-„Udostępnij wynik”.
+Lista źródeł (`/zrodla` i skrót na stronie startowej) pochodzi z bazy:
+`GET /api/trusted-sources`, czyli tabela `trusted_sources` edytowana w panelu admina.
+Gdy serwer nie odpowiada, strona pisze, że listy nie da się pobrać; nie ma zapasowej
+listy w kodzie. Tylko tryb `mock` pokazuje przykładową listę (`src/content/sources.ts`).
+
+Link `/?q=<tekst>` od razu sprawdza podany tekst.
 
 ## Kontrakt API
 

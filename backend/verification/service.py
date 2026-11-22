@@ -51,6 +51,27 @@ async def _analyze(text: str, submitted_at: datetime) -> Any:
     return await analyze_input(text, submitted_at=submitted_at)
 
 
+_FALLBACK_STATEMENT_CHARS = 1_000
+
+
+def _with_fallback_statement(analysis: Any) -> Any:
+    """Check the whole text as one claim when the analyzer extracted none.
+
+    Plain questions ("Czy we Włoszech był strajk generalny?") often yield no statements;
+    without one every later stage has nothing to search for (``apiReading.run`` raises).
+    The WhatsApp bot does the same with ``apiReading.run_full_text``. Input flagged by the
+    security checks is left as it is.
+    """
+    statements = [s for s in (getattr(analysis, "statements", None) or []) if str(s).strip()]
+    if statements or getattr(analysis, "security_warnings", None):
+        return analysis
+    text = " ".join(str(getattr(analysis, "source_text", "") or "").split())
+    if text:
+        analysis.statements = [text[:_FALLBACK_STATEMENT_CHARS]]
+        observability.log_event("verification_fallback_statement", chars=len(text))
+    return analysis
+
+
 async def _read(analysis: Any) -> list[Any]:
     import apiReading
 
@@ -306,7 +327,10 @@ def start(
     request_id = request_id or observability.current_request_id() or new_request_id()
     started = time.perf_counter()
 
-    analyzed = asyncio.create_task(stages.analyze(text, submitted_at))
+    async def analyze() -> Any:
+        return _with_fallback_statement(await stages.analyze(text, submitted_at))
+
+    analyzed = asyncio.create_task(analyze())
     evidence = asyncio.create_task(_collect_evidence(stages, analyzed, submitted_at))
     known = asyncio.create_task(_known_disinfo(stages, analyzed, timeout))
 

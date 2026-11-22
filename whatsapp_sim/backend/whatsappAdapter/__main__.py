@@ -1,4 +1,4 @@
-"""Run the adapter server: ``python -m whatsappAdapter [--demo] [--port 8000]``."""
+"""Run the adapter server: ``python -m whatsappAdapter [--demo] [--port 8001]``."""
 
 import argparse
 import os
@@ -10,14 +10,17 @@ from .server import MODE_ENV, create_app
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="SprawdzTo WhatsApp adapter (simulator backend)")
+    parser = argparse.ArgumentParser(
+        description="SprawdzTo WhatsApp adapter (simulator backend). Normally served by server:app; standalone mainly for --demo"
+    )
     parser.add_argument(
         "--demo",
         action="store_true",
         help="answer from built-in example data, without API keys or network",
     )
     parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=8000)
+    # 8000 zajmuje API strony (server:app); Vite kieruje /api/whatsapp na 8001.
+    parser.add_argument("--port", type=int, default=8001)
     args = parser.parse_args()
 
     if args.demo:

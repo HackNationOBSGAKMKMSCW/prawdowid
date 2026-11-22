@@ -4,16 +4,19 @@ A demonstration channel for SprawdzTo: users talk to a **SprawdzTo** contact in 
 WhatsApp-style chat, send a phrase, question, or forwarded message, and get back
 a fact-check verdict with sources.
 
-The Python adapter lives in this folder and reuses the main app's
-`textAnalysis` and `apiReading` packages from `backend/`. The chat simulator
-is part of the main web app: it is the **WhatsApp** view of `frontend/`
-(`/whatsapp`, source in `frontend/src/whatsapp/`), next to the website view.
+The Python adapter lives in this folder, but it is **part of the main backend**:
+`backend/server.py` serves `/api/whatsapp/*` next to `/api/check`, on the same port.
+A WhatsApp message goes through **the same verification as the website**
+(`backend/verification` → `api_adapter.to_check_response`). The bot gets the same
+claims, verdicts, explanations, sources and manipulation/date checks, and sends them as
+chat messages. The chat simulator is the **WhatsApp** view of `frontend/` (`/whatsapp`,
+source in `frontend/src/whatsapp/`), next to the website view.
 
 ```
 whatsapp_sim/
-├── backend/                  # Python adapter (FastAPI), port 8000
+├── backend/                  # Python adapter (FastAPI router, included in server:app)
 │   ├── pytest.ini
-│   └── whatsappAdapter/      # bot, Cloud API shapes, verdicts, server, tests
+│   └── whatsappAdapter/      # bot, Cloud API shapes, formatting, router, tests
 frontend/src/whatsapp/        # chat simulator, the /whatsapp view of the main app
 ```
 
@@ -25,43 +28,58 @@ only need a transport that forwards Meta's webhooks here and posts the returned
 messages to the Graph API.
 
 ```
-simulator ──webhook──▶ POST /api/whatsapp/webhook
+simulator ──webhook──▶ POST /api/whatsapp/webhook   (server:app, port 8000)
                          │ SprawdzToBot
-                         │  ├─ textAnalysis.run(text)    → statements
-                         │  └─ apiReading.run(analysis)  → fact checks
-          ◀──messages──  └─ formatting: verdict, sources, caveats
+                         │  ├─ admin monitor: blocks, high-risk content (panel admina)
+                         │  ├─ verification.start(text)  ← the same as GET /api/check
+                         │  │    claims → fact checks, trusted sites, articles
+                         │  │    → manipulation/dates + verdict per claim + known disinfo
+                         │  └─ CheckResponse → WhatsApp card + details
+          ◀──messages──  └─ admin monitor: result, info gaps, alerts
 ```
 
 ## Run
 
-Backend (Python 3.14), from the repository root:
+From the repository root (Python 3.14):
 
 ```bash
 python -m venv .venv
 .venv/bin/python -m pip install -r requirements.txt
-cd whatsapp_sim/backend && ../../.venv/bin/python -m whatsappAdapter --demo --port 8001
+PYTHONPATH=backend:analysis:analysis/src .venv/bin/uvicorn server:app --port 8000
 ```
 
 Web app with the simulator, in a second terminal:
 
 ```bash
-cd frontend && npm install && npm run dev
+cd frontend && npm install && npm run dev:live
 ```
 
 Open <http://localhost:5173/whatsapp> (or use the **Strona / WhatsApp** switch at
-the top). Vite proxies `/api/whatsapp` to the adapter on port 8001 (`WHATSAPP_PROXY_TARGET`)
-and the rest of `/api` to the browser API (`server:app`) on port 8000. The WhatsApp number on
-the start page opens this view with the typed message ready to send
-(`/whatsapp?text=…`); nothing goes to the real WhatsApp.
+the top). Vite proxies all of `/api` to port 8000. The WhatsApp number on the start page
+opens this view with the typed message ready to send (`/whatsapp?text=…`); nothing goes
+to the real WhatsApp.
 
-- `--demo` answers from a few built-in example topics (vaccines and autism, 5G
-  and coronavirus, the Great Wall, boiling water). Every demo reply is labelled
-  as example data.
-- Without `--demo` the adapter runs the real pipeline and needs
-  `FREELLM_API_KEY` (plus `FREELLM_BASE_URL`, `FREELLM_MODEL`) and
-  `GOOGLE_FACT_CHECK_API_KEY` in the project-root `.env` (see `.env.example`). Missing
-  keys are reported in the chat instead of failing silently.
-- `SPRAWDZTO_MODE=demo|live`, `--host`, and `--port` are also supported.
+Modes (`SPRAWDZTO_MODE` in the project-root `.env`):
+
+- `live` (default): the website's verification. It needs the same keys as the website
+  (`FREELLM_*`, `GOOGLE_FACT_CHECK_API_KEY`, `DATABASE_URL`, see `.env.example`) and
+  takes as long (`CHECK_TIMEOUT_SECONDS`, default 360 s).
+- `factcheck`: Google Fact Check only, without the model's verdict. Faster, but it can
+  differ from the website.
+- `demo`: a few built-in example topics (vaccines and autism, 5G and coronavirus, the
+  Great Wall, boiling water), without network or keys. Every demo reply is labelled.
+
+`WHATSAPP_ENABLED=false` turns the channel off in `server:app`.
+
+### Standalone adapter (offline demo)
+
+Without a database or model keys, the adapter can still run on its own:
+
+```bash
+cd whatsapp_sim/backend && ../../.venv/bin/python -m whatsappAdapter --demo   # port 8001
+```
+
+and in the project-root `.env`: `WHATSAPP_PROXY_TARGET=http://127.0.0.1:8001`.
 
 ## Simulator
 
@@ -73,7 +91,7 @@ the start page opens this view with the typed message ready to send
   message or send the draft as forwarded (`context.forwarded` in the
   webhook). The bot adds a chain-message warning to its answer.
 - Live progress: while a message is checked, the chat shows the steps
-  streamed by the adapter (analysis, fact-check search) instead of plain
+  streamed by the adapter (analysis, then assessing the claims) instead of plain
   typing dots.
 - Verdict card: the answer starts with a card coloured by the verdict and an
   "Otwórz źródło" button, followed by the detailed sources.
@@ -94,16 +112,19 @@ chat opens). Other types get a "text only" reply.
 
 - `start`, greetings → welcome message plus reply buttons with examples.
 - `pomoc` / `help` → how it works.
-- Any other text (8+ characters) → analysis and fact-check search. Messages
-  without extractable statements (often plain questions) are searched as a
-  whole with `apiReading.run_full_text`.
-- Ratings from fact-checkers are mapped to false / misleading / true /
-  unverified (`verdicts.py`) and combined into one headline verdict; true and
-  false ratings together are reported as conflicting.
-- When a linked review is found, the reply starts with an interactive
-  `cta_url` message (verdict header, checked statement with the most
-  relevant rating, review-count footer, source link button); the detailed
-  text follows. This is a real Cloud API message type.
+- Any other text (8+ characters) → the website's verification. A message without
+  extractable statements (often a plain question) is checked as one claim, as on the
+  website. A bare link is validated like on the website (public HTTP(S) only).
+- Verdicts and labels are the website's: Potwierdzone, Fałszywe, Wprowadzające w błąd,
+  Brak wystarczających dowodów, Nie podlega weryfikacji (`verified_formatting.py`).
+  Different verdicts for different claims are shown as "Różne oceny twierdzeń".
+- When a claim has a linked source, the reply starts with an interactive
+  `cta_url` message (verdict header, the claim with its explanation, source-count
+  footer, source link button); the details follow: every claim with its verdict,
+  explanation and sources, then manipulation techniques and date issues.
+  This is a real Cloud API message type.
+- Each message is logged in the admin panel (`admin_bridge.py`) with the website's
+  verdicts, so the panel sees info gaps and alerts from WhatsApp.
 - Forwarded messages (`context.forwarded` / `frequently_forwarded`) get a
   chain-message warning.
 - Status lines from the streaming endpoint are a simulator feature; on real

@@ -73,7 +73,8 @@ interface Activity {
 }
 
 const STORAGE_KEY = 'sprawdzto-whatsapp-chat-v1';
-const START_COMMAND = 'cd whatsapp_sim/backend && ../../.venv/bin/python -m whatsappAdapter --demo';
+const START_COMMAND =
+  'PYTHONPATH=backend:analysis:analysis/src .venv/bin/uvicorn server:app --port 8000';
 
 // A typical chain message, used by the attach menu to demo forwarded content.
 const SAMPLE_CHAIN =
@@ -277,7 +278,7 @@ export default function WhatsAppSimulator() {
           kind: 'notice',
           id: newMessageId(),
           time: Date.now(),
-          text: `Brak odpowiedzi od adaptera WhatsApp (${detail}). Uruchom backend: ${START_COMMAND}`,
+          text: `Brak odpowiedzi od backendu (${detail}). Uruchom go w katalogu głównym repo: ${START_COMMAND}`,
         });
       } finally {
         setActivity((prev) => prev.filter((entry) => entry.id !== id));
@@ -351,8 +352,8 @@ export default function WhatsAppSimulator() {
           <div className="wa-chat" ref={scrollRef} role="log" aria-live="polite">
             <div className="wa-chip wa-chip--notice">
               <LockIcon width={12} height={12} />
-              To symulator WhatsApp. Wiadomości trafiają do lokalnego adaptera Prawdowida, nie do
-              serwerów WhatsApp.
+              To symulator WhatsApp. Wiadomości sprawdza backend Prawdowida, tak samo jak na
+              stronie, i nie trafiają do serwerów WhatsApp.
             </div>
 
             {items.map((item, index) => {

@@ -6,31 +6,19 @@ import ReportDialog from '../components/ReportDialog.tsx';
 import { useAnnounce } from '../lib/announce.ts';
 import { useChecker } from '../lib/checker.ts';
 import { buildResultView } from '../lib/result.ts';
-import { shareLink } from '../lib/share.ts';
 import { usePageSpeechText, useSpeech } from '../lib/speech.ts';
 
 export default function ResultScreen({ result }: { result: CheckResult }) {
-  const { input, goStart } = useChecker();
+  const { goStart } = useChecker();
   const announce = useAnnounce();
   const view = useMemo(() => buildResultView(result), [result]);
 
-  const [copied, setCopied] = useState(false);
   const [reported, setReported] = useState(false);
   const [dialog, setDialog] = useState<'report' | null>(null);
 
   const speech = useSpeech();
   // Przy włączonym czytaniu w nagłówku wynik czyta się sam po przejściu na ten ekran.
   usePageSpeechText(view.readAloud);
-
-  const onShare = async () => {
-    const ok = await shareLink(input);
-    if (ok) {
-      setCopied(true);
-      announce('Link skopiowany.');
-    } else {
-      announce('Nie udało się skopiować linku.');
-    }
-  };
 
   return (
     <div className="page page--result">
@@ -75,9 +63,6 @@ export default function ResultScreen({ result }: { result: CheckResult }) {
           }}
         >
           Sprawdź coś innego
-        </button>
-        <button type="button" className="btn-secondary" onClick={onShare}>
-          {copied ? 'Skopiowano link' : 'Udostępnij wynik'}
         </button>
       </div>
 

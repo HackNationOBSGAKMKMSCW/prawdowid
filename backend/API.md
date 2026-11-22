@@ -22,8 +22,8 @@ of exact browser origins. The deployment template is [`../render.yaml`](../rende
 | `GET` | `/api/check?text=...` | Run a full synchronous analysis for text or a bare website URL. |
 | `POST` | `/api/check/{id}/report` | Store feedback for a returned result ID. |
 | `GET` | `/api/health` | Readiness check, including PostgreSQL connectivity. |
-| `GET` | `/api/trusted-sources` | Enabled trusted sources, public fields only (`id`, `name`, `url`, `trust`, `topics`, `description`). |
-| `GET` | `/api/trusted-sources/{source_id}` | One enabled trusted source (404 for unknown or disabled). |
+| `GET` | `/api/trusted-sources` | Enabled trusted sources from the `trusted_sources` table (edited in the admin panel), public fields only (`id`, `name`, `url`, `trust`, `topics`, `description`). Refreshed every minute; never the code list: without the database `503 sources_unavailable`. |
+| `GET` | `/api/trusted-sources/{source_id}` | One enabled trusted source (404 for unknown or disabled, 503 without the database). |
 | `GET` | `/docs` | Interactive OpenAPI documentation. |
 | `GET` | `/redoc` | ReDoc API documentation. |
 | `GET` | `/openapi.json` | OpenAPI schema. |
@@ -123,8 +123,8 @@ LLM, so it is not exposed on the public browser API:
 | `POST` | `/api/trusted-sources/{source_id}/check` | Re-detect a trusted source's type. |
 | `POST` | `/api/trusted-sources/search` | Search using `{"text":"..."}` or `{"queries":["..."]}`. |
 
-The trusted-source router is mounted by the separate WhatsApp simulator app.
-That app also implements:
+The trusted-source router is mounted by the standalone WhatsApp adapter
+(`python -m whatsappAdapter`). The WhatsApp routes are also served by `server:app`:
 
 | Method | Path | Description / usage |
 | --- | --- | --- |
@@ -133,7 +133,7 @@ That app also implements:
 | `POST` | `/api/whatsapp/webhook?stream=true` | Same payload, returned as NDJSON progress events. |
 | `GET` | `/api/whatsapp/docs` | Interactive simulator API docs. |
 
-These simulator routes are not served by `server:app` or the Render browser API.
+`WHATSAPP_ENABLED=false` removes them from `server:app`.
 
 ## Error responses
 
