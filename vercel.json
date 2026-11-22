@@ -7,7 +7,7 @@
   "rewrites": [
     {
       "source": "/api/admin/:path*",
-      "destination": "https://TWOJ-BACKEND.onrender.com/api/admin/:path*"
+      "destination": "http://100.101.180.103:5173/api/admin/:path*"
     },
     { "source": "/admin", "destination": "/admin/index.html" },
     { "source": "/admin/:path*", "destination": "/admin/index.html" },
