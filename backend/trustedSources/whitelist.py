@@ -152,28 +152,6 @@ WHITELIST: tuple[WhitelistEntry, ...] = (
         topics=("drogi krajowe", "utrudnienia drogowe"),
     ),
     WhitelistEntry(
-        "https://ulc.gov.pl/",
-        "Urząd Lotnictwa Cywilnego",
-        topics=("lotnictwo", "lotnisko", "loty", "drony"),
-    ),
-    WhitelistEntry(
-        "https://ulc.gov.pl/prawa-pasazera",
-        "ULC – prawa pasażera",
-        topics=("prawa pasażera", "odwołany lot", "opóźniony lot", "odszkodowanie"),
-    ),
-    WhitelistEntry(
-        "https://ulc.gov.pl/prawa-pasazera/poradnik-dla-pasazerow",
-        "ULC – poradnik dla pasażerów",
-        topics=("prawa pasażera", "bagaż", "odwołany lot"),
-    ),
-    WhitelistEntry(
-        "https://portalpasazera.pl/",
-        "Portal Pasażera (PKP PLK)",
-        topics=("rozkład jazdy", "pociąg", "utrudnienia na kolei", "opóźnienie pociągu"),
-        description="Rozkład jazdy i bieżące utrudnienia na kolei.",
-        adapter="reference",
-    ),
-    WhitelistEntry(
         "https://utk.gov.pl/pl/pasazerowie",
         "Urząd Transportu Kolejowego – pasażerowie",
         topics=("kolej", "pociąg", "prawa pasażera"),
@@ -192,11 +170,6 @@ WHITELIST: tuple[WhitelistEntry, ...] = (
         "https://www.umgdy.gov.pl/",
         "Urząd Morski w Gdyni",
         topics=("żegluga", "port", "Bałtyk"),
-    ),
-    WhitelistEntry(
-        "https://www.ums.gov.pl/bezpieczenstwo-morskie/warunki-zeglugi",
-        "Urząd Morski w Szczecinie – warunki żeglugi",
-        topics=("żegluga", "warunki żeglugi", "zalew"),
     ),
     WhitelistEntry(
         "https://www.gov.pl/web/wody-polskie/komunikaty-nawigacyjne",
@@ -291,14 +264,6 @@ WHITELIST: tuple[WhitelistEntry, ...] = (
         "Sejm – akty prawne (ELI / ISAP)",
         topics=("prawo", "ustawa", "rozporządzenie", "Dziennik Ustaw", "Monitor Polski"),
     ),
-    # Kontekst encyklopedyczny dla faktów ogólnych (geografia, historia, instytucje).
-    # Zaufanie "other": to nie jest źródło urzędowe.
-    WhitelistEntry(
-        "https://pl.wikipedia.org/",
-        "Wikipedia (polska)",
-        topics=("encyklopedia", "geografia", "historia", "instytucje"),
-        description="Kontekst encyklopedyczny; nie jest źródłem urzędowym.",
-    ),
     WhitelistEntry(
         "https://www.nato.int/",
         "NATO – aktualności",
@@ -313,21 +278,5 @@ WHITELIST: tuple[WhitelistEntry, ...] = (
         "https://www.zus.pl/",
         "Zakład Ubezpieczeń Społecznych",
         topics=("emerytury", "składki", "świadczenia"),
-    ),
-    # Fact-checkery szukane przez Google Fact Check API (reviewPublisherSiteFilter).
-    WhitelistEntry(
-        "https://konkret24.tvn24.pl/",
-        "Konkret24",
-        topics=("fact-checking", "dezinformacja"),
-    ),
-    WhitelistEntry(
-        "https://sprawdzam.afp.com/",
-        "AFP Sprawdzam",
-        topics=("fact-checking", "dezinformacja"),
-    ),
-    WhitelistEntry(
-        "https://fakenews.pl/",
-        "FakeNews.pl",
-        topics=("fact-checking", "dezinformacja"),
     ),
 )
