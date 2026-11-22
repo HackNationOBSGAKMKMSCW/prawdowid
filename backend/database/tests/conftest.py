@@ -45,7 +45,23 @@ def db(pg_url, pg_schema):
 
 @pytest.fixture
 def clean_db(db):
-    """Pusta baza dla testu (te same tabele, bez danych)."""
-    tables = [t for t in db.tables() if t != "schema_migrations"]
+    """Pusta baza dla testu (te same tabele, bez danych).
+
+    Nazwy tabel z jawnym schematem testowym: czyszczenie nigdy nie dotknie ``public``, nawet
+    gdy serwer współdzieli sesję między połączeniami (np. PGlite) i ``search_path`` przecieka.
+    Na takim serwerze testy i tak mogą zapisać wiersze w ``public`` — uruchamiaj je na bazie
+    bez danych, na których ci zależy.
+    """
+    rows = db.fetch_all(
+        "SELECT table_name FROM information_schema.tables "
+        "WHERE table_schema = %s AND table_type = 'BASE TABLE'",
+        [db.schema],
+    )
+    tables = [f"{db.schema}.{r['table_name']}" for r in rows if r["table_name"] != "schema_migrations"]
+    if not tables:
+        pytest.fail(
+            f"Migracje nie utworzyły tabel w schemacie {db.schema}: serwer współdzieli sesję "
+            "między połączeniami (np. PGlite) i testy pisałyby do public. Użyj osobnej bazy."
+        )
     db.execute(f"TRUNCATE {', '.join(tables)} RESTART IDENTITY CASCADE")
     return db
