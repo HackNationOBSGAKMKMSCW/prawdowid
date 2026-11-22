@@ -6,7 +6,11 @@ pytest.importorskip("fastapi")
 
 from fastapi.testclient import TestClient  # noqa: E402
 from whatsappAdapter.bot import WELCOME_TEXT, SprawdzToBot  # noqa: E402
-from whatsappAdapter.pipeline import DemoPipeline, LivePipeline  # noqa: E402
+from whatsappAdapter.pipeline import (  # noqa: E402
+    DemoPipeline,
+    LivePipeline,
+    VerificationPipeline,
+)
 from whatsappAdapter.server import create_app, pipeline_from_environment  # noqa: E402
 
 
@@ -95,8 +99,10 @@ def test_webhook_rejects_invalid_payloads(client: TestClient) -> None:
 def test_pipeline_from_environment(monkeypatch) -> None:
     monkeypatch.setenv("SPRAWDZTO_MODE", "demo")
     assert isinstance(pipeline_from_environment(), DemoPipeline)
-    monkeypatch.delenv("SPRAWDZTO_MODE")
+    monkeypatch.setenv("SPRAWDZTO_MODE", "factcheck")
     assert isinstance(pipeline_from_environment(), LivePipeline)
+    monkeypatch.delenv("SPRAWDZTO_MODE")
+    assert isinstance(pipeline_from_environment(), VerificationPipeline)
     monkeypatch.setenv("SPRAWDZTO_MODE", "nope")
     with pytest.raises(ValueError):
         pipeline_from_environment()

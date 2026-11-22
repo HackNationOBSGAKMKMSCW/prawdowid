@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import sys
 from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -28,6 +29,20 @@ load_dotenv(PROJECT_ROOT / ".env", override=False)
 load_dotenv(PROJECT_ROOT / "backend" / ".env", override=False)
 
 StoreFactory = Callable[[], Awaitable[PostgresStore]]
+
+# Kanał WhatsApp (whatsapp_sim/backend/whatsappAdapter) działa w tym samym backendzie:
+# /api/whatsapp/* korzysta z tej samej weryfikacji co /api/check.
+WHATSAPP_BACKEND = PROJECT_ROOT / "whatsapp_sim" / "backend"
+
+
+def _whatsapp_router(monitor: object | None = None):
+    if os.getenv("WHATSAPP_ENABLED", "true").strip().lower() in {"0", "false", "no", "off"}:
+        return None
+    if WHATSAPP_BACKEND.is_dir() and str(WHATSAPP_BACKEND) not in sys.path:
+        sys.path.append(str(WHATSAPP_BACKEND))
+    from whatsappAdapter.server import create_router
+
+    return create_router(monitor=monitor)
 
 
 def _cors_origins() -> list[str]:
@@ -83,11 +98,17 @@ def create_app(
     app.include_router(router)
     app.include_router(trusted_sources_router)
     app.state.journal = None
+    panel_monitor = monitor
     if _admin_panel_enabled(admin_panel):
         from admin.api import mount_admin
         from admin.web import CheckJournal
 
-        app.state.journal = CheckJournal(mount_admin(app, monitor=monitor))
+        panel_monitor = mount_admin(app, monitor=monitor)
+        app.state.journal = CheckJournal(panel_monitor)
+    # WhatsApp pisze do tego samego dziennika panelu co /api/check (jeden monitor w procesie).
+    whatsapp = _whatsapp_router(panel_monitor)
+    if whatsapp is not None:
+        app.include_router(whatsapp)
     app.add_middleware(RequestSizeLimitMiddleware, max_body_bytes=96 * 1024)
     app.add_middleware(
         CORSMiddleware,
@@ -99,7 +120,7 @@ def create_app(
     )
     app.add_middleware(
         ObservabilityMiddleware,
-        skip_paths=("/health", "/api/health", "/docs", "/openapi.json"),
+        skip_paths=("/health", "/api/health", "/api/whatsapp/health", "/docs", "/openapi.json"),
     )
     install_error_handlers(app)
     return app

@@ -515,10 +515,16 @@ def _registry_view(source: Any) -> dict[str, Any]:
 
 
 def _refresh_trusted_sources() -> None:
-    """Zmiana listy w panelu: rejestr trustedSources w tym procesie przeładuje ją od razu."""
+    """Zmiana listy w panelu: rejestr weryfikacji i publiczna lista w tym procesie od razu."""
     try:
         from trustedSources.registry import default_registry
 
         default_registry().refresh()
     except Exception:  # noqa: BLE001, S110 - inne procesy przeładują listę same (co 5 min)
+        pass
+    try:
+        import public_sources
+
+        public_sources.reload()
+    except Exception:  # noqa: BLE001, S110 - poza server.py modułu nie ma; lista odświeży się sama
         pass

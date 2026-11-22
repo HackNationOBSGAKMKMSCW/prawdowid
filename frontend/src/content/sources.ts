@@ -1,20 +1,3 @@
-export interface SourceGroup {
-  name: string;
-  examples: string;
-}
-
-/** Skrócona lista grup źródeł pokazywana na stronie startowej. */
-export const SOURCE_GROUPS: SourceGroup[] = [
-  {
-    name: 'Strony rządowe i urzędowe',
-    examples: 'gov.pl, Biuletyn Informacji Publicznej, Dziennik Ustaw',
-  },
-  { name: 'Instytucje naukowe i zdrowotne', examples: 'np. Narodowy Instytut Zdrowia Publicznego' },
-  { name: 'Agencje prasowe', examples: 'np. Polska Agencja Prasowa' },
-  { name: 'Serwisy sprawdzające fakty', examples: 'np. Demagog, Konkret24' },
-  { name: 'Bazy znanych fałszywych wiadomości', examples: 'np. EUvsDisinfo' },
-];
-
 export interface ListedSource {
   name: string;
   url?: string;
@@ -28,7 +11,7 @@ export interface FullSourceGroup {
   sources: ListedSource[];
 }
 
-/** Pełna lista źródeł na stronie „Lista źródeł”. */
+/** Przykładowa lista źródeł dla trybu mock (bez backendu); w trybie live lista jest z bazy. */
 export const FULL_SOURCE_LIST: FullSourceGroup[] = [
   {
     id: 'urzedowe',

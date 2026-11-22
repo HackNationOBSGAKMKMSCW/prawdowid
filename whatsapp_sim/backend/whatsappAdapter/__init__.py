@@ -10,6 +10,19 @@ if _MAIN_BACKEND.is_dir() and str(_MAIN_BACKEND) not in sys.path:
     sys.path.append(str(_MAIN_BACKEND))
 
 from .bot import SprawdzToBot  # noqa: E402
-from .pipeline import CheckReport, DemoPipeline, LivePipeline  # noqa: E402
+from .pipeline import (  # noqa: E402
+    CheckReport,
+    DemoPipeline,
+    LivePipeline,
+    VerificationPipeline,
+    VerifiedReport,
+)
 
-__all__ = ["CheckReport", "DemoPipeline", "LivePipeline", "SprawdzToBot"]
+__all__ = [
+    "CheckReport",
+    "DemoPipeline",
+    "LivePipeline",
+    "SprawdzToBot",
+    "VerificationPipeline",
+    "VerifiedReport",
+]
