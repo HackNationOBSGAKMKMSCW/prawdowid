@@ -38,7 +38,7 @@ export default function CasesPage() {
   return (
     <>
       <PageHeader
-        title="Sprawy moderatora"
+        title="Sprawy"
         description="Zamknięta pętla informacji: nierozstrzygnięte zgłoszenia trafiają do jednej sprawy na grupę podobnych zapytań. System odróżnia rekomendację przekazania od faktycznego przekazania sprawy."
       />
       <div className="toolbar">

@@ -8,7 +8,7 @@ import { channelLabel, FLAG, INPUT_KIND, OUTCOME, PIPELINE_ROLE, REPORT_REASON, 
 import { Async, Badge, Card, Drawer, EmptyState, Modal, PageHeader, Pagination, SearchInput, useAction } from '../components/ui.tsx';
 import { useAsync } from '../hooks/useAsync.ts';
 import { exportCsv, exportJson } from '../utils/export.ts';
-import { fmtDate, fmtDateTime, fmtDuration, fmtPln, truncate } from '../utils/format.ts';
+import { fmtDate, fmtDateTime, fmtDuration, truncate } from '../utils/format.ts';
 
 function ResultBadge({ check }: { check: CheckRecord }) {
   if (check.overallVerdict) {
@@ -42,7 +42,8 @@ export default function ChecksPage() {
   const [confirmDelete, setConfirmDelete] = useState<CheckRecord | null>(null);
   const { run, busy } = useAction();
   const { checkFlags, checkOutcomes } = api.capabilities;
-  const showCost = supports('checkCost');
+  // Siła dowodów i tokeny: tylko źródła danych, które je zapisują (tryb demo).
+  const showStrength = supports('checkCost');
   const showUser = supports('endUsers');
 
   const query: CheckQuery = { ...filters, search, clusterId, page, pageSize: 25 };
@@ -77,7 +78,6 @@ export default function ChecksPage() {
         { header: 'siła podstaw', value: (c) => STRENGTH[c.strength] },
         { header: 'źródła', value: (c) => c.claims.flatMap((cl) => cl.evidence.map((e) => e.url)).join(' ') },
         { header: 'czas odpowiedzi ms', value: (c) => c.durationMs },
-        { header: 'koszt zł', value: (c) => c.costPln },
         { header: 'flagi', value: (c) => c.flags.join(',') },
       ]);
     }, 'Wyeksportowano.');
@@ -87,7 +87,7 @@ export default function ChecksPage() {
     <>
       <PageHeader
         title="Historia weryfikacji"
-        description="Zapis przebiegu każdego sprawdzenia: pytanie (z zamaskowanymi danymi osobowymi), czas, użyte źródła, wynik, modele i koszt."
+        description="Zapis przebiegu każdego sprawdzenia: pytanie (z zamaskowanymi danymi osobowymi), czas, użyte źródła, wynik i modele."
         actions={
           can('export') ? (
             <>
@@ -204,10 +204,9 @@ export default function ChecksPage() {
                         {showUser && <th>Użytkownik</th>}
                         <th className="col-wide">Zapytanie</th>
                         <th>Wynik</th>
-                        {showCost && <th>Siła</th>}
+                        {showStrength && <th>Siła</th>}
                         <th className="num">Źródła</th>
                         <th className="num">Czas odp.</th>
-                        {showCost && <th className="num">Koszt</th>}
                         <th>Flagi</th>
                       </tr>
                     </thead>
@@ -235,10 +234,9 @@ export default function ChecksPage() {
                           <td>
                             <ResultBadge check={c} />
                           </td>
-                          {showCost && <td className="small">{STRENGTH[c.strength]}</td>}
+                          {showStrength && <td className="small">{STRENGTH[c.strength]}</td>}
                           <td className="num">{sourceCount(c) ?? '—'}</td>
                           <td className="num nowrap">{fmtDuration(c.durationMs)}</td>
-                          {showCost && <td className="num nowrap">{fmtPln(c.costPln, 3)}</td>}
                           <td>
                             <div className="row gap-xs wrap">
                               {c.flags.map((f) => (
@@ -491,16 +489,10 @@ function CheckDetail({ check }: { check: CheckRecord }) {
             </div>
           )}
           {supports('checkCost') && (
-            <>
-              <div>
-                <dt>Tokeny</dt>
-                <dd>{check.tokens}</dd>
-              </div>
-              <div>
-                <dt>Koszt (szac.)</dt>
-                <dd>{fmtPln(check.costPln, 4)}</dd>
-              </div>
-            </>
+            <div>
+              <dt>Tokeny</dt>
+              <dd>{check.tokens}</dd>
+            </div>
           )}
         </dl>
         {Object.keys(check.models).length > 0 && (

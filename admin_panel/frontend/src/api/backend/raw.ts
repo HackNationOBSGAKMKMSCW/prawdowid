@@ -180,7 +180,7 @@ export interface RawAccount {
   id: string | number;
   email: string;
   name: string;
-  role: 'admin' | 'analyst' | 'moderator' | 'user';
+  role: 'admin' | 'analyst' | 'user';
   active: boolean;
   createdAt: string;
   lastLoginAt: string | null;
