@@ -86,8 +86,12 @@ W trybie `live`:
 
 Podstrony: `/zrodla` (pełna lista źródeł), `/pomoc`, `/deklaracja-dostepnosci`.
 
-Link `/?q=<tekst>` od razu sprawdza podany tekst – z tego korzysta przycisk
-„Udostępnij wynik”.
+Lista źródeł (`/zrodla` i skrót na stronie startowej) pochodzi z bazy:
+`GET /api/trusted-sources`, czyli tabela `trusted_sources` edytowana w panelu admina.
+Gdy serwer nie odpowiada, strona pisze, że listy nie da się pobrać; nie ma zapasowej
+listy w kodzie. Tylko tryb `mock` pokazuje przykładową listę (`src/content/sources.ts`).
+
+Link `/?q=<tekst>` od razu sprawdza podany tekst.
 
 ## Kontrakt API
 

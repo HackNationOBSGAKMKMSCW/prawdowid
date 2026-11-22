@@ -124,12 +124,79 @@ def test_health(client):
     assert test_client.get("/api/health").json() == {"status": "ok"}
 
 
-def test_trusted_sources_are_read_only_and_public_fields_only(client):
+class FakeSourceTable:
+    """Rows of the ``trusted_sources`` table (accounts.trusted.PostgresSourceStore)."""
+
+    def __init__(self, rows=None, error: Exception | None = None) -> None:
+        self.rows = rows or []
+        self.error = error
+
+    def load(self):
+        if self.error:
+            raise self.error
+        return self.rows
+
+
+@pytest.fixture
+def source_table(monkeypatch):
+    import public_sources
+    from trustedSources.registry import SourceRegistry
+    from trustedSources.whitelist import WhitelistEntry
+
+    table = FakeSourceTable(
+        [
+            WhitelistEntry("https://demagog.org.pl/", "Demagog", ("fakty",), "Fact-checking"),
+            WhitelistEntry("https://www.gov.pl/web/zdrowie", "Ministerstwo Zdrowia"),
+            WhitelistEntry("https://wylaczone.example.pl/", "Wyłączone", enabled=False),
+        ]
+    )
+    registry = SourceRegistry(store=table, refresh_seconds=0)
+    monkeypatch.setattr(public_sources, "_registry", lambda: registry)
+    return table
+
+
+def test_trusted_sources_come_from_the_database_table(client, source_table):
     test_client, _ = client
     listed = test_client.get("/api/trusted-sources")
     assert listed.status_code == 200
     sources = listed.json()
-    assert sources, "the code whitelist is never empty"
+    assert [s["name"] for s in sources] == ["Demagog", "Ministerstwo Zdrowia"]  # bez wyłączonych
+    by_name = {s["name"]: s for s in sources}
+    assert by_name["Demagog"]["trust"] == "fact_checker"
+    assert by_name["Ministerstwo Zdrowia"]["trust"] == "official"
+
+    # zmiana w tabeli (np. z panelu admina) jest widoczna bez restartu
+    from trustedSources.whitelist import WhitelistEntry
+
+    source_table.rows.append(WhitelistEntry("https://konkret24.tvn24.pl/", "Konkret24"))
+    assert "Konkret24" in [s["name"] for s in test_client.get("/api/trusted-sources").json()]
+
+
+def test_trusted_sources_never_fall_back_to_the_code_list(client, monkeypatch):
+    import public_sources
+
+    test_client, _ = client
+    monkeypatch.setattr(public_sources, "_db_registry", None)
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.setattr("database.database_url", lambda: None)
+    for path in ("/api/trusted-sources", "/api/trusted-sources/demagog"):
+        response = test_client.get(path)
+        assert response.status_code == 503
+        assert response.json()["error"]["code"] == "sources_unavailable"
+
+
+def test_trusted_sources_report_a_database_failure(client, source_table):
+    test_client, _ = client
+    source_table.error = OSError("connection refused")
+    response = test_client.get("/api/trusted-sources")
+    assert response.status_code == 503 and "refused" not in response.text
+
+
+def test_trusted_sources_are_read_only_and_public_fields_only(client, source_table):
+    test_client, _ = client
+    listed = test_client.get("/api/trusted-sources")
+    assert listed.status_code == 200
+    sources = listed.json()
     assert set(sources[0]) == {"id", "name", "url", "trust", "topics", "description"}
 
     one = test_client.get(f"/api/trusted-sources/{sources[0]['id']}")
