@@ -5,9 +5,12 @@ import { defineConfig, loadEnv } from 'vite';
 // Bez tego Vite odrzuca żądania z obcą nazwą hosta (ochrona przed DNS rebinding).
 const allowedHosts = ['.ts.net'];
 
+// Wspólny plik `.env` projektu leży w katalogu głównym repo.
+const envDir = '..';
+
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
-  const env = loadEnv(mode, process.cwd(), '');
+  const env = loadEnv(mode, envDir, '');
   // Dwa osobne backendy w dev:
   //   /api/whatsapp → symulator WhatsApp (whatsapp_sim, `python -m whatsappAdapter --port 8001`)
   //   /api          → API strony (`uvicorn server:app --port 8000`): /check, /health, /trusted-sources
@@ -17,6 +20,7 @@ export default defineConfig(({ mode }) => {
     '/api': env.API_PROXY_TARGET || 'http://127.0.0.1:8000',
   };
   return {
+    envDir,
     plugins: [react()],
     server: { allowedHosts, proxy },
     preview: { allowedHosts, proxy },

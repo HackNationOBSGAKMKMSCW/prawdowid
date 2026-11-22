@@ -48,7 +48,7 @@ katalogu głównego repo):
 
 ```bash
 # 1. API strony: /api/check, /api/check/{id}/report, /api/health, /api/trusted-sources
-#    (DATABASE_URL i klucze modeli w backend/.env, zob. backend/API.md)
+#    (DATABASE_URL i klucze modeli w głównym .env, wzór: .env.example; zob. backend/API.md)
 PYTHONPATH=backend:analysis:analysis/src uvicorn server:app --port 8000
 
 # 2. symulator WhatsApp (widok /whatsapp): /api/whatsapp/*
@@ -59,7 +59,7 @@ cd frontend && npm run dev:live    # http://localhost:5173
 ```
 
 Vite przekazuje `/api/whatsapp` na port 8001, a resztę `/api` na port 8000
-(`API_PROXY_TARGET`, `WHATSAPP_PROXY_TARGET` w `.env`, zob. `.env.example`).
+(`API_PROXY_TARGET`, `WHATSAPP_PROXY_TARGET` w głównym `.env`, wzór w głównym `.env.example`).
 `npm run build:live` buduje stronę w trybie `live`; na serwerze `/api` musi
 prowadzić do `server:app` (ta sama domena albo `VITE_API_BASE_URL` + `CORS_ORIGINS`).
 

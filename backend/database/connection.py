@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 BACKEND_ENV_FILE = Path(__file__).resolve().parents[1] / ".env"
+PROJECT_ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
 _SCHEMA_NAME = re.compile(r"^[a-z_][a-z0-9_]{0,62}$")
 
 Params = Sequence[Any] | Mapping[str, Any] | None
@@ -27,12 +28,14 @@ class DatabaseNotConfigured(RuntimeError):
 
 
 def database_url() -> str | None:
-    """``DATABASE_URL`` ze środowiska albo z ``backend/.env`` (bez nadpisywania środowiska)."""
+    """``DATABASE_URL`` ze środowiska, z głównego ``.env`` albo z ``backend/.env`` (zapas)."""
     value = os.getenv("DATABASE_URL")
-    if not value and BACKEND_ENV_FILE.is_file():
+    for env_file in (PROJECT_ENV_FILE, BACKEND_ENV_FILE):
+        if value or not env_file.is_file():
+            continue
         from dotenv import dotenv_values
 
-        value = dotenv_values(BACKEND_ENV_FILE).get("DATABASE_URL")
+        value = dotenv_values(env_file).get("DATABASE_URL")
     return (value or "").strip() or None
 
 

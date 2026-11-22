@@ -8,13 +8,12 @@ version = "0.1.0"
 description = "Werdykt prawdziwości twierdzeń na podstawie źródeł wzorcowych (LLM + kontrola deterministyczna)"
 requires-python = ">=3.11"
 dependencies = [
-    "openai>=1.68,<4",
+    "openai>=1.68,<3",
     "pydantic>=2.9,<3",
     "python-dotenv>=1,<2",
+    "dateparser>=1.2",
+    "rapidfuzz>=3",
 ]
-
-[project.optional-dependencies]
-dev = ["pytest>=8,<10", "ruff>=0.11,<1"]
 
 [project.scripts]
 prawdowid-werdykt = "prawdowid_analysis.cli:main"
