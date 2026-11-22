@@ -76,7 +76,7 @@ class OpenAIChatClient:
         self._sleep = asyncio.sleep
 
     async def complete(self, messages: list[Message]) -> LLMReply:
-        kwargs: dict[str, Any] = {"model": self.model, "messages": messages, "temperature": 0}
+        kwargs: dict[str, Any] = {"model": self.model, "messages": messages, "temperature": 0, "reasoning_effort": "none"}
         if self.json_mode:
             kwargs["response_format"] = {"type": "json_object"}
         for attempt in range(RATE_LIMIT_RETRIES + 1):

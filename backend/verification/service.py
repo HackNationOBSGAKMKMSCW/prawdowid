@@ -23,9 +23,10 @@ from typing import Any
 
 import observability
 from articleScraping.models import ScrapingReport
+from knownDisinfo.models import DisinfoCheck
 from observability.context import new_request_id
 
-from . import _analysis
+from . import _analysis, disinfo
 from .mapping import to_reference_sources, to_truth_sources
 from .models import PartError, VerificationEvent, VerificationReport
 
@@ -81,6 +82,12 @@ async def _assess_claims(analysis: Any, results: list[Any], sources: list[Any]) 
     return await pipeline.run(analysis, results, extra_sources=sources, use_corpus=False)
 
 
+async def _check_known_disinfo(analysis: Any) -> DisinfoCheck:
+    import knownDisinfo
+
+    return await knownDisinfo.run(analysis)
+
+
 @dataclass(frozen=True)
 class Stages:
     """Injectable stage calls (tests pass fakes)."""
@@ -91,6 +98,7 @@ class Stages:
     scrape: Callable[[Any, list[Any], Any, datetime], Awaitable[ScrapingReport]] = _scrape
     assess_input: Callable[[str, list[dict[str, Any]], date], Awaitable[Any]] = _assess_input
     assess_claims: Callable[[Any, list[Any], list[Any]], Awaitable[Any]] = _assess_claims
+    check_known_disinfo: Callable[[Any], Awaitable[DisinfoCheck]] = _check_known_disinfo
 
 
 # --- job ---------------------------------------------------------------------------------------
@@ -106,6 +114,7 @@ class VerificationJob:
     input_analysis: asyncio.Task[VerificationEvent]
     claims_verdict: asyncio.Task[VerificationEvent]
     _evidence: asyncio.Task[Evidence] = field(repr=False)
+    _background: tuple[asyncio.Task[Any], ...] = field(default=(), repr=False)
 
     @property
     def tasks(self) -> tuple[asyncio.Task[VerificationEvent], ...]:
@@ -119,6 +128,7 @@ class VerificationJob:
 
     async def report(self) -> VerificationReport:
         evidence, input_analysis, claims_verdict = await asyncio.gather(*self.tasks)
+        self.cancel()  # nothing left to wait for (e.g. the disinfo check after evidence failed)
         return VerificationReport(
             request_id=self.request_id,
             submitted_at=self.submitted_at,
@@ -128,7 +138,7 @@ class VerificationJob:
         )
 
     def cancel(self) -> None:
-        for task in (*self.tasks, self._evidence):
+        for task in (*self.tasks, self._evidence, *self._background):
             task.cancel()
 
 
@@ -151,15 +161,32 @@ def _dump(value: Any) -> dict[str, Any]:
     return value.model_dump(mode="json") if hasattr(value, "model_dump") else dict(value)
 
 
-async def _collect_evidence(stages: Stages, text: str, submitted_at: datetime) -> Evidence:
+async def _collect_evidence(
+    stages: Stages, analyzed: asyncio.Task[Any], submitted_at: datetime
+) -> Evidence:
     with observability.stage("verification.evidence"):
-        analysis = await stages.analyze(text, submitted_at)
+        analysis = await analyzed
         results, trusted = await asyncio.gather(
             stages.read(analysis), stages.search_trusted(analysis)
         )
         results = list(results)
         scraping = await stages.scrape(analysis, results, trusted, submitted_at)
     return Evidence(analysis, results, trusted, scraping)
+
+
+async def _known_disinfo(
+    stages: Stages, analyzed: asyncio.Task[Any], timeout: float | None
+) -> DisinfoCheck:
+    """Database check, started as soon as the claims exist. Never raises."""
+    try:
+        analysis = await analyzed
+    except Exception:  # noqa: BLE001 - the evidence event reports it
+        return DisinfoCheck(status="error", warnings=["Brak twierdzeń do sprawdzenia."])
+    try:
+        with observability.stage("verification.known_disinfo"):
+            return await asyncio.wait_for(stages.check_known_disinfo(analysis), timeout)
+    except Exception as exc:  # noqa: BLE001
+        return DisinfoCheck(status="error", warnings=[f"{_error(exc).kind}: {_error(exc).message}"])
 
 
 async def _evidence_event(
@@ -279,7 +306,9 @@ def start(
     request_id = request_id or observability.current_request_id() or new_request_id()
     started = time.perf_counter()
 
-    evidence = asyncio.create_task(_collect_evidence(stages, text, submitted_at))
+    analyzed = asyncio.create_task(stages.analyze(text, submitted_at))
+    evidence = asyncio.create_task(_collect_evidence(stages, analyzed, submitted_at))
+    known = asyncio.create_task(_known_disinfo(stages, analyzed, timeout))
 
     async def assess_input(ready: Evidence) -> Any:
         return await stages.assess_input(
@@ -287,9 +316,21 @@ def start(
         )
 
     async def assess_claims(ready: Evidence) -> Any:
-        return await stages.assess_claims(
-            ready.analysis, ready.reading_results, to_reference_sources(ready.scraping)
-        )
+        # The timeout covers the verdict only, so database hits survive a slow model.
+        try:
+            verdict = await asyncio.wait_for(
+                stages.assess_claims(
+                    ready.analysis, ready.reading_results, to_reference_sources(ready.scraping)
+                ),
+                timeout,
+            )
+        except Exception as exc:
+            check = await known
+            if not check.matches:
+                raise
+            statements = list(getattr(ready.analysis, "statements", None) or [])
+            return disinfo.verdict_from_matches(statements, check, exc)
+        return disinfo.apply_known_disinfo(_dump(verdict), await known)
 
     return VerificationJob(
         request_id=request_id,
@@ -299,9 +340,10 @@ def start(
             _assessment_event(request_id, "input_analysis", evidence, assess_input, timeout)
         ),
         claims_verdict=asyncio.create_task(
-            _assessment_event(request_id, "claims_verdict", evidence, assess_claims, timeout)
+            _assessment_event(request_id, "claims_verdict", evidence, assess_claims, None)
         ),
         _evidence=evidence,
+        _background=(analyzed, known),
     )
 
 

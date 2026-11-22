@@ -120,6 +120,7 @@ async def structured_call(
                     model=settings.model,
                     messages=msgs,
                     temperature=settings.temperature,
+                    reasoning_effort="none",
                     response_format={
                         "type": "json_schema",
                         "json_schema": {"name": schema.__name__, "schema": json_schema},
@@ -142,6 +143,7 @@ async def structured_call(
             model=settings.model,
             messages=fallback,
             temperature=settings.temperature,
+            reasoning_effort="none",
             response_format={"type": "json_object"},
         )
         return resp.choices[0].message.content or ""
