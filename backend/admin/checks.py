@@ -79,7 +79,7 @@ def record_check(
     claims, verdict, sources = claims_from_report(report)
     if not claims and verdict is None:
         return None
-    _decision, result = monitor.record(
+    decision, result = monitor.record(
         user_id=WEB_USER,
         text=text,
         channel=channel,
@@ -88,4 +88,15 @@ def record_check(
         sources_count=sources,
         anonymous=True,
     )
+    matches = known_disinfo_matches(report)
+    if matches:
+        monitor.register_known_disinformation(decision.query_id, matches, channel=channel)
     return result
+
+
+def known_disinfo_matches(report: Any) -> list[dict[str, Any]]:
+    """Trafienia w bazie EUvsDisinfo: ``claims_verdict.data.known_disinfo.matches``."""
+    data = _as_dict(_as_dict(report).get("claims_verdict")).get("data")
+    known = data.get("known_disinfo") if isinstance(data, Mapping) else None
+    matches = known.get("matches") if isinstance(known, Mapping) else None
+    return [dict(m) for m in matches or [] if isinstance(m, Mapping)]

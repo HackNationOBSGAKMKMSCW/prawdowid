@@ -198,6 +198,7 @@ def test_successful_check_is_recorded_for_admin_panel():
     app = _recording_app(runner, lambda text, result: calls.append((text, result)))
     with TestClient(app) as test_client:
         response = test_client.get("/api/check", params={"text": "Szczepionki powodują autyzm."})
+        assert app.state.admin_worker.flush()
     assert response.status_code == 200
     assert calls == [("Szczepionki powodują autyzm.", report())]
 
@@ -210,11 +211,12 @@ def test_recorder_failure_does_not_break_the_response(caplog):
         raise RuntimeError("baza panelu leży: Tajna treść")
 
     app = _recording_app(runner, broken)
-    with TestClient(app) as test_client, caplog.at_level("WARNING", logger="api_routes"):
+    with TestClient(app) as test_client, caplog.at_level("WARNING"):
         response = test_client.get("/api/check", params={"text": "Tajna treść"})
+        assert app.state.admin_worker.flush()
     assert response.status_code == 200
     logged = " ".join(record.getMessage() for record in caplog.records)
-    assert "admin_record_failed" in logged and "error_type=RuntimeError" in logged
+    assert "admin_worker_task_failed" in logged and "error_type=RuntimeError" in logged
     assert "Tajna" not in logged
 
 
@@ -229,5 +231,6 @@ def test_failed_analysis_is_not_recorded():
     app = _recording_app(failing, lambda text, result: calls.append(text))
     with TestClient(app) as test_client:
         response = test_client.get("/api/check", params={"text": "Coś"})
+        assert app.state.admin_worker.flush()
     assert response.status_code == 504
     assert calls == []

@@ -8,6 +8,8 @@ from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+from admin.background import BackgroundWorker
+from admin.request_audit import SqlInjectionAuditMiddleware
 from api_routes import (
     UrlValidator,
     _run_verification,
@@ -28,6 +30,7 @@ load_dotenv(PROJECT_ROOT / ".env", override=False)
 load_dotenv(PROJECT_ROOT / "backend" / ".env", override=False)
 
 StoreFactory = Callable[[], Awaitable[PostgresStore]]
+MAX_BODY_BYTES = 96 * 1024
 
 
 def _cors_origins() -> list[str]:
@@ -41,6 +44,15 @@ def _default_query_recorder() -> Callable | None:
     return record_check if monitor_enabled() else None
 
 
+def _default_sql_injection_reporter() -> Callable | None:
+    """Próby SQL injection -> powiadomienia panelu admina (``monitor_alerts``)."""
+    from admin import get_monitor
+    from admin.checks import monitor_enabled
+    from admin.request_audit import monitor_reporter
+
+    return monitor_reporter(get_monitor, "web") if monitor_enabled() else None
+
+
 def create_app(
     *,
     store: object | None = None,
@@ -48,6 +60,7 @@ def create_app(
     verification_runner: Callable | None = None,
     url_validator: UrlValidator | None = None,
     query_recorder: Callable | None = None,
+    sql_injection_reporter: Callable | None = None,
 ) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -78,7 +91,19 @@ def create_app(
     app.state.check_semaphore = asyncio.Semaphore(max_concurrent_checks)
     app.include_router(router)
     app.include_router(trusted_sources_router)
-    app.add_middleware(RequestSizeLimitMiddleware, max_body_bytes=96 * 1024)
+    # Rejestr panelu admina (luki, alerty): zapisy w jednym wątku poza ścieżką żądania.
+    app.state.admin_worker = BackgroundWorker("admin-web")
+    # Wewnątrz limitu rozmiaru (dodany wcześniej = bliżej aplikacji): za duża treść jest
+    # odrzucana, zanim audyt ją zbuforuje.
+    app.add_middleware(
+        SqlInjectionAuditMiddleware,
+        reporter=sql_injection_reporter
+        if sql_injection_reporter is not None
+        else _default_sql_injection_reporter(),
+        worker=app.state.admin_worker,
+        max_body=MAX_BODY_BYTES,
+    )
+    app.add_middleware(RequestSizeLimitMiddleware, max_body_bytes=MAX_BODY_BYTES)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=_cors_origins(),

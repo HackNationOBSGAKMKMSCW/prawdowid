@@ -267,11 +267,12 @@ def test_uncovered_ranking_and_summary(env):
     _web(monitor, "Wisła jest najdłuższą rzeką w Polsce", "prawda")
 
     ranking = client.get("/api/admin/info-gaps/ranking", headers=AUTH).json()
-    assert ranking["count_by"] == "zapytania" and ranking["threshold"] == 3
+    assert ranking["count_by"] == "auto" and ranking["threshold"] == 3
     assert ranking["total"] == 2
     first, second = ranking["items"]
     assert first["label"].startswith("W Pcimiu") and first["queries"] == 3
     assert first["gap_status"] == "aktywna" and first["over_threshold"] is True
+    assert first["count"] == 3  # tryb auto: każde anonimowe zapytanie liczy się osobno
     assert second["queries"] == 1 and second["over_threshold"] is False
     assert second["gap_status"] == "podejrzenie"
     assert ranking["items"][0]["trend"][-1]["queries"] == 3
@@ -322,3 +323,13 @@ def test_count_mode_is_configurable(env):
     assert client.patch("/api/admin/config", headers=AUTH, json=bad).status_code == 422
     bad = {"monitoring": {"info_gap_min_queries": 0}}
     assert client.patch("/api/admin/config", headers=AUTH, json=bad).status_code == 422
+
+
+def test_uncovered_share_uses_the_same_queries_as_the_total(env):
+    client, monitor, _ = env
+    _web(monitor, GAP)
+    decision = monitor.screen(user_id="web", text=GAP, anonymous=True)
+    monitor.complete(decision.query_id, claims=[ClaimInput(GAP, None, 0)], error="Timeout")
+    summary = client.get("/api/admin/info-gaps/summary", headers=AUTH).json()
+    assert summary["total_queries"] == 1 and summary["uncovered_queries"] == 1
+    assert summary["uncovered_share"] == 1.0

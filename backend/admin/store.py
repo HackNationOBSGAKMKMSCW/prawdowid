@@ -108,7 +108,19 @@ CREATE TABLE IF NOT EXISTS config_audit (
 LATER_COLUMNS = {"query_topics": {"gap_queries": "INTEGER NOT NULL DEFAULT 0"}}
 
 OPEN_ALERT_STATUSES = ("otwarty", "w_analizie")
-GAP_SORTS = {"zapytania": "gap_queries", "osoby": "gap_users"}
+GAP_SORTS = {"zapytania": "gap_queries", "osoby": "gap_users", "auto": "gap_queries"}
+
+# Tryb „auto”: rozpoznana osoba liczy się raz, każde anonimowe zapytanie osobno.
+_REPORTERS = (
+    "COUNT(DISTINCT CASE WHEN user_key = ? THEN query_id END) "
+    "+ COUNT(DISTINCT CASE WHEN user_key <> ? THEN user_key END)"
+)
+# Zapytania bez pokrycia liczone z tego samego zbioru co mianownik (zakończone, czas zapytania).
+_UNCOVERED_QUERIES = (
+    "SELECT COUNT(DISTINCT c.query_id) FROM query_claims AS c "
+    "JOIN user_queries AS q ON q.id = c.query_id "
+    "WHERE c.kind = 'luka' AND q.status = 'zakonczone' AND q.ts >= ?"
+)
 
 
 def new_id() -> str:
@@ -331,6 +343,17 @@ class AdminStore:
             )
         }
 
+    def gap_counts(
+        self, topic_id: str, kind: str, since: str, anonymous_key: str
+    ) -> dict[str, int]:
+        """Zapytania, różne pseudonimy i „zgłaszający” (tryb auto) dla tematu od ``since``."""
+        row = self._one(
+            f"SELECT COUNT(DISTINCT query_id), COUNT(DISTINCT user_key), {_REPORTERS} "
+            "FROM query_claims WHERE topic_id = ? AND kind = ? AND ts >= ?",
+            [anonymous_key, anonymous_key, topic_id, kind, since],
+        )
+        return {"queries": int(row[0]), "users": int(row[1]), "reporters": int(row[2] or 0)}
+
     def distinct_queries(self, topic_id: str, kind: str, since: str) -> int:
         """Zapytania (nie twierdzenia): dwa twierdzenia z jednego zapytania liczą się raz."""
         row = self._one(
@@ -343,22 +366,29 @@ class AdminStore:
     # --- zapytania bez pokrycia w danych (ranking dla panelu) ---------------------------
 
     def uncovered_ranking(
-        self, since: str, *, min_queries: int = 1, limit: int = 50, offset: int = 0
+        self,
+        since: str,
+        *,
+        min_queries: int = 1,
+        limit: int = 50,
+        offset: int = 0,
+        anonymous_key: str = "",
     ) -> tuple[list[dict[str, Any]], int]:
         """Tematy z największą liczbą zapytań bez pokrycia (``kind='luka'``) od ``since``."""
         grouped = (
             "SELECT topic_id, COUNT(DISTINCT query_id) AS queries, "
-            "COUNT(DISTINCT user_key) AS users, MAX(ts) AS last_seen "
+            f"COUNT(DISTINCT user_key) AS users, {_REPORTERS} AS reporters, MAX(ts) AS last_seen "
             "FROM query_claims WHERE kind = 'luka' AND ts >= ? GROUP BY topic_id "
             "HAVING COUNT(DISTINCT query_id) >= ?"
         )
-        total = int(self._one(f"SELECT COUNT(*) FROM ({grouped}) AS g", [since, min_queries])[0])
+        params = [anonymous_key, anonymous_key, since, min_queries]
+        total = int(self._one(f"SELECT COUNT(*) FROM ({grouped}) AS g", params)[0])
         rows = self._all(
             f"SELECT g.topic_id, t.label, t.gap_status, t.gap_note, t.gap_since, g.queries, "
-            f"g.users, g.last_seen FROM ({grouped}) AS g "
+            f"g.users, g.reporters, g.last_seen FROM ({grouped}) AS g "
             f"JOIN query_topics AS t ON t.id = g.topic_id "
             f"ORDER BY g.queries DESC, g.last_seen DESC LIMIT ? OFFSET ?",
-            [since, min_queries, limit, offset],
+            [*params, limit, offset],
         )
         return [dict(row) for row in rows], total
 
@@ -378,10 +408,7 @@ class AdminStore:
 
     def uncovered_totals(self, since: str) -> dict[str, int]:
         """Zakończone zapytania w oknie i te z co najmniej jednym twierdzeniem bez pokrycia."""
-        uncovered = self._one(
-            "SELECT COUNT(DISTINCT query_id) FROM query_claims WHERE kind = 'luka' AND ts >= ?",
-            [since],
-        )[0]
+        uncovered = self._one(_UNCOVERED_QUERIES, [since])[0]
         completed = self._one(
             "SELECT COUNT(*) FROM user_queries WHERE ts >= ? AND status = 'zakonczone'", [since]
         )[0]
@@ -473,6 +500,16 @@ class AdminStore:
         assignments = ", ".join(f"{name} = ?" for name in fields)
         self._execute(f"UPDATE monitor_alerts SET {assignments} WHERE id = ?", [*fields.values(), alert_id])
 
+    def increment_alert(self, alert_id: str, **fields: Any) -> None:
+        """``count = count + 1`` w SQL (bez utraty przyrostu) i pozostałe pola."""
+        if "details" in fields:
+            fields["details"] = json.dumps(fields["details"], ensure_ascii=False)
+        assignments = "".join(f", {name} = ?" for name in fields)
+        self._execute(
+            f"UPDATE monitor_alerts SET count = count + 1{assignments} WHERE id = ?",
+            [*fields.values(), alert_id],
+        )
+
     def get_alert(self, alert_id: str) -> dict[str, Any] | None:
         return _row(self._one("SELECT * FROM monitor_alerts WHERE id = ?", [alert_id]), ("details",))
 
@@ -555,10 +592,7 @@ class AdminStore:
             "active_info_gaps": scalar(
                 "SELECT COUNT(*) FROM query_topics WHERE gap_status IN ('aktywna', 'w_uzupelnianiu')"
             ),
-            "uncovered_queries": scalar(
-                "SELECT COUNT(DISTINCT query_id) FROM query_claims WHERE kind = 'luka' AND ts >= ?",
-                [since],
-            ),
+            "uncovered_queries": scalar(_UNCOVERED_QUERIES, [since]),
             "blocked_users": scalar("SELECT COUNT(*) FROM end_users WHERE blocked_until > ?", [now]),
         }
 

@@ -409,6 +409,16 @@ def create_app(
     monitor.purge_expired()
 
     app = FastAPI(title="Prawdowid — panel admina", docs_url="/api/admin/docs")
+    from .background import BackgroundWorker
+    from .request_audit import SqlInjectionAuditMiddleware, monitor_reporter
+
+    panel_monitor = monitor  # wewnątrz observability: zgłoszenie ma request_id
+    app.state.admin_worker = BackgroundWorker("admin-panel")
+    app.add_middleware(
+        SqlInjectionAuditMiddleware,
+        reporter=monitor_reporter(lambda: panel_monitor, "panel"),
+        worker=app.state.admin_worker,
+    )
     try:
         from observability import ObservabilityMiddleware
 

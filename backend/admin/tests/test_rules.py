@@ -174,8 +174,38 @@ def test_admin_rejected_gap_counts_from_decision(monitor, clock):
     )
 
 
-def test_info_gap_counts_queries_by_default(monitor):
-    """Tryb domyślny: liczą się zapytania, także od jednej osoby (strona bez logowania)."""
+def _ask_anonymous(monitor: Monitor, claim: str, verdict: str | None):
+    decision = monitor.screen(user_id="ktokolwiek", text=claim, channel="web", anonymous=True)
+    return monitor.complete(decision.query_id, claims=[ClaimInput(claim, verdict, 0)])
+
+
+def test_auto_mode_counts_each_anonymous_query(monitor):
+    """Domyślny tryb auto: strona bez logowania — każde zapytanie liczy się osobno."""
+    first = _ask_anonymous(monitor, GAP_CLAIM, "brak_wystarczajacych_danych")
+    assert first.claims[0].info_gap_status == "podejrzenie"
+    _ask_anonymous(monitor, GAP_CLAIM, "nieweryfikowalny")
+    third = _ask_anonymous(monitor, GAP_CLAIM, None)
+    assert third.claims[0].info_gap_status == "aktywna"
+    assert third.claims[0].info_gap_count == 3 and third.claims[0].info_gap_users == 1
+    assert monitor.store.list_alerts(alert_type="luka_informacyjna")[0]["details"]["wartosc"] == 3
+
+
+def test_auto_mode_counts_identified_person_once(monitor):
+    """Ta sama osoba z WhatsApp pytająca 3 razy nie tworzy luki (jak przed trybem auto)."""
+    for _ in range(3):
+        result = _ask(monitor, "+48111", GAP_CLAIM, "brak_wystarczajacych_danych")
+    assert result.claims[0].info_gap_status == "podejrzenie"
+    assert result.claims[0].info_gap_queries == 3 and result.claims[0].info_gap_count == 1
+    _ask(monitor, "+48222", GAP_CLAIM, None)
+    mixed = _ask_anonymous(monitor, GAP_CLAIM, None)  # 2 osoby + 1 anonimowe = 3
+    assert mixed.claims[0].info_gap_status == "aktywna"
+    assert "pytało o niego już 3 osoby" in mixed.message
+    assert monitor.store.list_alerts(alert_type="luka_informacyjna")[0]["details"]["wartosc"] == 3
+
+
+def test_info_gap_counts_queries_in_queries_mode(monitor, runtime):
+    """Tryb zapytania: liczą się zapytania, także od jednej osoby."""
+    runtime.update({"monitoring": {"info_gap_count_by": "zapytania"}})
     first = _ask(monitor, "web", GAP_CLAIM, "brak_wystarczajacych_danych")
     assert first.claims[0].info_gap_status == "podejrzenie"
     assert first.claims[0].info_gap_queries == 1
@@ -213,7 +243,7 @@ def test_covered_claims_do_not_count(monitor):
 
 
 def test_query_threshold_is_configurable(monitor, runtime):
-    runtime.update({"monitoring": {"info_gap_min_queries": 2}})
+    runtime.update({"monitoring": {"info_gap_count_by": "zapytania", "info_gap_min_queries": 2}})
     _ask(monitor, "web", GAP_CLAIM, None)
     assert _ask(monitor, "web", GAP_CLAIM, None).claims[0].info_gap_status == "aktywna"
 

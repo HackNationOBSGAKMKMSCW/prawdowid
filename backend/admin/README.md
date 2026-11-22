@@ -75,7 +75,8 @@ Progi ustawia się w sekcji `monitoring` konfiguracji (`PATCH /api/admin/config`
 - **Luka informacyjna.** Twierdzenie jest jej kandydatem, gdy nie ma rozstrzygnięcia: werdykt `brak_wystarczajacych_danych` albo `nieweryfikowalny`, albo brak jakichkolwiek źródeł.
   - Podobne twierdzenia są grupowane w tematy.
   - Próg zależy od `info_gap_count_by`:
-    - `zapytania` (domyślnie): `info_gap_min_queries` zapytań bez pokrycia, domyślnie 3 w ciągu 7 dni. Dwa twierdzenia z jednego zapytania liczą się raz.
+    - `auto` (domyślnie): próg `info_gap_min_users`, domyślnie 3 w ciągu 7 dni. Rozpoznana osoba (WhatsApp) liczy się raz, a każde anonimowe zapytanie ze strony osobno.
+    - `zapytania`: `info_gap_min_queries` zapytań bez pokrycia. Dwa twierdzenia z jednego zapytania liczą się raz.
     - `osoby`: `info_gap_min_users` różnych osób.
   - Po przekroczeniu progu temat dostaje stan `aktywna`, powstaje alert, a użytkownik bota dostaje komunikat o luce.
   - W tematach są liczniki `gap_queries` i `gap_users`.
@@ -87,6 +88,14 @@ Progi ustawia się w sekcji `monitoring` konfiguracji (`PATCH /api/admin/config`
   - Prośba o instrukcję, przepis lub zdobycie dostaje poziom `wysoki` i jest odrzucana.
   - `dangerous_alert_after` zapytań w oknie czasu daje alert `niebezpieczny_uzytkownik`.
   - `dangerous_block_after` zapytań wysokiego ryzyka daje czasową blokadę (`dangerous_block_hours`).
+- **Zweryfikowana rosyjska dezinformacja.** Twierdzenie z zapytania na stronie jest w bazie EUvsDisinfo (`knownDisinfo`, MCP). Powstaje wtedy alert `rosyjska_dezinformacja`, jeden na przypadek z bazy. Każde kolejne zapytanie zwiększa licznik i dopisuje się do `details.wystapienia`, a zapytanie dostaje flagę `rosyjska_dezinformacja`.
+- **SQL injection.** `admin/sqli.py` szuka składni SQL (UNION SELECT, `' OR '1'='1`, `; DROP TABLE`, SLEEP itp.):
+  - w każdym żądaniu API strony i panelu (`admin/request_audit.py`, middleware w `server.py` i `admin/api.py`);
+  - w wiadomościach bota.
+
+  Powstaje alert `sql_injection`, jeden na kanał, z licznikiem prób. Nic nie jest blokowane. W alercie nie ma wartości pól.
+
+  Skan i zapis alertu robi w tle wątek roboczy (`admin/background.py`, ograniczona kolejka), więc żądanie nie czeka. Ten sam wątek zapisuje sprawdzenia ze strony do rejestru luk.
 - **Retencja.** Zapytania starsze niż `retention_days` (domyślnie 30) są usuwane przy starcie panelu albo przez `POST /maintenance/purge`.
 
 ## Zmiana modeli i kluczowych API
@@ -127,5 +136,7 @@ Klucze są tylko do zapisu. API i audyt pokazują wyłącznie maskę (`****abcd`
 | `POST /maintenance/purge` | Ręczne usunięcie starych danych |
 
 Identyfikatory użytkowników są pseudonimizowane (HMAC). Panel pokazuje tylko maskę, np. `***456`.
+
+Nowe typy alertów (rosyjska dezinformacja, SQL injection) dla frontu: [ALERTS_FRONTEND.md](ALERTS_FRONTEND.md).
 
 Opis endpointów luk informacyjnych dla frontu (parametry, przykładowe odpowiedzi, sugerowany widok): [INFO_GAPS_FRONTEND.md](INFO_GAPS_FRONTEND.md).

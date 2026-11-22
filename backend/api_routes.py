@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import logging
 import os
 import socket
@@ -76,19 +77,18 @@ async def _run_verification(text: str) -> object:
         raise
 
 
-async def _record_for_admin(request: Request, text: str, report: object) -> None:
-    """Rejestr panelu admina (luki informacyjne). Awaria nigdy nie psuje odpowiedzi."""
+def _record_for_admin(request: Request, text: str, report: object) -> None:
+    """Rejestr panelu admina (luki, alerty) w wątku roboczym: nie opóźnia odpowiedzi.
+
+    Awaria zapisu nigdy nie psuje odpowiedzi; worker loguje tylko typ błędu, bez tekstu.
+    """
     recorder = getattr(request.app.state, "query_recorder", None)
-    if recorder is None:
+    worker = getattr(request.app.state, "admin_worker", None)
+    if recorder is None or worker is None:
         return
-    try:
-        await asyncio.to_thread(recorder, text, report)
-    except Exception as exc:  # noqa: BLE001 - only the error type, never the text
-        logger.warning(
-            "admin_record_failed request_id=%s error_type=%s",
-            current_request_id(),
-            type(exc).__name__,
-        )
+    # kontekst żądania (request_id z observability) przechodzi do wątku roboczego
+    if not worker.submit(contextvars.copy_context().run, recorder, text, report):
+        logger.warning("admin_record_dropped request_id=%s", current_request_id())
 
 
 @router.get("/health", include_in_schema=False)
@@ -128,9 +128,9 @@ async def check(
                 result_id=str(result_id),
                 input_type=input_type,
             )
-            await _record_for_admin(request, input_text, report)
         finally:
             semaphore.release()
+        _record_for_admin(request, input_text, report)  # w tle, po zwolnieniu slotu
     except VerificationFailed as exc:
         # Which stage failed and the exception type only: never the submitted text or message.
         logger.warning(

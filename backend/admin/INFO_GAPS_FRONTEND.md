@@ -7,8 +7,8 @@ Dokument opisuje, jak panel ma pokazać tematy, o które **często się pyta**, 
 1. Każde udane sprawdzenie trafia do rejestru zapytań. Sprawdzenia przychodzą ze strony (`GET /api/check`, kanał `web`) i z bota WhatsApp (kanał `whatsapp`).
 2. Twierdzenia z zapytania są grupowane w **tematy**: podobne sformułowania trafiają do jednego tematu.
 3. Twierdzenie **nie ma pokrycia w danych**, gdy jego werdykt to `brak_wystarczajacych_danych` albo `nieweryfikowalny`. Błąd analizy (`blad_analizy`) się nie liczy.
-4. Backend liczy **zapytania bez pokrycia** o dany temat w oknie czasu (domyślnie 7 dni). Dwa twierdzenia z jednego zapytania liczą się raz.
-5. Po przekroczeniu progu (domyślnie 3 zapytania) temat dostaje stan `aktywna` i powstaje alert `luka_informacyjna`. Admin widzi go w panelu.
+4. Backend liczy **zgłoszenia bez pokrycia** o dany temat w oknie czasu (domyślnie 7 dni). Dwa twierdzenia z jednego zapytania liczą się raz.
+5. Po przekroczeniu progu (domyślnie 3) temat dostaje stan `aktywna` i powstaje alert `luka_informacyjna`. Admin widzi go w panelu.
 
 Cykl stanów tematu (`gap_status`):
 
@@ -24,10 +24,15 @@ brak ──(1. zapytanie bez pokrycia)──► podejrzenie ──(próg)──�
 - Po zamknięciu lub odrzuceniu licznik zaczyna się od nowa, od chwili decyzji.
 
 Tryb liczenia ustawia `monitoring.info_gap_count_by`:
-- `zapytania` (domyślnie): próg `info_gap_min_queries`.
-- `osoby`: próg `info_gap_min_users`, czyli liczba różnych osób.
+- `auto` (domyślnie), próg `info_gap_min_users`:
+  - rozpoznana osoba (np. numer z WhatsApp) liczy się **raz**, niezależnie od tego, ile razy pyta;
+  - każde anonimowe zapytanie ze strony liczy się **osobno**, bo strona nie ma logowania i nie da się odróżnić osób.
 
-Strona nie ma logowania i wszyscy jej użytkownicy liczą się jako jedna osoba. W trybie `osoby` ruch ze strony praktycznie nie tworzy luk.
+  Przykład: 2 osoby z WhatsApp i 1 zapytanie ze strony dają 3.
+- `zapytania`: każde zapytanie, także od tej samej osoby. Próg `info_gap_min_queries`.
+- `osoby`: tylko różne pseudonimy. Próg `info_gap_min_users`. Cała strona liczy się wtedy jako jedna osoba, więc ruch ze strony praktycznie nie tworzy luk.
+
+Wartość porównywana z progiem to pole `count` w `ranking` albo `details.wartosc` w alercie.
 
 ## Logowanie i uprawnienia
 
@@ -62,12 +67,12 @@ Błędy mają kształt `{"detail": "komunikat po polsku"}`:
 {
   "generated_at": "2026-11-22T04:25:07.518Z",
   "window_hours": 168,
-  "count_by": "zapytania",          // tryb liczenia: "zapytania" | "osoby"
+  "count_by": "auto",               // tryb liczenia: "auto" | "zapytania" | "osoby"
   "threshold": 3,                   // próg luki w tym trybie
   "window_threshold_hours": 168,    // okno, w którym liczy się próg (monitoring.info_gap_window_hours)
   "uncovered_queries": 4,           // zapytania z co najmniej jednym twierdzeniem bez pokrycia
-  "total_queries": 5,               // wszystkie zakończone zapytania w oknie
-  "uncovered_share": 0.8,           // uncovered_queries / total_queries (0..1)
+  "total_queries": 5,               // wszystkie zakończone zapytania w oknie (bez błędów analizy)
+  "uncovered_share": 0.8,           // uncovered_queries / total_queries (0..1); oba z tych samych zapytań
   "uncovered_topics": 2,            // tematy z co najmniej jednym zapytaniem bez pokrycia
   "by_status": {                    // liczba tematów w każdym stanie (cała historia, nie tylko okno)
     "podejrzenie": 1, "aktywna": 1, "w_uzupelnianiu": 0, "zamknieta": 0, "odrzucona": 0
@@ -91,7 +96,7 @@ Zwraca tematy posortowane malejąco po liczbie zapytań bez pokrycia w oknie, **
 {
   "generated_at": "2026-11-22T04:25:07.526Z",
   "window_hours": 72,
-  "count_by": "zapytania",
+  "count_by": "auto",
   "threshold": 3,
   "total": 2,                       // liczba wszystkich pozycji (do stronicowania)
   "limit": 50,
@@ -104,7 +109,9 @@ Zwraca tematy posortowane malejąco po liczbie zapytań bez pokrycia w oknie, **
       "gap_note": null,             // notatka admina
       "gap_since": "2026-11-22T04:25:07.112Z",
       "queries": 3,                 // zapytania bez pokrycia w oknie
-      "users": 1,                   // różne osoby (strona = 1)
+      "users": 1,                   // różne pseudonimy (cała strona = 1)
+      "reporters": 3,               // zgłaszający w trybie auto: osoby raz + anonimowe zapytania
+      "count": 3,                   // wartość porównywana z progiem w bieżącym trybie
       "last_seen": "2026-11-22T04:25:07.112Z",
       "over_threshold": true,       // czy przekracza próg w bieżącym trybie
       "trend": [                    // dzień po dniu (UTC), od początku okna do dziś, także zera
@@ -146,7 +153,7 @@ Ten endpoint już istniał. Doszło pole `gap_queries`.
 }
 ```
 
-Kolejność zależy od trybu: najpierw `gap_queries` (w trybie `osoby` najpierw `gap_users`), potem `last_seen`.
+Kolejność zależy od trybu: najpierw `gap_queries` (w trybie `osoby` najpierw `gap_users`), potem `last_seen`. Wartość progu w trybie `auto` jest w alercie (`details.wartosc`) i w `ranking.items[].count`.
 
 ### `GET /api/admin/topics/{topic_id}`: szczegóły tematu (bez zmian)
 
@@ -169,7 +176,8 @@ Zwraca pola tematu, `tokens` (słowa kluczowe) i `claims`, czyli do 200 ostatnic
 Alert powstaje przy przejściu w stan `aktywna`:
 - `subject` to `topic_id`, czyli link do `/topics/{subject}`;
 - `count` to liczba zapytań bez pokrycia;
-- `users` to liczba osób;
+- `users` to liczba różnych pseudonimów;
+- `details.wartosc` to wartość porównana z progiem;
 - `details.liczone_po` i `details.prog` mówią, według jakiej reguły alert powstał;
 - `severity` ma wartość `wysoka`, gdy licznik przekracza 3-krotność progu, a w innym przypadku `srednia`.
 
@@ -181,7 +189,7 @@ Dashboard (`GET /api/admin/dashboard`) ma nowe pole `uncovered_queries` (w oknie
 
 ```json
 {
-  "info_gap_count_by": "zapytania",
+  "info_gap_count_by": "auto",
   "info_gap_min_queries": 3,
   "info_gap_min_users": 3,
   "info_gap_window_hours": 168
@@ -196,7 +204,7 @@ PATCH /api/admin/config
 ```
 
 Walidacja:
-- `info_gap_count_by` ∈ {`zapytania`, `osoby`};
+- `info_gap_count_by` ∈ {`auto`, `zapytania`, `osoby`};
 - `info_gap_min_queries` 1–100 000;
 - `info_gap_window_hours` 1–8760.
 
@@ -210,7 +218,8 @@ Zła wartość daje 422.
    - „W uzupełnianiu”: `by_status.w_uzupelnianiu`;
    - „Obserwowane”: `by_status.podejrzenie`.
 2. **Pasek reguły**, budowany z `count_by` i `threshold`:
-   - tryb `zapytania`: „Luka = co najmniej {threshold} zapytań bez pokrycia w ciągu {window_threshold_hours} h”;
+   - tryb `auto`: „Luka = co najmniej {threshold} zgłoszeń bez pokrycia w ciągu {window_threshold_hours} h (osoba z WhatsApp raz, każde zapytanie ze strony osobno)”;
+   - tryb `zapytania`: „… {threshold} zapytań bez pokrycia …”;
    - tryb `osoby`: „… {threshold} różnych osób …”.
 
    Obecny tekst w `GapsPage.tsx` zakłada zawsze osoby, więc trzeba go uzależnić od trybu.
@@ -229,12 +238,13 @@ Zła wartość daje 422.
 | `topic_id` / `id` | `id` |
 | `label` | `label` |
 | `queries` (ranking) / `gap_queries` (info-gaps) | `noEvidence` |
+| `count` (ranking) | wartość progu, np. kolumna „Zgłoszenia” |
 | `users` / `gap_users` | `uniqueSessions` |
 | `gap_status` | `gapStatus` (`GAP_FROM_BACKEND`, bez zmian) |
 | `trend[].queries` | dane do `Sparkline` (dziennie; dziś `hourly` liczone z twierdzeń jest godzinowe) |
 | `over_threshold` | `isInformationGap` dla pozycji z rankingu |
 | `last_seen`, `gap_since`, `gap_note` | `lastSeen`, `gapSince`, `gapNote` |
 
-`MonitoringSettings` w `src/api/types.ts` trzeba rozszerzyć o `info_gap_count_by: 'zapytania' | 'osoby'` i `info_gap_min_queries: number`.
+`MonitoringSettings` w `src/api/types.ts` trzeba rozszerzyć o `info_gap_count_by: 'auto' | 'zapytania' | 'osoby'` i `info_gap_min_queries: number`.
 
 Wszystkie czasy są w UTC w formacie ISO 8601 (`...Z`). Daty w `trend` też są w UTC.
