@@ -24,6 +24,7 @@ import RulesPage from './pages/RulesPage.tsx';
 import SecurityPage from './pages/SecurityPage.tsx';
 import SettingsPage from './pages/SettingsPage.tsx';
 import SourcesPage from './pages/SourcesPage.tsx';
+import ThreatsPage from './pages/ThreatsPage.tsx';
 import TrustedSitesPage from './pages/TrustedSitesPage.tsx';
 import UsersPage from './pages/UsersPage.tsx';
 
@@ -51,6 +52,7 @@ export default function App() {
             <Route path="alerts" element={guarded('alerts:read', <AlertsPage />)} />
             <Route path="gaps" element={guarded('clusters:read', <GapsPage />)} />
             <Route path="repeated" element={guarded('clusters:read', <RepeatedPage />, 'clusters')} />
+            <Route path="threats" element={guarded('security:read', <ThreatsPage />, 'threats')} />
             <Route path="security" element={guarded('security:read', <SecurityPage />, 'securityEvents')} />
             <Route path="end-users" element={guarded('endusers:read', <EndUsersPage />, 'endUsers')} />
             <Route path="logs" element={guarded('security:read', <TechLogsPage />, 'techEvents')} />

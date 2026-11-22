@@ -14,6 +14,7 @@ import type {
   TechEvent,
   TechEventQuery,
   TechSummary,
+  ThreatReport,
   TrustedSite,
   TrustedSiteInput,
   TrustedSitePatch,
@@ -154,6 +155,9 @@ export interface AdminApi {
   deleteTrustedSite(url: string): Promise<void>;
   /** Fetches the site again and re-detects how to search it. */
   checkTrustedSite(url: string): Promise<TrustedSite>;
+
+  /** `threats`: prompt injection, manipulation campaigns and critical queries from the logs. */
+  getThreats(hours: number): Promise<ThreatReport>;
 
   /** `retention`: delete stored queries older than N days (default: retention setting). */
   purgeOldData(olderThanDays?: number): Promise<PurgeResult>;

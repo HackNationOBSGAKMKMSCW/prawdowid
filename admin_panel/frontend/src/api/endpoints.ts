@@ -36,6 +36,7 @@ export const DEFAULT_ENDPOINTS = {
   sources: '/sources',
   sourcesStatus: '/sources/status',
   sourcesCheck: '/sources/check',
+  threats: '/threats',
 } as const;
 
 export type EndpointKey = keyof typeof DEFAULT_ENDPOINTS;

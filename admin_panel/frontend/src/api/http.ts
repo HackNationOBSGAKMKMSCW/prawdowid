@@ -10,6 +10,7 @@ import {
   GAP_TO_BACKEND,
   joinTrustedSites,
   mapAccount,
+  mapThreats,
   mapActivity,
   mapAlert,
   mapAudit,
@@ -77,6 +78,7 @@ import type {
   TechEvent,
   TechEventQuery,
   TechSummary,
+  ThreatReport,
   TrustedSite,
   TrustedSiteInput,
   TrustedSitePatch,
@@ -156,6 +158,7 @@ export class HttpAdminApi implements AdminApi {
       'techEvents',
       'retention',
       'trustedSites',
+      'threats',
     ]),
     alertTypes: BACKEND_ALERT_TYPES,
     checkFlags: BACKEND_FLAGS,
@@ -574,6 +577,12 @@ export class HttpAdminApi implements AdminApi {
 
   purgeOldData(olderThanDays?: number): Promise<PurgeResult> {
     return this.request('purge', { method: 'POST', body: { older_than_days: olderThanDays ?? null } });
+  }
+
+  // ── threats from the logs ─────────────────────────────────────────────────
+
+  async getThreats(hours: number): Promise<ThreatReport> {
+    return mapThreats(await this.request<Record<string, unknown>>('threats', { query: { hours } }));
   }
 
   // ── trusted sites (trusted_sources + the verification's registry) ────────

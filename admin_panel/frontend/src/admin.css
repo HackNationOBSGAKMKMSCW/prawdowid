@@ -2811,3 +2811,27 @@ input[type='checkbox'] {
   margin-top: 6px;
   overflow-wrap: anywhere;
 }
+
+/* ---------- Zagrożenia ---------- */
+
+.threat-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.threat-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.threat-item:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}

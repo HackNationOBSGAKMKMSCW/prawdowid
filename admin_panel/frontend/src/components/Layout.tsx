@@ -33,6 +33,7 @@ export const NAV: { section: string; items: NavItem[] }[] = [
       { to: '/alerts', label: 'Alerty i ostrzeżenia', icon: 'bell', permission: 'alerts:read', counter: 'alerts' },
       { to: '/gaps', label: 'Luki informacyjne', icon: 'gap', permission: 'clusters:read', counter: 'gaps' },
       { to: '/repeated', label: 'Powtarzające się zapytania', icon: 'repeat', permission: 'clusters:read', feature: 'clusters' },
+      { to: '/threats', label: 'Zagrożenia', icon: 'shield', permission: 'security:read', feature: 'threats' },
       { to: '/security', label: 'Bezpieczeństwo', icon: 'shield', permission: 'security:read', feature: 'securityEvents' },
       { to: '/end-users', label: 'Użytkownicy serwisu', icon: 'users', permission: 'endusers:read', feature: 'endUsers', counter: 'blocked' },
       { to: '/logs', label: 'Logi techniczne', icon: 'shield', permission: 'security:read', feature: 'techEvents' },

@@ -24,6 +24,7 @@ import type {
   RuntimeConfig,
   TechEvent,
   TechSummary,
+  ThreatReport,
   TrustedSite,
   AlertStatus,
   AssignmentPatch,
@@ -937,6 +938,9 @@ export class MockAdminApi implements AdminApi {
   }
   getTechSummary(): Promise<TechSummary> {
     return Promise.reject(unsupported('Logi techniczne'));
+  }
+  getThreats(): Promise<ThreatReport> {
+    return Promise.reject(unsupported('Zagrożenia z logów'));
   }
   listTrustedSites(): Promise<TrustedSite[]> {
     return Promise.reject(unsupported('Strony zaufane'));

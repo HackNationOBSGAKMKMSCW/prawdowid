@@ -635,7 +635,9 @@ export type Feature =
   | 'techEvents'
   | 'retention'
   /** Trusted sites searched by the verification (`trusted_sources` table + live registry). */
-  | 'trustedSites';
+  | 'trustedSites'
+  /** Threat report built from the observability logs (`GET /threats`). */
+  | 'threats';
 
 export interface ApiCapabilities {
   features: ReadonlySet<Feature>;
@@ -803,4 +805,93 @@ export interface TechSummary {
 export interface PurgeResult {
   before: ISODate;
   deleted: { queries: number; claims: number };
+}
+
+// ── Threats (backend/admin/threats.py, built from the log file) ──────────────
+
+/** Who and what an event refers to, filled in from the query journal when possible. */
+export interface ThreatSubject {
+  userKey: string | null;
+  userLabel: string | null;
+  channel: string | null;
+  queryId: string | null;
+  /** Text of the query (people with access to the verification history see it anyway). */
+  text: string | null;
+}
+
+export interface InjectionEvent extends ThreatSubject {
+  at: ISODate;
+  requestId: string | null;
+  /** `input` (the person's message), `text` / `url` (analysed text) or a fetched source. */
+  source: string | null;
+  kind: string | null;
+  detector: string | null;
+  pattern: string | null;
+  snippet: string | null;
+  /** The same text seen this many times in the period (possible coordinated attempt). */
+  repeats: number;
+}
+
+export interface ManipulationCampaign {
+  alertId: string | null;
+  title: string;
+  claim: string | null;
+  topicId: string | null;
+  status: string | null;
+  severity: string | null;
+  users: number;
+  count: number | null;
+  /** Log events raised for this campaign in the period. */
+  signals: number;
+  firstSignal: ISODate;
+  lastSignal: ISODate;
+}
+
+export interface CriticalQueryEvent extends ThreatSubject {
+  at: ISODate;
+  refused: boolean;
+  reason: string | null;
+  severity: string | null;
+  categories: string[];
+  requestId: string | null;
+}
+
+export interface BlockedUserEvent {
+  at: ISODate;
+  userKey: string | null;
+  userLabel: string | null;
+  until: string | null;
+  stillBlocked: boolean;
+}
+
+export interface ThreatReport {
+  file: string;
+  logAvailable: boolean;
+  since: ISODate;
+  until: ISODate;
+  hours: number;
+  eventsScanned: number;
+  summary: {
+    promptInjection: number;
+    promptInjectionUsers: number;
+    manipulationCampaigns: number;
+    criticalQueries: number;
+    criticalUsers: number;
+    refused: number;
+    blockedUsers: number;
+  };
+  timeline: { bucket: ISODate; promptInjection: number; manipulation: number; critical: number }[];
+  injection: {
+    bySource: Record<string, number>;
+    byDetector: Record<string, number>;
+    repeatedTexts: number;
+    recent: InjectionEvent[];
+  };
+  campaigns: ManipulationCampaign[];
+  critical: {
+    byCategory: Record<string, number>;
+    bySeverity: Record<string, number>;
+    recent: CriticalQueryEvent[];
+    blocked: BlockedUserEvent[];
+  };
 }

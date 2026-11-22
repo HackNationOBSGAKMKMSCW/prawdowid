@@ -23,6 +23,7 @@ import type {
   SecretName,
   Severity,
   TechEvent,
+  ThreatReport,
   TrustedSite,
   User,
   Verdict,
@@ -114,6 +115,7 @@ export const FLAG_TO_BACKEND: Partial<Record<CheckFlag, string>> = {
   information_gap: 'luka_informacyjna',
   disinformation: 'kampania_dezinformacyjna',
   user_report: 'zgloszenie',
+  prompt_injection: 'prompt_injection',
 };
 
 export const BACKEND_FLAGS = Object.keys(FLAG_TO_BACKEND) as CheckFlag[];
@@ -207,6 +209,7 @@ const ALERT_TYPE_FROM_BACKEND: Record<string, AlertType> = {
   luka_informacyjna: 'information_gap',
   kampania_dezinformacyjna: 'disinformation',
   niebezpieczny_uzytkownik: 'dangerous_user',
+  prompt_injection: 'prompt_injection',
 };
 
 export const ALERT_TYPE_TO_BACKEND: Partial<Record<AlertType, string>> = Object.fromEntries(
@@ -621,4 +624,101 @@ export function mapTrustedSite(row: RawTrustedSource, status?: RawSourceStatus):
 export function joinTrustedSites(rows: RawTrustedSource[], statuses: RawSourceStatus[]): TrustedSite[] {
   const byUrl = new Map(statuses.map((s) => [siteKey(s.url), s]));
   return rows.map((row) => mapTrustedSite(row, byUrl.get(siteKey(row.url))));
+}
+
+// ── threats ─────────────────────────────────────────────────────────────────
+
+type RawRecord = Record<string, unknown>;
+const str = (v: unknown): string | null => (v === null || v === undefined || v === '' ? null : String(v));
+const records = (v: unknown): RawRecord[] => (Array.isArray(v) ? (v as RawRecord[]) : []);
+const counts = (v: unknown): Record<string, number> => (v && typeof v === 'object' ? (v as Record<string, number>) : {});
+
+function subject(raw: RawRecord) {
+  return {
+    userKey: str(raw.user_key),
+    userLabel: str(raw.user_label),
+    channel: str(raw.channel),
+    queryId: str(raw.query_id),
+    text: str(raw.text),
+  };
+}
+
+/** `GET /threats` → panel types (snake_case → camelCase, defensive about missing fields). */
+export function mapThreats(raw: RawRecord): ThreatReport {
+  const summary = (raw.summary ?? {}) as RawRecord;
+  const injection = (raw.prompt_injection ?? {}) as RawRecord;
+  const manipulation = (raw.manipulation ?? {}) as RawRecord;
+  const critical = (raw.critical ?? {}) as RawRecord;
+  return {
+    file: String(raw.file ?? ''),
+    logAvailable: raw.log_available !== false,
+    since: String(raw.since ?? ''),
+    until: String(raw.until ?? ''),
+    hours: num(raw.hours),
+    eventsScanned: num(raw.events_scanned),
+    summary: {
+      promptInjection: num(summary.prompt_injection),
+      promptInjectionUsers: num(summary.prompt_injection_users),
+      manipulationCampaigns: num(summary.manipulation_campaigns),
+      criticalQueries: num(summary.critical_queries),
+      criticalUsers: num(summary.critical_users),
+      refused: num(summary.refused),
+      blockedUsers: num(summary.blocked_users),
+    },
+    timeline: records(raw.timeline).map((b) => ({
+      bucket: String(b.bucket),
+      promptInjection: num(b.prompt_injection),
+      manipulation: num(b.manipulation),
+      critical: num(b.critical),
+    })),
+    injection: {
+      bySource: counts(injection.by_source),
+      byDetector: counts(injection.by_detector),
+      repeatedTexts: num(injection.repeated_texts),
+      recent: records(injection.recent).map((e) => ({
+        ...subject(e),
+        at: String(e.ts),
+        requestId: str(e.request_id),
+        source: str(e.source),
+        kind: str(e.kind),
+        detector: str(e.detector),
+        pattern: str(e.pattern),
+        snippet: str(e.snippet),
+        repeats: num(e.repeats) || 1,
+      })),
+    },
+    campaigns: records(manipulation.campaigns).map((c) => ({
+      alertId: str(c.alert_id),
+      title: String(c.title ?? 'Możliwy atak dezinformacyjny'),
+      claim: str(c.claim),
+      topicId: str(c.topic_id),
+      status: str(c.status),
+      severity: str(c.severity),
+      users: num(c.users),
+      count: c.count === null || c.count === undefined ? null : num(c.count),
+      signals: num(c.signals),
+      firstSignal: String(c.first_signal),
+      lastSignal: String(c.last_signal),
+    })),
+    critical: {
+      byCategory: counts(critical.by_category),
+      bySeverity: counts(critical.by_severity),
+      recent: records(critical.recent).map((e) => ({
+        ...subject(e),
+        at: String(e.ts),
+        refused: e.refused === true,
+        reason: str(e.reason),
+        severity: str(e.severity),
+        categories: Array.isArray(e.categories) ? e.categories.map(String) : [],
+        requestId: str(e.request_id),
+      })),
+      blocked: records(critical.blocked).map((b) => ({
+        at: String(b.ts),
+        userKey: str(b.user_key),
+        userLabel: str(b.user_label),
+        until: str(b.until),
+        stillBlocked: b.still_blocked === true,
+      })),
+    },
+  };
 }
