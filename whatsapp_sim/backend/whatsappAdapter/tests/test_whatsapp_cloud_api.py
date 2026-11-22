@@ -135,7 +135,7 @@ def test_parse_webhook_reads_forwarded_context() -> None:
 def test_cta_url_message_uses_cloud_api_shape_and_limits() -> None:
     message = cta_url_message(
         "48500",
-        header="❌ Fałsz",
+        header="Fałsz",
         body="Treść",
         footer="SprawdzTo",
         display_text="Otwórz źródło",
@@ -143,7 +143,7 @@ def test_cta_url_message_uses_cloud_api_shape_and_limits() -> None:
     )
     assert message["interactive"] == {
         "type": "cta_url",
-        "header": {"type": "text", "text": "❌ Fałsz"},
+        "header": {"type": "text", "text": "Fałsz"},
         "body": {"text": "Treść"},
         "footer": {"text": "SprawdzTo"},
         "action": {

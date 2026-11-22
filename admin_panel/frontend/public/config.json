@@ -1,0 +1,6 @@
+{
+  "apiBaseUrl": "/api/admin",
+  "requestTimeoutMs": 20000,
+  "environmentLabel": "backend",
+  "endpoints": {}
+}
