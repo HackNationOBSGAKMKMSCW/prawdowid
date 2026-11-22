@@ -103,6 +103,37 @@ def test_failed_logins_are_logged_and_throttled(accounts, clean_db):
     assert reasons.count("bad_password") == 5 and "unknown_email" in reasons
 
 
+def test_login_lockout_is_per_address_and_limits_spraying(accounts, monkeypatch):
+    """Błędy z jednego adresu nie blokują konta na innym; jeden adres nie zgaduje bez końca."""
+    from accounts import AuthenticationError, TooManyAttempts, service
+
+    accounts.create_user(name="Ola", email="ola@example.pl", password=PASSWORD)
+    attacker, owner = "203.0.113.7", "198.51.100.20"
+    for _ in range(5):
+        with pytest.raises(AuthenticationError):
+            accounts.login("ola@example.pl", "zle-haslo-123", ip=attacker)
+    with pytest.raises(TooManyAttempts):
+        accounts.login("ola@example.pl", PASSWORD, ip=attacker)
+    accounts.login("ola@example.pl", PASSWORD, ip=owner)  # właściciel loguje się dalej
+
+    # zgadywanie haseł do wielu kont z jednego adresu: limit na adres
+    monkeypatch.setattr(service, "LOGIN_MAX_FAILURES_PER_IP", 8)
+    sprayer = "203.0.113.99"
+    for n in range(8):
+        with pytest.raises(AuthenticationError):
+            accounts.login(f"konto{n}@example.pl", "Haslo-1234", ip=sprayer)
+    with pytest.raises(TooManyAttempts):
+        accounts.login("inne@example.pl", "Haslo-1234", ip=sprayer)
+
+    # atak z wielu adresów na jedno konto: wysoki limit na e-mail
+    monkeypatch.setattr(service, "LOGIN_MAX_FAILURES_PER_EMAIL", 7)
+    for n in range(2):
+        with pytest.raises(AuthenticationError):
+            accounts.login("ola@example.pl", "zle-haslo-123", ip=f"192.0.2.{n + 1}")
+    with pytest.raises(TooManyAttempts):
+        accounts.login("ola@example.pl", PASSWORD, ip=owner)
+
+
 def test_expired_token_and_inactive_user_are_rejected(clean_db):
     from accounts import AccountService, Actor
 

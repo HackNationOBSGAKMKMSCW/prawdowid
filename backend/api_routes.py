@@ -18,6 +18,8 @@ from articleScraping.url_validation import InvalidUrlError, validate_url
 from fastapi import APIRouter, Query, Request, Response
 from fastapi.responses import JSONResponse
 from observability.context import current_request_id
+from observability.events import log_event
+from request_limits import CheckGate, client_ip
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["checks"])
@@ -29,11 +31,14 @@ UrlValidator = Callable[[str], Awaitable[str]]
 
 
 class ApiFailure(Exception):
-    def __init__(self, status_code: int, code: str, message: str):
+    def __init__(
+        self, status_code: int, code: str, message: str, headers: dict[str, str] | None = None
+    ):
         super().__init__(code)
         self.status_code = status_code
         self.code = code
         self.message = message
+        self.headers = headers or {}
 
 
 async def _validate_public_url(url: str) -> str:
@@ -91,14 +96,25 @@ async def check(
     text: Annotated[str, Query(min_length=1, max_length=15_000)],
 ) -> CheckResponse:
     verifier: VerificationRunner = request.app.state.verification_runner
-    semaphore: asyncio.Semaphore = request.app.state.check_semaphore
+    gate: CheckGate = request.app.state.check_gate
     journal = getattr(request.app.state, "journal", None)
     result_id = uuid4()
     journal_id: str | None = None
     try:
-        if semaphore.locked():
+        if gate.busy():
             raise ApiFailure(503, "analysis_busy", "The service is temporarily busy.") from None
-        await semaphore.acquire()
+        # Limit na adres klienta: wspólny ze sprawdzeniami przez WhatsApp (ta sama bramka).
+        retry_after = gate.retry_after(f"ip:{client_ip(request)}")
+        if retry_after is not None:
+            log_event("rate_limited", level="warning", channel="web", retry_after_s=retry_after)
+            raise ApiFailure(
+                429,
+                "rate_limited",
+                "Too many checks from this address. Try again later.",
+                headers={"Retry-After": str(retry_after)},
+            )
+        if not await gate.try_acquire():
+            raise ApiFailure(503, "analysis_busy", "The service is temporarily busy.") from None
         try:
             if not text.strip():
                 raise ApiFailure(422, "invalid_request", "Provide non-empty text or a URL.")
@@ -129,7 +145,7 @@ async def check(
                 input_type=input_type,
             )
         finally:
-            semaphore.release()
+            gate.release()
     except VerificationFailed as exc:
         # Which stage failed and the exception type only: never the submitted text or message.
         logger.warning(
@@ -223,7 +239,7 @@ def install_error_handlers(app) -> None:
         return JSONResponse(
             status_code=exc.status_code,
             content=body.model_dump(exclude_none=True),
-            headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"},
+            headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer", **exc.headers},
         )
 
     from fastapi.exceptions import RequestValidationError

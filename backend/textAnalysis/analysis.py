@@ -12,6 +12,9 @@ from abc import ABC, abstractmethod
 from datetime import UTC, datetime
 from html.parser import HTMLParser
 
+from observability.injection import neutralize_tags
+from observability.injection import normalize as normalize_untrusted
+from observability.injection import scan as scan_injection
 from openai import AsyncOpenAI, OpenAIError
 from pydantic import BaseModel, Field, ValidationError, field_validator
 
@@ -288,17 +291,28 @@ class InputSanitizer:
             working_text = working_text[: cls.MAX_INPUT_LENGTH]
 
         cleaned = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", working_text)
+        # NFKC i bez znaków niewidocznych (zero-width, bidi): model czyta to samo co detektor,
+        # więc „z\u200bignoruj” albo litery pełnej szerokości nie ukryją polecenia.
+        cleaned = normalize_untrusted(cleaned)
 
-        for pattern in cls.SUSPICIOUS_PATTERNS:
-            if re.search(pattern, cleaned, flags=re.IGNORECASE):
-                warnings.append(
-                    f"Wykryto potencjalny wzorzec manipulacji w tekście wejściowym: '{pattern}'."
-                )
-                break
+        pattern = next(
+            (p for p in cls.SUSPICIOUS_PATTERNS if re.search(p, cleaned, flags=re.IGNORECASE)),
+            None,
+        )
+        if pattern is None:  # szersza lista wspólna z resztą systemu (observability.injection)
+            hit = scan_injection(cleaned)
+            pattern = hit.pattern if hit else None
+        if pattern is not None:
+            warnings.append(
+                f"Wykryto potencjalny wzorzec manipulacji w tekście wejściowym: '{pattern}'."
+            )
 
         cleaned = re.sub(
             r"<\s*/?\s*untrusted_text\s*>", "[USUNIĘTY_ZNACZNIK]", cleaned, flags=re.IGNORECASE
         )
+        # Pozostałe znaczniki ról i bloków danych (<system>, </zrodlo>, <|im_start|>...) są
+        # unieszkodliwiane: model nie potraktuje ich jako granicy instrukcji.
+        cleaned = neutralize_tags(cleaned)
 
         return cleaned.strip(), warnings
 

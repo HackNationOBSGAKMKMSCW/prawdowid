@@ -421,3 +421,54 @@ def test_format_report_lists_trusted_sources_and_live_references() -> None:
     assert "*Sprawdź na bieżąco:*\n• IMGW – meteo: https://meteo.imgw.pl/" in body
     assert "powiązane komunikaty z oficjalnych źródeł" in body
     assert "*Oficjalne" not in format_report(CheckReport(analysis, [reading_result("A.", [])]))
+
+
+class _FullGate:
+    """Bramka bez wolnych miejsc: wszystkie sprawdzenia trwają."""
+
+    def busy(self) -> bool:
+        return True
+
+
+class _CountingGate:
+    def __init__(self) -> None:
+        self.keys: list[str] = []
+        self.released = 0
+
+    def busy(self) -> bool:
+        return False
+
+    def retry_after(self, key: str) -> int | None:
+        self.keys.append(key)
+        return 120 if len(self.keys) > 1 else None
+
+    async def try_acquire(self) -> bool:
+        return True
+
+    def release(self) -> None:
+        self.released += 1
+
+
+@pytest.mark.asyncio
+async def test_gate_limits_checks_but_not_commands() -> None:
+    from whatsappAdapter.bot import BUSY_TEXT
+
+    pipeline = RecordingPipeline(error=RuntimeError("model niedostępny"))  # liczą się wywołania
+    busy_bot = SprawdzToBot(pipeline, gate=_FullGate())
+    assert bodies(await busy_bot.handle(incoming("Szczepionki powodują autyzm."))) == [BUSY_TEXT]
+    assert bodies(await busy_bot.handle(incoming("pomoc"))) == [HELP_TEXT]  # komendy bez limitu
+    assert pipeline.texts == []
+
+    gate = _CountingGate()
+    bot = SprawdzToBot(pipeline, gate=gate, rate_key="ip")
+    await bot.handle(incoming("Szczepionki powodują autyzm."), client="203.0.113.5")
+    limited = await bot.handle(incoming("Szczepionki powodują autyzm."), client="203.0.113.5")
+    assert "Spróbuj ponownie za 2 min" in bodies(limited)[0]
+    assert gate.keys == ["ip:203.0.113.5", "ip:203.0.113.5"] and gate.released == 1
+    assert len(pipeline.texts) == 1
+
+    by_sender = _CountingGate()
+    await SprawdzToBot(pipeline, gate=by_sender, rate_key="sender").handle(
+        incoming("Szczepionki powodują autyzm."), client="203.0.113.5"
+    )
+    assert by_sender.keys == ["wa:48500"]

@@ -10,6 +10,8 @@ os.environ["ADMIN_STORE"] = "sqlite"
 # /api/check nie zapisuje do rejestru panelu (admin/data/admin.db); testy wstrzykują atrapę.
 os.environ["ADMIN_MONITOR"] = "off"
 os.environ["TRUSTED_SOURCES_STORE"] = "static"
+# Limit zapytań na IP sprawdzają osobne testy (z własnym RateLimiter); reszta go nie potrzebuje.
+os.environ["CHECK_RATE_LIMIT"] = "off"
 
 # server.py montuje panel admina: rejestr i nadpisania konfiguracji testów w katalogu
 # tymczasowym, a nie w backend/admin/data (nadpisania zmieniałyby środowisko innych testów).

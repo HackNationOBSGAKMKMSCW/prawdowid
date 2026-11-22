@@ -117,7 +117,10 @@ i `analityk@prawdowid.demo`, hasło `demo1234`).
 
 - **Backend** jako osobna usługa (np. Render), z katalogu głównego repo:
   - build: `pip install -r requirements.txt`,
-  - start: `uvicorn server:app --host 0.0.0.0 --port $PORT`,
+  - start: `uvicorn server:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips=<adres proxy>`
+    (bez `--proxy-headers` backend widzi adres proxy zamiast adresu użytkownika: limit zapytań
+    `CHECK_RATE_LIMIT` i blokady z panelu działałyby wtedy na wszystkich naraz; nie ufaj
+    `X-Forwarded-For` od dowolnego adresu (`*`), jeśli backend jest dostępny z pominięciem proxy),
   - zmienne: `PYTHONPATH=backend:analysis:analysis/src`, `DATABASE_URL`, klucze modelu i API,
     `CORS_ORIGINS=https://<domena-na-vercelu>`; na bazie produkcyjnej kroki z punktu 3.
 - **Strona i panel** na Vercelu, jeden projekt z katalogu głównego (`vercel.json`):

@@ -13,12 +13,18 @@ from database import Database
 from psycopg import errors
 
 from . import passwords, permissions, tokens
-from .activity import ActivityLog, Actor
+from .activity import ActivityLog, Actor, normalize_ip
 
 TOKEN_TTL = timedelta(hours=8)
 MAX_TOKEN_TTL = timedelta(days=90)
 LOGIN_WINDOW = timedelta(minutes=15)
+# Nieudane logowania w oknie LOGIN_WINDOW. Blokada dotyczy pary e-mail + adres IP, więc ktoś
+# z innego adresu nie zablokuje prawdziwemu użytkownikowi konta błędnymi hasłami. Limit na
+# adres zatrzymuje próby wielu haseł na wielu kontach, a wysoki limit na e-mail — atak
+# rozproszony na jedno konto. Bez poprawnego adresu IP: 5 prób na e-mail (jak dawniej).
 LOGIN_MAX_FAILURES = 5
+LOGIN_MAX_FAILURES_PER_IP = 20
+LOGIN_MAX_FAILURES_PER_EMAIL = 50
 _EMAIL = re.compile(r"^[^@\s]{1,64}@[^@\s]+\.[^@\s]+$")
 
 USER_COLUMNS = (
@@ -342,12 +348,12 @@ class AccountService:
         ttl: timedelta = TOKEN_TTL,
         panel_only: bool = False,
     ) -> tuple[User, IssuedToken]:
-        """Sprawdź hasło i wydaj token. Po 5 błędach w 15 min dla emaila — przerwa."""
+        """Sprawdź hasło i wydaj token; po zbyt wielu błędach w 15 min — przerwa (429).
+
+        Limity: 5 błędów dla pary e-mail + IP, 20 z jednego adresu IP, 50 dla jednego e-maila.
+        """
         key = (email or "").strip().lower()[:255]
-        since = _iso(self.now() - LOGIN_WINDOW)
-        failures = self.activity.count_recent("auth.login_failed", key, since)
-        if failures >= LOGIN_MAX_FAILURES:
-            raise TooManyAttempts(int(LOGIN_WINDOW.total_seconds()))
+        self._check_login_attempts(key, normalize_ip(ip))
 
         row = self.db.fetch_one(
             f"SELECT {USER_COLUMNS}, password_hash FROM users WHERE lower(email) = %s", [key]
@@ -395,6 +401,23 @@ class AccountService:
             details={"token_id": issued.access.id},
         )
         return user, issued
+
+    def _check_login_attempts(self, email: str, ip: str | None) -> None:
+        since = _iso(self.now() - LOGIN_WINDOW)
+
+        def failures(**scope: str | None) -> int:
+            return self.activity.count_since("auth.login_failed", since, **scope)
+
+        if ip is None:
+            limits = [(failures(subject_id=email), LOGIN_MAX_FAILURES)]
+        else:
+            limits = [
+                (failures(subject_id=email, ip=ip), LOGIN_MAX_FAILURES),
+                (failures(ip=ip), LOGIN_MAX_FAILURES_PER_IP),
+                (failures(subject_id=email), LOGIN_MAX_FAILURES_PER_EMAIL),
+            ]
+        if any(count >= limit for count, limit in limits):
+            raise TooManyAttempts(int(LOGIN_WINDOW.total_seconds()))
 
     # --- tokeny ------------------------------------------------------------------------
 

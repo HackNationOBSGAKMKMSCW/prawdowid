@@ -20,10 +20,11 @@ from pathlib import Path
 from typing import Any
 
 from dotenv import load_dotenv
-from fastapi import APIRouter, Body, FastAPI, HTTPException
+from fastapi import APIRouter, Body, FastAPI, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from observability import ObservabilityMiddleware
 from pydantic import ValidationError
+from request_limits import CheckGate, RateLimiter, client_ip
 from trustedSources.api import router as trusted_sources_router
 
 from .admin_bridge import monitor_from_environment
@@ -61,16 +62,28 @@ def bot_from_environment(monitor: Any = None) -> SprawdzToBot:
     )
 
 
-def create_router(bot: SprawdzToBot | None = None, *, monitor: Any = None) -> APIRouter:
-    """``/api/whatsapp/*``; without ``bot`` it is built on the first request."""
+def create_router(
+    bot: SprawdzToBot | None = None, *, monitor: Any = None, gate: Any = None
+) -> APIRouter:
+    """``/api/whatsapp/*``; without ``bot`` it is built on the first request.
+
+    ``gate`` (``request_limits.CheckGate``): the limits shared with the website, i.e. checks
+    per client address and parallel checks. ``server.py`` passes the website's gate.
+    """
     router = APIRouter(prefix="/api/whatsapp", tags=["whatsapp"])
     state: dict[str, SprawdzToBot] = {}
+
+    def attach(new_bot: SprawdzToBot) -> SprawdzToBot:
+        if gate is not None and new_bot.gate is None:
+            new_bot.gate = gate
+        return new_bot
+
     if bot is not None:
-        state["bot"] = bot
+        state["bot"] = attach(bot)
 
     def current_bot() -> SprawdzToBot:
         if "bot" not in state:
-            state["bot"] = bot_from_environment(monitor)
+            state["bot"] = attach(bot_from_environment(monitor))
         return state["bot"]
 
     @router.get("/health")
@@ -79,16 +92,18 @@ def create_router(bot: SprawdzToBot | None = None, *, monitor: Any = None) -> AP
 
     @router.post("/webhook", response_model=None)
     async def webhook(
+        request: Request,
         payload: dict[str, Any] = Body(...),  # noqa: B008
         stream: bool = False,
     ) -> dict[str, Any] | StreamingResponse:
         _validate_payload(payload)
         active = current_bot()
+        client = client_ip(request)
         if stream:
             return StreamingResponse(
-                _stream_events(active, payload), media_type="application/x-ndjson"
+                _stream_events(active, payload, client), media_type="application/x-ndjson"
             )
-        return {"messages": await active.handle_webhook(payload)}
+        return {"messages": await active.handle_webhook(payload, client=client)}
 
     return router
 
@@ -139,7 +154,13 @@ def create_app(bot: SprawdzToBot | None = None) -> FastAPI:
     )
     app.add_middleware(ObservabilityMiddleware, skip_paths=("/api/whatsapp/health",))
     app.include_router(trusted_sources_router)
-    app.include_router(create_router(bot))
+    # Te same limity co w API strony, liczone w tym procesie (CHECK_RATE_LIMIT,
+    # MAX_CONCURRENT_CHECKS).
+    gate = CheckGate(
+        asyncio.Semaphore(max(1, int(os.getenv("MAX_CONCURRENT_CHECKS", "4")))),
+        RateLimiter.from_environment(),
+    )
+    app.include_router(create_router(bot, gate=gate))
     return app
 
 
@@ -156,7 +177,9 @@ async def _warm_trusted_sources() -> None:
         logger.exception("trusted source warm-up failed")
 
 
-async def _stream_events(bot: SprawdzToBot, payload: dict[str, Any]) -> AsyncIterator[str]:
+async def _stream_events(
+    bot: SprawdzToBot, payload: dict[str, Any], client: str | None = None
+) -> AsyncIterator[str]:
     """Yield NDJSON events: ``status`` lines while checking, then ``messages``.
 
     Status lines are a simulator feature; on real WhatsApp they would be sent
@@ -170,7 +193,7 @@ async def _stream_events(bot: SprawdzToBot, payload: dict[str, Any]) -> AsyncIte
 
     async def run() -> None:
         try:
-            messages = await bot.handle_webhook(payload, status=status)
+            messages = await bot.handle_webhook(payload, status=status, client=client)
             await queue.put({"type": "messages", "messages": messages})
         except Exception as exc:  # noqa: BLE001 - reported to the client as an event
             await queue.put({"type": "error", "detail": type(exc).__name__})

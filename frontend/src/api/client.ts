@@ -23,6 +23,8 @@ export type ApiErrorCode =
   | 'analysis_failed'
   | 'invalid_analysis_result'
   | 'analysis_busy'
+  // limit sprawdzeń na adres (CHECK_RATE_LIMIT, odpowiedź 429 z Retry-After)
+  | 'rate_limited'
   // odmowa monitora panelu admina (backend/admin/web.py)
   | 'request_refused'
   | 'user_blocked'

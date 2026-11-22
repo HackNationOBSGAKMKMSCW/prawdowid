@@ -78,6 +78,13 @@ const FAILURES: Partial<Record<ApiErrorCode, StateContent>> = {
     body: 'Wszystkie miejsca są zajęte. Spróbuj ponownie za minutę.',
     action: 'Spróbuj jeszcze raz',
   },
+  rate_limited: {
+    icon: '…',
+    tone: 'neutral',
+    title: 'Za dużo sprawdzeń w krótkim czasie',
+    body: 'Z tego połączenia przyszło ostatnio wiele wiadomości do sprawdzenia. Odczekaj chwilę i spróbuj ponownie.',
+    action: 'Spróbuj jeszcze raz',
+  },
   analysis_timeout: {
     icon: '…',
     tone: 'warning',

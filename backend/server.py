@@ -25,7 +25,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from observability.middleware import ObservabilityMiddleware
 from public_sources import router as trusted_sources_router
-from request_limits import RequestSizeLimitMiddleware
+from request_limits import CheckGate, RateLimiter, RequestSizeLimitMiddleware
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(PROJECT_ROOT / ".env", override=False)
@@ -39,14 +39,14 @@ MAX_BODY_BYTES = 96 * 1024
 WHATSAPP_BACKEND = PROJECT_ROOT / "whatsapp_sim" / "backend"
 
 
-def _whatsapp_router(monitor: object | None = None):
+def _whatsapp_router(monitor: object | None = None, gate: CheckGate | None = None):
     if os.getenv("WHATSAPP_ENABLED", "true").strip().lower() in {"0", "false", "no", "off"}:
         return None
     if WHATSAPP_BACKEND.is_dir() and str(WHATSAPP_BACKEND) not in sys.path:
         sys.path.append(str(WHATSAPP_BACKEND))
     from whatsappAdapter.server import create_router
 
-    return create_router(monitor=monitor)
+    return create_router(monitor=monitor, gate=gate)
 
 
 def init_logging() -> None:
@@ -121,6 +121,7 @@ def create_app(
     admin_panel: bool | None = None,
     monitor: object | None = None,
     sql_injection_reporter: Reporter | None = None,
+    rate_limiter: RateLimiter | bool | None = None,
 ) -> FastAPI:
     """API strony; ``admin_panel`` (domyślnie ``ADMIN_PANEL``, włączony): ``/api/admin``.
 
@@ -157,6 +158,12 @@ def create_app(
     if max_concurrent_checks < 1:
         raise ValueError("MAX_CONCURRENT_CHECKS must be at least 1")
     app.state.check_semaphore = asyncio.Semaphore(max_concurrent_checks)
+    # Jedna bramka dla strony i WhatsAppa: limit na adres IP (CHECK_RATE_LIMIT) i wspólny
+    # limit równoległych sprawdzeń (MAX_CONCURRENT_CHECKS).
+    app.state.check_gate = CheckGate(
+        app.state.check_semaphore,
+        RateLimiter.from_environment() if rate_limiter is None else rate_limiter or None,
+    )
     app.include_router(router)
     app.include_router(trusted_sources_router)
     app.state.journal = None
@@ -168,7 +175,7 @@ def create_app(
         panel_monitor = mount_admin(app, monitor=monitor)
         app.state.journal = CheckJournal(panel_monitor)
     # WhatsApp pisze do tego samego dziennika panelu co /api/check (jeden monitor w procesie).
-    whatsapp = _whatsapp_router(panel_monitor)
+    whatsapp = _whatsapp_router(panel_monitor, app.state.check_gate)
     if whatsapp is not None:
         app.include_router(whatsapp)
     # Próby SQL injection: skan i zapis w jednym wątku poza ścieżką żądania. Wewnątrz limitu

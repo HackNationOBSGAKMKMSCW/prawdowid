@@ -2,13 +2,14 @@
 
 import asyncio
 import contextlib
+import os
 import re
 import time
 import unicodedata
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from observability import log_abstain
+from observability import log_abstain, log_event
 from textAnalysis.analysis import AnalysisConfigurationError, AnalysisError, InputSanitizer
 
 from .admin_bridge import AdminMonitor, AdminSession
@@ -101,6 +102,18 @@ SOURCE_BUTTON_TEXT = "Otwórz źródło"
 ANALYZING_STATUS = "Analizuję tekst i wyciągam twierdzenia…"
 SEARCHING_FULL_TEXT_STATUS = "Szukam Twojej wiadomości w bazach fact-checkingowych…"
 
+BUSY_TEXT = "Sprawdzam teraz bardzo dużo wiadomości. Spróbuj ponownie za chwilę."
+RATE_KEY_ENV = "WHATSAPP_RATE_KEY"
+
+
+def rate_limited_text(seconds: int) -> str:
+    wait = f"{seconds} s" if seconds < 90 else f"{round(seconds / 60)} min"
+    return (
+        "Wysyłasz dużo wiadomości do sprawdzenia w krótkim czasie. "
+        f"Spróbuj ponownie za {wait}."
+    )
+
+
 # Receives a short status line while a message is being checked.
 StatusCallback = Callable[[str], Awaitable[None]]
 
@@ -155,8 +168,15 @@ class SprawdzToBot:
         *,
         check_timeout: float | None = None,
         monitor: AdminMonitor | None = None,
+        gate: Any = None,
+        rate_key: str | None = None,
     ) -> None:
         self.pipeline = pipeline
+        # request_limits.CheckGate wspólna ze stroną: limit na klienta i równoległe sprawdzenia.
+        self.gate = gate
+        # "ip": limit na adres klienta (symulator, wspólny ze stroną); "sender": na numer
+        # nadawcy (prawdziwy WhatsApp, gdzie wszystkie webhooki przychodzą z adresów Meta).
+        self.rate_key = (rate_key or os.getenv(RATE_KEY_ENV, "ip")).strip().lower()
         # Full verification takes minutes; the pipeline knows its own deadline.
         self.check_timeout = (
             check_timeout
@@ -174,10 +194,12 @@ class SprawdzToBot:
         self,
         payload: dict[str, Any],
         status: Callable[[str, str], Awaitable[None]] | None = None,
+        client: str | None = None,
     ) -> list[dict[str, Any]]:
         """Answer every user message in a webhook payload, in order.
 
-        ``status(to, text)`` is awaited with progress lines while checking.
+        ``status(to, text)`` is awaited with progress lines while checking; ``client`` is
+        the caller's address for the rate limit.
         """
 
         replies: list[dict[str, Any]] = []
@@ -187,11 +209,14 @@ class SprawdzToBot:
                 if status is not None:
                     await status(to, text)
 
-            replies.extend(await self.handle(message, status=notify))
+            replies.extend(await self.handle(message, status=notify, client=client))
         return replies
 
     async def handle(
-        self, message: IncomingMessage, status: StatusCallback | None = None
+        self,
+        message: IncomingMessage,
+        status: StatusCallback | None = None,
+        client: str | None = None,
     ) -> list[dict[str, Any]]:
         to = message.sender
         if message.kind is IncomingKind.WELCOME:
@@ -202,7 +227,9 @@ class SprawdzToBot:
             if message.button_id == HELP_BUTTON.id:
                 return [text_message(to, HELP_TEXT)]
             if message.button_id in EXAMPLES:
-                return await self._check(to, message, EXAMPLES[message.button_id][1], status)
+                return await self._check(
+                    to, message, EXAMPLES[message.button_id][1], status, client
+                )
             return self._welcome(to)
 
         if message.text.strip().casefold() in _CLEAR:
@@ -219,7 +246,7 @@ class SprawdzToBot:
             return [text_message(to, TOO_SHORT_TEXT)]
         if len(message.text) > InputSanitizer.MAX_INPUT_LENGTH:
             return [text_message(to, TOO_LONG_TEXT)]
-        return await self._check(to, message, message.text, status)
+        return await self._check(to, message, message.text, status, client)
 
     def _welcome(self, to: str) -> list[dict[str, Any]]:
         return [
@@ -228,6 +255,33 @@ class SprawdzToBot:
         ]
 
     async def _check(
+        self,
+        to: str,
+        message: IncomingMessage,
+        text: str,
+        status: StatusCallback | None = None,
+        client: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Run a check through the shared gate (rate limit, parallel checks), if any."""
+        gate = self.gate
+        if gate is None:
+            return await self._run_check(to, message, text, status)
+        if gate.busy():
+            log_event("check_busy", level="warning", channel="whatsapp")
+            return [text_message(to, BUSY_TEXT)]
+        key = f"ip:{client}" if self.rate_key == "ip" and client else f"wa:{to}"
+        retry_after = gate.retry_after(key)
+        if retry_after is not None:
+            log_event("rate_limited", level="warning", channel="whatsapp", retry_after_s=retry_after)
+            return [text_message(to, rate_limited_text(retry_after))]
+        if not await gate.try_acquire():
+            return [text_message(to, BUSY_TEXT)]
+        try:
+            return await self._run_check(to, message, text, status)
+        finally:
+            gate.release()
+
+    async def _run_check(
         self,
         to: str,
         message: IncomingMessage,

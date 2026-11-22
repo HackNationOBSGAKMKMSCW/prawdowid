@@ -24,7 +24,7 @@ class Actor:
         return cls("system")
 
 
-def _ip(value: str | None) -> str | None:
+def normalize_ip(value: str | None) -> str | None:
     if not value:
         return None
     try:
@@ -57,7 +57,7 @@ class ActivityLog:
                 subject_type,
                 None if subject_id is None else str(subject_id)[:255],
                 json.dumps(details or {}, ensure_ascii=False, default=str),
-                _ip(actor.ip),
+                normalize_ip(actor.ip),
                 (actor.user_agent or "")[:255] or None,
             ],
         )
@@ -107,6 +107,20 @@ class ActivityLog:
             [*params, limit, offset],
         )
         return [dict(row) for row in rows], int(total or 0)
+
+    def count_since(
+        self, action: str, since: str, *, subject_id: str | None = None, ip: str | None = None
+    ) -> int:
+        """Zdarzenia ``action`` od ``since``, opcjonalnie dla obiektu i/lub adresu IP."""
+        sql = "SELECT COUNT(*) FROM activity_logs WHERE action = %s AND occurred_at >= %s"
+        params: list[Any] = [action, since]
+        if subject_id is not None:
+            sql += " AND subject_id = %s"
+            params.append(subject_id)
+        if ip is not None:
+            sql += " AND ip_address = %s::inet"
+            params.append(ip)
+        return int(self.db.fetch_value(sql, params) or 0)
 
     def count_recent(self, action: str, subject_id: str, since: str) -> int:
         return int(
