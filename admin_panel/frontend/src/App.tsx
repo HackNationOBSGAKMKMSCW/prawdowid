@@ -10,6 +10,7 @@ import CaseDetailPage from './pages/CaseDetailPage.tsx';
 import CasesPage from './pages/CasesPage.tsx';
 import ChecksPage from './pages/ChecksPage.tsx';
 import DashboardPage from './pages/DashboardPage.tsx';
+import StatsPage from './pages/StatsPage.tsx';
 import GapsPage from './pages/GapsPage.tsx';
 import LoginPage from './pages/LoginPage.tsx';
 import ModelsPage from './pages/ModelsPage.tsx';
@@ -38,6 +39,7 @@ export default function App() {
             }
           >
             <Route index element={guarded('dashboard:read', <DashboardPage />)} />
+            <Route path="stats" element={guarded('dashboard:read', <StatsPage />)} />
             <Route path="alerts" element={guarded('alerts:read', <AlertsPage />)} />
             <Route path="gaps" element={guarded('clusters:read', <GapsPage />)} />
             <Route path="repeated" element={guarded('clusters:read', <RepeatedPage />)} />

@@ -10,13 +10,25 @@ import type {
   ProviderTestResult,
 } from '../api/types.ts';
 import { useAuth } from '../auth/AuthContext.tsx';
-import { Icon } from '../components/icons.tsx';
+import { Icon, type IconName } from '../components/icons.tsx';
 import { HEALTH, PIPELINE_ROLE, PROTOCOL, REGION } from '../components/labels.ts';
-import { Async, Badge, Card, Field, Modal, PageHeader, Toggle, useAction } from '../components/ui.tsx';
+import { Async, Badge, Field, Modal, PageHeader, Toggle, useAction } from '../components/ui.tsx';
 import { useAsync } from '../hooks/useAsync.ts';
-import { fmtDateTime, fmtDuration, fmtPct, fmtRelative } from '../utils/format.ts';
+import { fmtDuration, fmtPct, fmtPln, fmtRelative } from '../utils/format.ts';
 
 const LLM_ROLES: PipelineRole[] = ['claim_extraction', 'answer_generation'];
+
+const STAGE_ICON: Record<PipelineRole, IconName> = {
+  claim_extraction: 'search',
+  answer_generation: 'channels',
+  embedding: 'database',
+  ocr: 'eye',
+  transcription: 'bell',
+  reverse_image: 'repeat',
+};
+
+/** Rough cost of 1000 checks: ~3,5k input and ~1k output tokens per check and stage. */
+const costPer1000 = (p: ModelProvider) => (p.costPer1kInputPln * 3.5 + p.costPer1kOutputPln) * 1000;
 
 const EMPTY_PROVIDER: ProviderInput = {
   name: '',
@@ -32,6 +44,14 @@ const EMPTY_PROVIDER: ProviderInput = {
   notes: '',
 };
 
+interface Draft {
+  providerId: string;
+  fallbackId: string;
+  timeoutS: number;
+  maxRetries: number;
+  temperature?: number;
+}
+
 export default function ModelsPage() {
   const api = getApi();
   const { can } = useAuth();
@@ -39,23 +59,19 @@ export default function ModelsPage() {
   const assignments = useAsync(() => api.listAssignments(), []);
   const { run, busy } = useAction();
   const [editing, setEditing] = useState<PipelineAssignment | null>(null);
-  const [draft, setDraft] = useState<{ providerId: string; fallback: string[]; timeoutS: number; maxRetries: number; temperature?: number }>({
-    providerId: '',
-    fallback: [],
-    timeoutS: 30,
-    maxRetries: 2,
-  });
-  const [tests, setTests] = useState<Record<string, ProviderTestResult & { at: number }>>({});
+  const [draft, setDraft] = useState<Draft>({ providerId: '', fallbackId: '', timeoutS: 30, maxRetries: 2 });
+  const [tests, setTests] = useState<Record<string, ProviderTestResult>>({});
   const [adding, setAdding] = useState(false);
   const [form, setForm] = useState<ProviderInput>(EMPTY_PROVIDER);
   const writable = can('models:write');
 
-  const byId = new Map((providers.data ?? []).map((p) => [p.id, p]));
+  const list = providers.data ?? [];
+  const byId = new Map(list.map((p) => [p.id, p]));
 
   const openEdit = (a: PipelineAssignment) => {
     setDraft({
       providerId: a.providerId ?? '',
-      fallback: a.fallbackProviderIds,
+      fallbackId: a.fallbackProviderIds[0] ?? '',
       timeoutS: a.params.timeoutS,
       maxRetries: a.params.maxRetries,
       temperature: a.params.temperature,
@@ -63,316 +79,299 @@ export default function ModelsPage() {
     setEditing(a);
   };
 
-  const saveAssignment = async () => {
+  const replaceAssignment = (next: PipelineAssignment) =>
+    assignments.setData((l) => (l ?? []).map((a) => (a.role === next.role ? next : a)));
+
+  const save = async () => {
     if (!editing) return;
-    let updated: PipelineAssignment | null = null;
     const ok = await run(async () => {
-      updated = await api.updateAssignment(editing.role, {
-        providerId: draft.providerId || null,
-        fallbackProviderIds: draft.fallback,
-        params: { timeoutS: draft.timeoutS, maxRetries: draft.maxRetries, temperature: draft.temperature },
-      });
-    }, 'Zapisano. Nowe zapytania używają wybranego modelu.');
-    if (ok && updated) {
-      const next = updated as PipelineAssignment;
-      assignments.setData((list) => (list ?? []).map((a) => (a.role === next.role ? next : a)));
-      setEditing(null);
-    }
+      replaceAssignment(
+        await api.updateAssignment(editing.role, {
+          providerId: draft.providerId || null,
+          fallbackProviderIds: draft.fallbackId && draft.fallbackId !== draft.providerId ? [draft.fallbackId] : [],
+          params: { timeoutS: draft.timeoutS, maxRetries: draft.maxRetries, temperature: draft.temperature },
+        }),
+      );
+    }, 'Model zmieniony. Nowe zapytania korzystają już z wybranego modelu.');
+    if (ok) setEditing(null);
   };
 
-  const test = async (p: ModelProvider) => {
-    await run(async () => {
+  const test = (p: ModelProvider) =>
+    run(async () => {
       const result = await api.testProvider(p.id);
-      setTests((t) => ({ ...t, [p.id]: { ...result, at: Date.now() } }));
+      setTests((t) => ({ ...t, [p.id]: result }));
     });
-  };
 
   const addProvider = async (e: FormEvent) => {
     e.preventDefault();
     let created: ModelProvider | null = null;
     const ok = await run(async () => {
       created = await api.createProvider({ ...form, keyRef: form.keyRef?.trim() || undefined });
-    }, 'Dostawca dodany. Ustaw klucz w magazynie sekretów serwera, a potem przetestuj połączenie.');
+    }, 'Model dodany. Klucz API ustawia się na serwerze — potem kliknij „Sprawdź”.');
     if (ok && created) {
-      providers.setData((list) => [...(list ?? []), created as ModelProvider]);
+      providers.setData((l) => [...(l ?? []), created as ModelProvider]);
       setAdding(false);
       setForm(EMPTY_PROVIDER);
     }
   };
 
   const remove = async (p: ModelProvider) => {
-    const ok = await run(() => api.deleteProvider(p.id), 'Dostawca usunięty.');
-    if (ok) providers.setData((list) => (list ?? []).filter((x) => x.id !== p.id));
+    if (await run(() => api.deleteProvider(p.id), 'Model usunięty z listy.')) {
+      providers.setData((l) => (l ?? []).filter((x) => x.id !== p.id));
+    }
   };
 
-  const candidates = editing ? (providers.data ?? []).filter((p) => p.roles.includes(editing.role)) : [];
+  const candidates = editing ? list.filter((p) => p.roles.includes(editing.role)) : [];
   const chosen = byId.get(draft.providerId);
 
   return (
     <>
       <PageHeader
-        title="Modele i dostawcy"
-        description="Każdy etap weryfikacji korzysta z wymiennego modelu. Zmiana dostawcy to jedna decyzja w panelu — bez przebudowy systemu. Klucze API są przechowywane wyłącznie po stronie serwera; panel widzi tylko, czy są skonfigurowane."
+        title="Modele AI"
+        description="Wybierz, który model obsługuje każdy etap sprawdzania informacji. Zmiana działa od razu i nie wymaga przebudowy systemu."
         actions={
           writable && (
-            <button type="button" className="btn btn-sm btn-primary" onClick={() => setAdding(true)}>
-              <Icon name="plus" size={16} /> Dodaj dostawcę
+            <button type="button" className="btn btn-sm" onClick={() => setAdding(true)}>
+              <Icon name="plus" size={16} /> Dodaj model
             </button>
           )
         }
       />
 
       <Async state={assignments}>
-        {(list) => (
+        {(stages) => (
           <>
-            <ProcessingSummary assignments={list} byId={byId} />
-            <div className="pipeline-grid">
-              {list.map((a) => {
+            <RegionNotice stages={stages} byId={byId} />
+            <section className="stage-list" aria-label="Etapy sprawdzania">
+              {stages.map((a, i) => {
                 const p = a.providerId ? byId.get(a.providerId) : undefined;
+                const fallback = a.fallbackProviderIds.map((id) => byId.get(id)?.name ?? id)[0];
                 return (
-                  <Card key={a.role} className={`pipeline-card ${a.enabled ? '' : 'is-off'}`}>
-                    <div className="pipeline-head">
-                      <div>
-                        <h3>{PIPELINE_ROLE[a.role].label}</h3>
-                        <p className="muted small">{PIPELINE_ROLE[a.role].description}</p>
-                      </div>
+                  <article key={a.role} className={`stage ${a.enabled && p ? '' : 'is-off'}`}>
+                    <div className="stage-step" aria-hidden="true">
+                      <Icon name={STAGE_ICON[a.role]} size={18} />
+                      <span>{i + 1}</span>
+                    </div>
+                    <div className="stage-info">
+                      <h3>{PIPELINE_ROLE[a.role].label}</h3>
+                      <p className="muted small">{PIPELINE_ROLE[a.role].description}</p>
+                    </div>
+                    <div className="stage-model">
+                      {a.enabled && p ? (
+                        <>
+                          <div className="stage-model-name">
+                            <span className={`status-dot dot-${HEALTH[p.health].tone}`} title={HEALTH[p.health].label} />
+                            {p.name}
+                          </div>
+                          <div className="row gap-xs wrap">
+                            <Badge tone={REGION[p.region].tone}>{REGION[p.region].label}</Badge>
+                            {p.health !== 'ok' && <Badge tone={HEALTH[p.health].tone}>{HEALTH[p.health].label}</Badge>}
+                            <span className="muted small">
+                              {p.latencyP50Ms ? `~${fmtDuration(p.latencyP50Ms)}` : ''}
+                              {fallback ? ` · zapasowy: ${fallback}` : ' · bez zapasowego'}
+                            </span>
+                          </div>
+                        </>
+                      ) : (
+                        <span className="muted">{a.enabled ? 'Nie wybrano modelu' : 'Etap wyłączony'}</span>
+                      )}
+                    </div>
+                    <div className="stage-actions">
                       {writable ? (
-                        <Toggle
-                          checked={a.enabled}
-                          label={a.enabled ? 'Włączony' : 'Wyłączony'}
-                          disabled={busy || (!a.providerId && !a.enabled)}
-                          onChange={(enabled) =>
-                            run(async () => {
-                              const updated = await api.updateAssignment(a.role, { enabled });
-                              assignments.setData((l) => (l ?? []).map((x) => (x.role === updated.role ? updated : x)));
-                            }, enabled ? 'Etap włączony.' : 'Etap wyłączony — funkcja zostanie ujawniona jako niedostępna.')
-                          }
-                        />
+                        <>
+                          <button type="button" className="btn btn-sm btn-primary" onClick={() => openEdit(a)}>
+                            {p ? 'Zmień' : 'Wybierz model'}
+                          </button>
+                          <Toggle
+                            checked={a.enabled}
+                            label={<span className="sr-only">{a.enabled ? 'Wyłącz etap' : 'Włącz etap'}</span>}
+                            disabled={busy || !a.providerId}
+                            onChange={(enabled) =>
+                              run(async () => replaceAssignment(await api.updateAssignment(a.role, { enabled })), enabled ? 'Etap włączony.' : 'Etap wyłączony.')
+                            }
+                          />
+                        </>
                       ) : (
                         <Badge tone={a.enabled ? 'good' : 'muted'}>{a.enabled ? 'Włączony' : 'Wyłączony'}</Badge>
                       )}
                     </div>
-                    {p ? (
-                      <div className="pipeline-model">
-                        <div className="row gap-sm wrap">
-                          <strong>{p.name}</strong>
-                          <Badge tone={REGION[p.region].tone}>{REGION[p.region].label}</Badge>
-                          <Badge tone={HEALTH[p.health].tone}>{HEALTH[p.health].label}</Badge>
-                        </div>
-                        <code className="model-id">{p.model}</code>
-                        <dl className="metrics">
-                          <div>
-                            <dt>Mediana opóźnienia</dt>
-                            <dd>{p.latencyP50Ms ? fmtDuration(p.latencyP50Ms) : '—'}</dd>
-                          </div>
-                          <div>
-                            <dt>Błędy</dt>
-                            <dd>{p.errorRate !== undefined ? fmtPct(p.errorRate, 1) : '—'}</dd>
-                          </div>
-                          <div>
-                            <dt>Koszt / 1k tok.</dt>
-                            <dd>{(p.costPer1kInputPln + p.costPer1kOutputPln).toFixed(4).replace('.', ',')} zł</dd>
-                          </div>
-                        </dl>
-                      </div>
-                    ) : (
-                      <p className="muted">Brak przypisanego modelu — etap niedostępny (system ujawnia to użytkownikowi).</p>
-                    )}
-                    <div className="small">
-                      <span className="muted">Zapasowe: </span>
-                      {a.fallbackProviderIds.length
-                        ? a.fallbackProviderIds.map((id) => byId.get(id)?.model ?? id).join(' → ')
-                        : 'brak'}
-                    </div>
-                    <div className="muted small">
-                      Limit {a.params.timeoutS} s · ponowienia {a.params.maxRetries}
-                      {a.params.temperature !== undefined && ` · temperatura ${a.params.temperature}`}
-                    </div>
-                    <div className="pipeline-foot">
-                      <span className="muted small" title={fmtDateTime(a.updatedAt)}>
-                        zmiana {fmtRelative(a.updatedAt)} · {a.updatedBy}
-                      </span>
-                      {writable && (
-                        <button type="button" className="btn btn-sm" onClick={() => openEdit(a)}>
-                          <Icon name="refresh" size={14} /> Zmień model
-                        </button>
-                      )}
-                    </div>
-                  </Card>
+                  </article>
                 );
               })}
-            </div>
+            </section>
           </>
         )}
       </Async>
 
-      <Card title="Rejestr dostawców" subtitle="Lista modeli, które można podłączyć do etapów potoku." padded={false}>
+      <section>
+        <div className="section-head">
+          <h2>Dostępne modele</h2>
+          <p className="muted small">Modele, które można przypisać do etapów. Klucze API są tylko na serwerze — tu widać, czy są ustawione.</p>
+        </div>
         <Async state={providers}>
-          {(list) => (
-            <div className="table-wrap">
-              <table className="table">
-                <thead>
-                  <tr>
-                    <th>Dostawca</th>
-                    <th>Model</th>
-                    <th>Przetwarzanie</th>
-                    <th>Klucz API</th>
-                    <th>Stan</th>
-                    <th>Akcje</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {list.map((p) => {
-                    const used = (assignments.data ?? []).filter((a) => a.providerId === p.id || a.fallbackProviderIds.includes(p.id));
-                    const t = tests[p.id];
-                    return (
-                      <tr key={p.id}>
-                        <td>
-                          <strong>{p.name}</strong>
-                          <div className="muted small">{p.vendor}</div>
-                          <div className="row gap-xs wrap">
-                            {p.roles.map((r) => (
-                              <Badge key={r} tone="muted">
-                                {PIPELINE_ROLE[r].label}
-                              </Badge>
-                            ))}
-                          </div>
-                          {p.notes && <div className="muted small note-line">{p.notes}</div>}
-                        </td>
-                        <td>
-                          <code className="small">{p.model}</code>
-                          <div className="muted small">{PROTOCOL[p.protocol]}</div>
-                          <div className="muted small mono break">{p.baseUrl}</div>
-                        </td>
-                        <td>
-                          <Badge tone={REGION[p.region].tone}>{REGION[p.region].label}</Badge>
-                        </td>
-                        <td className="small">
-                          {p.keyConfigured ? (
-                            <Badge tone="good">
-                              <Icon name="check" size={12} /> {p.keyRef ? 'Skonfigurowany' : 'Niewymagany'}
-                            </Badge>
-                          ) : (
-                            <Badge tone="warning">Brak</Badge>
-                          )}
-                          {p.keyRef && <div className="muted mono">{p.keyRef}</div>}
-                        </td>
-                        <td className="small">
-                          <Badge tone={HEALTH[p.health].tone}>{HEALTH[p.health].label}</Badge>
-                          {t && (
-                            <div className={t.ok ? 'text-good' : 'text-critical'}>
-                              {t.ok ? `Test OK · ${fmtDuration(t.latencyMs)}` : 'Test nieudany'} — {t.message}
-                            </div>
-                          )}
-                          {used.length > 0 && <div className="muted">używany w {used.length} etap(ach)</div>}
-                        </td>
-                        <td>
-                          <div className="row gap-xs wrap">
-                            <button type="button" className="btn btn-xs" disabled={busy} onClick={() => test(p)}>
-                              <Icon name="plug" size={12} /> Test
-                            </button>
-                            {writable && used.length === 0 && (
-                              <button type="button" className="btn btn-xs btn-ghost" disabled={busy} onClick={() => remove(p)}>
-                                <Icon name="trash" size={12} /> Usuń
-                              </button>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+          {(items) => (
+            <div className="provider-grid">
+              {items.map((p) => {
+                const usedIn = (assignments.data ?? []).filter((a) => a.providerId === p.id).map((a) => PIPELINE_ROLE[a.role].label);
+                const backupIn = (assignments.data ?? []).filter((a) => a.fallbackProviderIds.includes(p.id));
+                const t = tests[p.id];
+                return (
+                  <article key={p.id} className="provider-card">
+                    <header>
+                      <div>
+                        <h3>{p.name}</h3>
+                        <span className="muted small">{p.vendor}</span>
+                      </div>
+                      <span className={`status-dot dot-${HEALTH[p.health].tone}`} title={HEALTH[p.health].label} />
+                    </header>
+                    <div className="row gap-xs wrap">
+                      <Badge tone={REGION[p.region].tone}>{REGION[p.region].label}</Badge>
+                      <Badge tone={HEALTH[p.health].tone}>{HEALTH[p.health].label}</Badge>
+                      {!p.keyConfigured && <Badge tone="warning">Brak klucza API</Badge>}
+                    </div>
+                    <p className="small provider-use">
+                      {usedIn.length ? (
+                        <>
+                          <Icon name="check" size={14} /> Używany: {usedIn.join(', ')}
+                        </>
+                      ) : backupIn.length ? (
+                        'Model zapasowy'
+                      ) : (
+                        <span className="muted">Obecnie nieużywany</span>
+                      )}
+                    </p>
+                    <p className="small muted">
+                      ~{fmtPln(costPer1000(p))} / 1000 sprawdzeń
+                      {p.errorRate !== undefined && ` · błędy ${fmtPct(p.errorRate, 1)}`}
+                    </p>
+                    {t && (
+                      <div className={`notice ${t.ok ? 'notice-good' : 'notice-critical'} small`}>
+                        <Icon name={t.ok ? 'check' : 'alert'} size={14} />
+                        <span>{t.ok ? `Działa (${fmtDuration(t.latencyMs)}). ` : ''}{t.message}</span>
+                      </div>
+                    )}
+                    <details className="provider-details">
+                      <summary>Szczegóły techniczne</summary>
+                      <dl className="kv small">
+                        <dt>Model</dt>
+                        <dd className="mono">{p.model}</dd>
+                        <dt>Protokół</dt>
+                        <dd>{PROTOCOL[p.protocol]}</dd>
+                        <dt>Adres</dt>
+                        <dd className="mono break">{p.baseUrl}</dd>
+                        <dt>Klucz</dt>
+                        <dd>{p.keyRef ? <span className="mono">{p.keyRef}</span> : 'niewymagany'}</dd>
+                        <dt>Sprawdzono</dt>
+                        <dd>{p.lastCheckedAt ? fmtRelative(p.lastCheckedAt) : 'nigdy'}</dd>
+                      </dl>
+                      {p.notes && <p className="muted small">{p.notes}</p>}
+                    </details>
+                    <footer>
+                      <button type="button" className="btn btn-sm" disabled={busy} onClick={() => test(p)}>
+                        <Icon name="plug" size={14} /> Sprawdź
+                      </button>
+                      {writable && usedIn.length === 0 && backupIn.length === 0 && (
+                        <button type="button" className="btn btn-sm btn-ghost" disabled={busy} onClick={() => remove(p)}>
+                          Usuń
+                        </button>
+                      )}
+                    </footer>
+                  </article>
+                );
+              })}
             </div>
           )}
         </Async>
-      </Card>
+      </section>
 
       <Modal
         open={!!editing}
         onClose={() => setEditing(null)}
-        title={editing ? `Zmień model: ${PIPELINE_ROLE[editing.role].label}` : ''}
+        title={editing ? `Model dla etapu: ${PIPELINE_ROLE[editing.role].label}` : ''}
         footer={
           <>
             <button type="button" className="btn" onClick={() => setEditing(null)}>
               Anuluj
             </button>
-            <button type="button" className="btn btn-primary" disabled={busy} onClick={saveAssignment}>
-              Zapisz i przełącz
+            <button type="button" className="btn btn-primary" disabled={busy || !draft.providerId} onClick={save}>
+              Użyj tego modelu
             </button>
           </>
         }
       >
         {editing && (
           <div className="form-grid">
-            <Field label="Model główny">
-              <select value={draft.providerId} onChange={(e) => setDraft({ ...draft, providerId: e.target.value, fallback: draft.fallback.filter((f) => f !== e.target.value) })}>
-                <option value="">— brak (etap niedostępny) —</option>
-                {candidates.map((p) => (
-                  <option key={p.id} value={p.id} disabled={!p.keyConfigured}>
-                    {p.name} · {p.model} · {REGION[p.region].label}
-                    {!p.keyConfigured ? ' — brak klucza' : ''}
-                  </option>
-                ))}
-              </select>
-            </Field>
+            <div className="option-list" role="radiogroup" aria-label="Model główny">
+              {candidates.map((p) => {
+                const disabled = !p.keyConfigured;
+                const selected = draft.providerId === p.id;
+                return (
+                  <label key={p.id} className={`option ${selected ? 'is-selected' : ''} ${disabled ? 'is-disabled' : ''}`}>
+                    <input
+                      type="radio"
+                      name="provider"
+                      value={p.id}
+                      checked={selected}
+                      disabled={disabled}
+                      onChange={() => setDraft({ ...draft, providerId: p.id, fallbackId: draft.fallbackId === p.id ? '' : draft.fallbackId })}
+                    />
+                    <span className="option-body">
+                      <span className="option-title">
+                        {p.name}
+                        {editing.providerId === p.id && <Badge tone="info">obecny</Badge>}
+                      </span>
+                      <span className="row gap-xs wrap">
+                        <Badge tone={REGION[p.region].tone}>{REGION[p.region].label}</Badge>
+                        <Badge tone={HEALTH[p.health].tone}>{HEALTH[p.health].label}</Badge>
+                        <span className="muted small">~{fmtPln(costPer1000(p))} / 1000 sprawdzeń</span>
+                      </span>
+                      {disabled && <span className="small text-critical">Brak klucza API — administrator musi go dodać na serwerze.</span>}
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+
             {chosen?.region === 'poza_EOG' && (
               <div className="notice notice-warning">
                 <Icon name="alert" size={16} />
-                <div>
-                  Ten dostawca przetwarza dane <strong>poza EOG</strong>. Treść zapytań (po maskowaniu danych osobowych)
-                  opuści EOG — upewnij się, że jest na to podstawa prawna, i odnotuj to w dokumentacji.
-                </div>
+                <span>
+                  Ten model przetwarza dane <strong>poza EOG</strong>. Treść zapytań (po zamaskowaniu danych osobowych)
+                  opuści EOG.
+                </span>
               </div>
             )}
-            <fieldset className="fieldset">
-              <legend className="field-label">Modele zapasowe (kolejność = priorytet)</legend>
-              {candidates
-                .filter((p) => p.id !== draft.providerId)
-                .map((p) => (
-                  <label key={p.id} className="check-row">
-                    <input
-                      type="checkbox"
-                      disabled={!p.keyConfigured}
-                      checked={draft.fallback.includes(p.id)}
-                      onChange={(e) =>
-                        setDraft({
-                          ...draft,
-                          fallback: e.target.checked ? [...draft.fallback, p.id] : draft.fallback.filter((f) => f !== p.id),
-                        })
-                      }
-                    />
-                    <span>
-                      {p.name} <span className="muted small">({REGION[p.region].label}{!p.keyConfigured ? ', brak klucza' : ''})</span>
-                    </span>
-                  </label>
-                ))}
-              {candidates.length <= 1 && <p className="muted small">Brak innych dostawców obsługujących ten etap.</p>}
-            </fieldset>
-            <div className="form-row">
-              <Field label="Limit czasu (s)">
-                <input type="number" min={1} max={120} value={draft.timeoutS} onChange={(e) => setDraft({ ...draft, timeoutS: Number(e.target.value) })} />
-              </Field>
-              <Field label="Ponowienia">
-                <input type="number" min={0} max={5} value={draft.maxRetries} onChange={(e) => setDraft({ ...draft, maxRetries: Number(e.target.value) })} />
-              </Field>
-              {LLM_ROLES.includes(editing.role) && (
-                <Field label="Temperatura">
-                  <input
-                    type="number"
-                    min={0}
-                    max={1}
-                    step={0.1}
-                    value={draft.temperature ?? 0}
-                    onChange={(e) => setDraft({ ...draft, temperature: Number(e.target.value) })}
-                  />
+
+            <Field label="Model zapasowy" hint="Używany automatycznie, gdy główny nie odpowiada.">
+              <select value={draft.fallbackId} onChange={(e) => setDraft({ ...draft, fallbackId: e.target.value })}>
+                <option value="">— brak —</option>
+                {candidates
+                  .filter((p) => p.id !== draft.providerId && p.keyConfigured)
+                  .map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name} ({REGION[p.region].label})
+                    </option>
+                  ))}
+              </select>
+            </Field>
+
+            <details className="provider-details">
+              <summary>Ustawienia zaawansowane</summary>
+              <div className="form-row">
+                <Field label="Limit czasu (s)">
+                  <input type="number" min={1} max={120} value={draft.timeoutS} onChange={(e) => setDraft({ ...draft, timeoutS: Number(e.target.value) })} />
                 </Field>
-              )}
-            </div>
-            <p className="muted small">
-              Zmiana obowiązuje dla nowych zapytań i jest zapisywana w dzienniku audytu. Po zmianie modelu uruchom zestaw
-              testów referencyjnych, aby porównać jakość (macro-F1, poprawność cytowań).
-            </p>
+                <Field label="Ponowienia">
+                  <input type="number" min={0} max={5} value={draft.maxRetries} onChange={(e) => setDraft({ ...draft, maxRetries: Number(e.target.value) })} />
+                </Field>
+                {LLM_ROLES.includes(editing.role) && (
+                  <Field label="Temperatura">
+                    <input type="number" min={0} max={1} step={0.1} value={draft.temperature ?? 0} onChange={(e) => setDraft({ ...draft, temperature: Number(e.target.value) })} />
+                  </Field>
+                )}
+              </div>
+            </details>
+            <p className="muted small">Zmiana trafi do dziennika audytu. Po zmianie warto uruchomić testy referencyjne.</p>
           </div>
         )}
       </Modal>
@@ -380,7 +379,7 @@ export default function ModelsPage() {
       <Modal
         open={adding}
         onClose={() => setAdding(false)}
-        title="Dodaj dostawcę modelu"
+        title="Dodaj model"
         footer={
           <>
             <button type="button" className="btn" onClick={() => setAdding(false)}>
@@ -394,32 +393,18 @@ export default function ModelsPage() {
       >
         <form id="provider-form" className="form-grid" onSubmit={addProvider}>
           <div className="form-row">
-            <Field label="Nazwa wyświetlana">
-              <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required maxLength={80} />
+            <Field label="Nazwa">
+              <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required maxLength={80} placeholder="np. Mistral Small" />
             </Field>
             <Field label="Dostawca">
               <input value={form.vendor} onChange={(e) => setForm({ ...form, vendor: e.target.value })} maxLength={80} />
             </Field>
           </div>
           <div className="form-row">
-            <Field label="Protokół">
-              <select value={form.protocol} onChange={(e) => setForm({ ...form, protocol: e.target.value as ProviderProtocol })}>
-                {Object.entries(PROTOCOL).map(([k, v]) => (
-                  <option key={k} value={k}>
-                    {v}
-                  </option>
-                ))}
-              </select>
-            </Field>
             <Field label="Identyfikator modelu">
               <input value={form.model} onChange={(e) => setForm({ ...form, model: e.target.value })} required placeholder="np. mistral-small-latest" maxLength={120} />
             </Field>
-          </div>
-          <Field label="Adres bazowy API">
-            <input value={form.baseUrl} onChange={(e) => setForm({ ...form, baseUrl: e.target.value })} required maxLength={200} />
-          </Field>
-          <div className="form-row">
-            <Field label="Miejsce przetwarzania danych">
+            <Field label="Gdzie przetwarza dane">
               <select value={form.region} onChange={(e) => setForm({ ...form, region: e.target.value as ProcessingRegion })}>
                 {Object.entries(REGION).map(([k, v]) => (
                   <option key={k} value={k}>
@@ -428,20 +413,9 @@ export default function ModelsPage() {
                 ))}
               </select>
             </Field>
-            <Field label="Nazwa sekretu z kluczem" hint="Sam klucz dodaje administrator infrastruktury po stronie serwera — nigdy w panelu.">
-              <input value={form.keyRef} onChange={(e) => setForm({ ...form, keyRef: e.target.value.toUpperCase() })} placeholder="np. MISTRAL_API_KEY" maxLength={64} />
-            </Field>
-          </div>
-          <div className="form-row">
-            <Field label="Koszt wejścia (zł / 1k tokenów)">
-              <input type="number" min={0} step={0.0001} value={form.costPer1kInputPln} onChange={(e) => setForm({ ...form, costPer1kInputPln: Number(e.target.value) })} />
-            </Field>
-            <Field label="Koszt wyjścia (zł / 1k tokenów)">
-              <input type="number" min={0} step={0.0001} value={form.costPer1kOutputPln} onChange={(e) => setForm({ ...form, costPer1kOutputPln: Number(e.target.value) })} />
-            </Field>
           </div>
           <fieldset className="fieldset">
-            <legend className="field-label">Zastosowania</legend>
+            <legend className="field-label">Do czego może służyć</legend>
             {(Object.keys(PIPELINE_ROLE) as PipelineRole[]).map((r) => (
               <label key={r} className="check-row">
                 <input
@@ -453,34 +427,55 @@ export default function ModelsPage() {
               </label>
             ))}
           </fieldset>
-          <Field label="Uwagi (opcjonalnie)">
-            <input value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} maxLength={200} />
-          </Field>
+          <details className="provider-details">
+            <summary>Połączenie i koszty</summary>
+            <div className="form-grid">
+              <div className="form-row">
+                <Field label="Protokół">
+                  <select value={form.protocol} onChange={(e) => setForm({ ...form, protocol: e.target.value as ProviderProtocol })}>
+                    {Object.entries(PROTOCOL).map(([k, v]) => (
+                      <option key={k} value={k}>
+                        {v}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label="Nazwa sekretu z kluczem" hint="Sam klucz dodaje się na serwerze.">
+                  <input value={form.keyRef} onChange={(e) => setForm({ ...form, keyRef: e.target.value.toUpperCase() })} placeholder="np. MISTRAL_API_KEY" maxLength={64} />
+                </Field>
+              </div>
+              <Field label="Adres API">
+                <input value={form.baseUrl} onChange={(e) => setForm({ ...form, baseUrl: e.target.value })} required maxLength={200} />
+              </Field>
+              <div className="form-row">
+                <Field label="Koszt wejścia (zł / 1k tokenów)">
+                  <input type="number" min={0} step={0.0001} value={form.costPer1kInputPln} onChange={(e) => setForm({ ...form, costPer1kInputPln: Number(e.target.value) })} />
+                </Field>
+                <Field label="Koszt wyjścia (zł / 1k tokenów)">
+                  <input type="number" min={0} step={0.0001} value={form.costPer1kOutputPln} onChange={(e) => setForm({ ...form, costPer1kOutputPln: Number(e.target.value) })} />
+                </Field>
+              </div>
+            </div>
+          </details>
         </form>
       </Modal>
     </>
   );
 }
 
-function ProcessingSummary({ assignments, byId }: { assignments: PipelineAssignment[]; byId: Map<string, ModelProvider> }) {
-  const outside = assignments.filter((a) => {
-    if (!a.enabled || !a.providerId) return false;
-    return byId.get(a.providerId)?.region === 'poza_EOG';
-  });
+function RegionNotice({ stages, byId }: { stages: PipelineAssignment[]; byId: Map<string, ModelProvider> }) {
+  const outside = stages.filter((a) => a.enabled && a.providerId && byId.get(a.providerId)?.region === 'poza_EOG');
   return outside.length === 0 ? (
     <div className="notice notice-good">
       <Icon name="shield" size={16} />
-      <div>
-        <strong>Wszystkie aktywne etapy przetwarzają dane w EOG lub na własnej infrastrukturze.</strong> Zapasowe modele
-        mogą mieć inny region — sprawdź listę poniżej.
-      </div>
+      <span>Dane są przetwarzane w EOG lub na własnych serwerach.</span>
     </div>
   ) : (
     <div className="notice notice-warning">
       <Icon name="alert" size={16} />
-      <div>
-        <strong>Przetwarzanie poza EOG:</strong> {outside.map((a) => PIPELINE_ROLE[a.role].label).join(', ')}.
-      </div>
+      <span>
+        Przetwarzanie poza EOG: <strong>{outside.map((a) => PIPELINE_ROLE[a.role].label).join(', ')}</strong>.
+      </span>
     </div>
   );
 }

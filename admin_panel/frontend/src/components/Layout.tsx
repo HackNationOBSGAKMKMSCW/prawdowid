@@ -18,7 +18,10 @@ interface NavItem {
 export const NAV: { section: string; items: NavItem[] }[] = [
   {
     section: 'Przegląd',
-    items: [{ to: '/', label: 'Pulpit', icon: 'dashboard', permission: 'dashboard:read' }],
+    items: [
+      { to: '/', label: 'Pulpit', icon: 'home', permission: 'dashboard:read' },
+      { to: '/stats', label: 'Statystyki', icon: 'chart', permission: 'dashboard:read' },
+    ],
   },
   {
     section: 'Monitoring',
@@ -40,7 +43,7 @@ export const NAV: { section: string; items: NavItem[] }[] = [
     section: 'Konfiguracja',
     items: [
       { to: '/sources', label: 'Katalog źródeł', icon: 'database', permission: 'sources:read' },
-      { to: '/models', label: 'Modele i dostawcy', icon: 'cpu', permission: 'models:read' },
+      { to: '/models', label: 'Modele AI', icon: 'cpu', permission: 'models:read' },
       { to: '/rules', label: 'Reguły alertów', icon: 'sliders', permission: 'rules:read' },
       { to: '/settings', label: 'Kanały i prywatność', icon: 'settings', permission: 'settings:read' },
       { to: '/users', label: 'Użytkownicy', icon: 'users', permission: 'users:read' },

@@ -1,204 +1,355 @@
-import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { getApi } from '../api/index.ts';
-import type { Verdict } from '../api/types.ts';
-import { BarList, StackedBar, TargetMeter, TimeSeriesChart } from '../components/charts.tsx';
-import { Icon } from '../components/icons.tsx';
-import { ALERT_TYPE, channelLabel, SEVERITY, VERDICT } from '../components/labels.ts';
-import { Async, Badge, Card, Kpi, PageHeader, Tabs } from '../components/ui.tsx';
+import type { Alert, ModelProvider, ModeratorCase, PipelineAssignment, QueryCluster, Source } from '../api/types.ts';
+import { useAuth } from '../auth/AuthContext.tsx';
+import { Icon, type IconName } from '../components/icons.tsx';
+import { ALERT_TYPE, HEALTH, PIPELINE_ROLE, ROLE_LABEL, SEVERITY, type Tone } from '../components/labels.ts';
+import { useRefreshCounts } from '../components/Layout.tsx';
+import { Async, Badge, Card, EmptyState, useAction } from '../components/ui.tsx';
 import { useAsync } from '../hooks/useAsync.ts';
-import { fmtDateTime, fmtDuration, fmtInt, fmtPct, fmtPln, fmtRelative, fmtTime } from '../utils/format.ts';
+import { fmtDuration, fmtInt, fmtPct, fmtRelative, plural } from '../utils/format.ts';
 
-const RANGES = [
-  { value: '24', label: '24 h' },
-  { value: '48', label: '48 h' },
-  { value: '168', label: '7 dni' },
-] as const;
+const URGENT = new Set(['critical', 'high']);
 
-const VERDICT_ORDER: Verdict[] = ['confirmed', 'false', 'misleading', 'insufficient', 'not_verifiable'];
+function greeting(): string {
+  const h = new Date().getHours();
+  if (h < 5 || h >= 18) return 'Dobry wieczór';
+  return 'Dzień dobry';
+}
+
+/** What a case is waiting for, in plain words. */
+function caseNeed(c: ModeratorCase): string | null {
+  if (!c.assignee) return 'Nikt jej nie prowadzi';
+  if (c.forwarding.recommended && !c.forwarding.forwardedTo) return 'Czeka na przekazanie';
+  if (c.status === 'new') return 'Nierozpoczęta';
+  return null;
+}
 
 export default function DashboardPage() {
   const api = getApi();
-  const [range, setRange] = useState<(typeof RANGES)[number]['value']>('24');
-  const stats = useAsync(() => api.getDashboard(Number(range)), [range]);
+  const { user, can } = useAuth();
+  const navigate = useNavigate();
+  const refreshCounts = useRefreshCounts();
+  const { run, busy } = useAction();
+
   const alerts = useAsync(() => api.listAlerts({ status: 'open' }), []);
   const gaps = useAsync(() => api.listClusters({ onlyGaps: true }), []);
+  const cases = useAsync(() => api.listCases({ status: 'open' }), []);
+  const stats = useAsync(() => api.getDashboard(24), []);
+  const sources = useAsync<Source[]>(() => api.listSources(), []);
+  const models = useAsync<{ providers: ModelProvider[]; assignments: PipelineAssignment[] } | null>(
+    () =>
+      can('models:read')
+        ? Promise.all([api.listProviders(), api.listAssignments()]).then(([providers, assignments]) => ({ providers, assignments }))
+        : Promise.resolve(null),
+    [],
+  );
+
+  const openAlerts = alerts.data ?? [];
+  const urgent = openAlerts.filter((a) => URGENT.has(a.severity) && a.status !== 'escalated');
+  const critical = openAlerts.filter((a) => a.severity === 'critical' && a.status === 'new');
+  const gapsWithoutCase = (gaps.data ?? []).filter((g) => g.isInformationGap && !g.caseId);
+  const waitingCases = (cases.data ?? []).filter((c) => caseNeed(c));
+
+  const modelProblems = (models.data?.assignments ?? [])
+    .filter((a) => a.enabled && a.providerId)
+    .map((a) => ({ a, p: models.data?.providers.find((p) => p.id === a.providerId) }))
+    .filter((x): x is { a: PipelineAssignment; p: ModelProvider } => !!x.p && x.p.health !== 'ok');
+  const sourceProblems = (sources.data ?? []).filter((s) => s.status !== 'excluded' && !s.lastFetchOk);
+  const systemIssues = modelProblems.length + sourceProblems.length + (stats.data?.technicalErrors ? 1 : 0);
+
+  const reloadAll = () => {
+    alerts.reload();
+    gaps.reload();
+    cases.reload();
+    refreshCounts();
+  };
+
+  const escalate = async (alertId: string) => {
+    let id = '';
+    const ok = await run(async () => {
+      id = (await api.escalateAlert(alertId)).id;
+    }, 'Sprawa utworzona.');
+    if (ok) {
+      refreshCounts();
+      navigate(`/cases/${id}`);
+    }
+  };
+
+  const acknowledge = async (a: Alert) => {
+    if (await run(() => api.updateAlert(a.id, { status: 'acknowledged' }), 'Alert przyjęty.')) reloadAll();
+  };
+
+  const firstName = user?.name.split(' ')[0] ?? '';
+  const allClear = critical.length + urgent.length + gapsWithoutCase.length + waitingCases.length + systemIssues === 0;
 
   return (
     <>
-      <PageHeader
-        title="Pulpit"
-        description="Stan usługi weryfikacji: ruch, wstrzymania się od rozstrzygnięcia, jakość i sygnały wymagające reakcji."
-        actions={<Tabs label="Zakres czasu" value={range} onChange={setRange} options={[...RANGES]} />}
-      />
+      <div className="hello">
+        <div>
+          <h1>
+            {greeting()}
+            {firstName && user?.name !== 'Administrator systemu' ? `, ${firstName}` : ''}
+          </h1>
+          <p className="page-desc">
+            {alerts.loading
+              ? 'Sprawdzam, co wymaga uwagi…'
+              : allClear
+                ? 'Wszystko pod kontrolą — nie ma nic pilnego.'
+                : 'Oto sprawy, które wymagają Twojej uwagi. Najpilniejsze są na górze.'}
+          </p>
+        </div>
+        <Link to="/stats" className="btn btn-sm">
+          <Icon name="chart" size={16} /> Statystyki
+        </Link>
+      </div>
 
-      <Async state={stats}>
-        {(s) => (
-          <>
-            <div className="kpi-grid">
-              <Kpi icon="history" label="Sprawdzenia" value={fmtInt(s.checks)} hint={`w ciągu ${range === '168' ? '7 dni' : `${range} h`}`} />
-              <Kpi
-                icon="gap"
-                label="Wstrzymano się (brak dowodów)"
-                value={fmtPct(s.checks ? s.abstained / s.checks : 0)}
-                hint={`${fmtInt(s.abstained)} zapytań`}
-              />
-              <Kpi icon="refresh" label="Mediana czasu odpowiedzi" value={fmtDuration(s.medianLatencyMs)} hint={`p95: ${fmtDuration(s.p95LatencyMs)} · cel ≤ 30 s`} />
-              <Kpi icon="cpu" label="Koszt na 1000 zapytań" value={fmtPln(s.costPer1000Pln)} hint={`łącznie ${fmtPln(s.costTotalPln)} (szacunek)`} />
-              <Kpi
-                icon="bell"
-                label="Aktywne alerty"
-                value={fmtInt(s.activeAlerts)}
-                tone={s.criticalAlerts > 0 ? 'critical' : undefined}
-                hint={s.criticalAlerts > 0 ? `${s.criticalAlerts} krytyczne` : 'brak krytycznych'}
-              />
-              <Kpi icon="folder" label="Otwarte sprawy" value={fmtInt(s.openCases)} hint={`${s.informationGaps} luk informacyjnych`} />
-            </div>
+      <div className="att-grid">
+        <AttentionTile to="/alerts" icon="alert" tone="critical" count={critical.length} label="Krytyczne alerty" ok="Brak krytycznych alertów" />
+        <AttentionTile to="/alerts" icon="bell" tone="serious" count={urgent.length} label="Pilne do przejrzenia" ok="Nic pilnego" />
+        <AttentionTile to="/gaps" icon="gap" tone="warning" count={gapsWithoutCase.length} label={plural(gapsWithoutCase.length, ['luka bez sprawy', 'luki bez sprawy', 'luk bez sprawy'])} ok="Luki mają sprawy" />
+        <AttentionTile to="/cases" icon="folder" tone="warning" count={waitingCases.length} label={plural(waitingCases.length, ['sprawa czeka', 'sprawy czekają', 'spraw czeka'])} ok="Sprawy są w toku" />
+        <AttentionTile to={can('models:read') ? '/models' : '/sources'} icon="plug" tone="warning" count={systemIssues} label="Problemy techniczne" ok="System działa" />
+      </div>
 
-            <div className="grid-2-1">
-              <Card
-                title="Zapytania w czasie"
-                subtitle="Wszystkie sprawdzenia oraz te, w których system wstrzymał się od rozstrzygnięcia."
-              >
-                <TimeSeriesChart
-                  ariaLabel="Liczba zapytań w czasie"
-                  labels={s.series.map((p) => (Number(range) <= 48 ? fmtTime(p.t) : fmtDateTime(p.t).replace(/,? \d\d:\d\d$/, '')))}
-                  series={[
-                    { key: 'total', label: 'Wszystkie zapytania', color: 'var(--series-1)', values: s.series.map((p) => p.total), area: true },
-                    { key: 'abstained', label: 'Brak wystarczających dowodów', color: 'var(--series-2)', values: s.series.map((p) => p.abstained) },
-                  ]}
-                />
-                <div className="chart-foot muted small">
-                  Błędy techniczne: {s.technicalErrors} (raportowane osobno, nie są werdyktem) · Odparte próby prompt
-                  injection: {s.injectionsBlocked}
-                </div>
-              </Card>
+      <div className="grid-2-1">
+        <Card
+          title="Pilne alerty"
+          subtitle="Krytyczne i wysokie, jeszcze bez sprawy."
+          actions={
+            <Link to="/alerts" className="btn btn-sm btn-ghost">
+              Wszystkie <Icon name="arrowRight" size={14} />
+            </Link>
+          }
+          padded={false}
+        >
+          <Async state={alerts}>
+            {() =>
+              urgent.length === 0 ? (
+                <EmptyState title="Brak pilnych alertów" icon="check">
+                  Nowe alerty pojawią się tutaj automatycznie.
+                </EmptyState>
+              ) : (
+                <ul className="todo-list">
+                  {urgent.slice(0, 6).map((a) => (
+                    <li key={a.id} className={`todo sev-${a.severity}`}>
+                      <div className="todo-main">
+                        <div className="row gap-sm wrap">
+                          <Badge tone={SEVERITY[a.severity].tone}>{SEVERITY[a.severity].label}</Badge>
+                          <span className="muted small">
+                            {ALERT_TYPE[a.type].label} · {fmtRelative(a.updatedAt)}
+                          </span>
+                        </div>
+                        <Link to={`/alerts?focus=${encodeURIComponent(a.id)}`} className="todo-title">
+                          {a.title.replace(/^[^:]+:\s*/, '')}
+                        </Link>
+                        <span className="muted small">{a.description}</span>
+                      </div>
+                      <div className="todo-actions">
+                        {can('cases:write') && (
+                          <button type="button" className="btn btn-sm btn-primary" disabled={busy} onClick={() => escalate(a.id)}>
+                            Utwórz sprawę
+                          </button>
+                        )}
+                        {can('alerts:write') && a.status === 'new' && (
+                          <button type="button" className="btn btn-sm" disabled={busy} onClick={() => acknowledge(a)}>
+                            Przyjmij
+                          </button>
+                        )}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )
+            }
+          </Async>
+        </Card>
 
-              <Card title="Wyniki sprawdzeń" subtitle="Rozkład werdyktów w wybranym okresie.">
-                <StackedBar
-                  ariaLabel="Rozkład werdyktów"
-                  segments={VERDICT_ORDER.map((v) => ({
-                    key: v,
-                    label: VERDICT[v].label,
-                    value: s.verdicts[v] ?? 0,
-                    tone: VERDICT[v].tone,
-                  }))}
-                />
-                <h3 className="subhead">Kanały</h3>
-                <BarList
-                  items={Object.entries(s.channels)
-                    .sort((a, b) => b[1] - a[1])
-                    .map(([ch, n]) => ({ key: ch, label: channelLabel(ch), value: n }))}
-                />
-              </Card>
-            </div>
-
-            <div className="grid-2">
-              <Card
-                title="Wymagają uwagi"
-                subtitle="Otwarte alerty, od najpoważniejszych."
-                actions={
-                  <Link to="/alerts" className="btn btn-sm btn-ghost">
-                    Wszystkie <Icon name="arrowRight" size={14} />
-                  </Link>
-                }
-                padded={false}
-              >
-                <Async state={alerts}>
-                  {(list) =>
-                    list.length === 0 ? (
-                      <p className="card-body muted">Brak otwartych alertów.</p>
-                    ) : (
-                      <ul className="list">
-                        {list.slice(0, 6).map((a) => (
-                          <li key={a.id}>
-                            <Link to={`/alerts?focus=${encodeURIComponent(a.id)}`} className="list-link">
-                              <Badge tone={SEVERITY[a.severity].tone}>{SEVERITY[a.severity].label}</Badge>
-                              <span className="list-main">
-                                <span className="list-title">{a.title}</span>
-                                <span className="muted small">
-                                  {ALERT_TYPE[a.type].label} · {fmtRelative(a.updatedAt)}
-                                </span>
-                              </span>
-                            </Link>
-                          </li>
-                        ))}
-                      </ul>
-                    )
-                  }
-                </Async>
-              </Card>
-
-              <Card
-                title="Luki informacyjne"
-                subtitle="Tematy, o które pytają ludzie, a w katalogu brakuje źródeł."
-                actions={
-                  <Link to="/gaps" className="btn btn-sm btn-ghost">
-                    Szczegóły <Icon name="arrowRight" size={14} />
-                  </Link>
-                }
-              >
-                <Async state={gaps}>
-                  {(list) =>
-                    list.length === 0 ? (
-                      <p className="muted">Brak luk informacyjnych.</p>
-                    ) : (
-                      <BarList
-                        items={list.slice(0, 6).map((g) => ({
-                          key: g.id,
-                          label: g.label,
-                          value: g.noEvidence,
-                          hint: `${fmtPct(g.noEvidenceRatio)} zapytań bez dowodów`,
-                        }))}
-                        format={(v) => `${v} bez dowodów`}
-                      />
-                    )
-                  }
-                </Async>
-              </Card>
-            </div>
-
-            <Card
-              title="Jakość weryfikacji — mierniki obowiązkowe"
-              subtitle={
-                <>
-                  Wynik ostatniej ewaluacji na zestawie referencyjnym ({fmtDateTime(s.qualityEvaluatedAt)}).
-                  {api.mode === 'mock' && ' W trybie demo wartości są przykładowe.'}
-                </>
+        <div className="stack">
+          <Card
+            title="Sprawy czekające na decyzję"
+            actions={
+              <Link to="/cases" className="btn btn-sm btn-ghost">
+                Sprawy <Icon name="arrowRight" size={14} />
+              </Link>
+            }
+            padded={false}
+          >
+            <Async state={cases}>
+              {() =>
+                waitingCases.length === 0 ? (
+                  <p className="card-body muted">Żadna sprawa nie czeka.</p>
+                ) : (
+                  <ul className="list">
+                    {waitingCases.slice(0, 5).map((c) => (
+                      <li key={c.id}>
+                        <Link to={`/cases/${c.id}`} className="list-link">
+                          <Badge tone={SEVERITY[c.priority].tone}>{SEVERITY[c.priority].label}</Badge>
+                          <span className="list-main">
+                            <span className="list-title">{c.title}</span>
+                            <span className="muted small">
+                              {caseNeed(c)}
+                              {c.forwarding.recommended && !c.forwarding.forwardedTo && c.forwarding.recommendedRole
+                                ? ` → ${ROLE_LABEL[c.forwarding.recommendedRole].toLowerCase()}`
+                                : ''}{' '}
+                              · {c.queryCount} zapytań
+                            </span>
+                          </span>
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                )
               }
-            >
-              <div className="quality-grid">
-                {s.quality.map((m) => {
-                  const ok = m.direction === 'min' ? m.value >= m.target : m.value <= m.target;
-                  const fmt = (v: number) => (m.unit === '' ? v.toFixed(2).replace('.', ',') : `${String(v).replace('.', ',')}${m.unit === '%' ? '%' : ' s'}`);
-                  return (
-                    <div key={m.key} className="quality-item">
-                      <div className="quality-head">
-                        <span>{m.label}</span>
-                        <Badge tone={ok ? 'good' : 'critical'}>{ok ? 'Cel spełniony' : 'Poniżej celu'}</Badge>
-                      </div>
-                      <div className="quality-value">
-                        {fmt(m.value)}
-                        <span className="muted small">
-                          {' '}
-                          cel {m.direction === 'min' ? '≥' : '≤'} {fmt(m.target)}
-                        </span>
-                      </div>
-                      <TargetMeter
-                        value={m.value}
-                        target={m.target}
-                        direction={m.direction}
-                        max={m.unit === '%' ? 100 : m.unit === 's' ? 40 : 1}
-                        format={fmt}
-                      />
-                    </div>
-                  );
-                })}
+            </Async>
+          </Card>
+
+          <Card title="Luki informacyjne bez sprawy" subtitle="Ludzie pytają, a brakuje źródeł." padded={false}>
+            <Async state={gaps}>
+              {() =>
+                gapsWithoutCase.length === 0 ? (
+                  <p className="card-body muted">Każda luka ma już sprawę.</p>
+                ) : (
+                  <ul className="list">
+                    {gapsWithoutCase.slice(0, 5).map((g: QueryCluster) => (
+                      <li key={g.id}>
+                        <Link to="/gaps" className="list-link">
+                          <span className="gap-count">{g.noEvidence}</span>
+                          <span className="list-main">
+                            <span className="list-title">{g.label}</span>
+                            <span className="muted small">
+                              {fmtPct(g.noEvidenceRatio)} bez dowodów
+                              {g.riskTopics.length ? ` · ${g.riskTopics[0]}` : ''}
+                            </span>
+                          </span>
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                )
+              }
+            </Async>
+          </Card>
+        </div>
+      </div>
+
+      <div className="grid-2">
+        <Card title="Stan systemu">
+          <ul className="health-list">
+            {modelProblems.map(({ a, p }) => (
+              <li key={a.role}>
+                <StatusDot tone={HEALTH[p.health].tone} />
+                <span>
+                  <strong>{PIPELINE_ROLE[a.role].label}:</strong> {p.name} — {HEALTH[p.health].label.toLowerCase()}
+                  {p.errorRate ? ` (${fmtPct(p.errorRate, 1)} błędów)` : ''}
+                </span>
+                <Link to="/models" className="small">
+                  Zmień model
+                </Link>
+              </li>
+            ))}
+            {sourceProblems.map((s) => (
+              <li key={s.id}>
+                <StatusDot tone="warning" />
+                <span>
+                  <strong>Źródło:</strong> {s.name} — nieudane pobieranie
+                </span>
+                <Link to="/sources" className="small">
+                  Sprawdź
+                </Link>
+              </li>
+            ))}
+            {!!stats.data?.technicalErrors && (
+              <li>
+                <StatusDot tone="warning" />
+                <span>
+                  <strong>{stats.data.technicalErrors}</strong> {plural(stats.data.technicalErrors, ['sprawdzenie zakończone', 'sprawdzenia zakończone', 'sprawdzeń zakończonych'])} błędem technicznym (24 h)
+                </span>
+                <Link to="/checks" className="small">
+                  Zobacz
+                </Link>
+              </li>
+            )}
+            {systemIssues === 0 && (
+              <li>
+                <StatusDot tone="good" />
+                <span>Wszystkie modele i źródła działają poprawnie.</span>
+              </li>
+            )}
+          </ul>
+        </Card>
+
+        <Card
+          title="Ostatnie 24 godziny"
+          actions={
+            <Link to="/stats" className="btn btn-sm btn-ghost">
+              Więcej <Icon name="arrowRight" size={14} />
+            </Link>
+          }
+        >
+          <Async state={stats}>
+            {(s) => (
+              <div className="mini-stats">
+                <div>
+                  <span className="mini-value">{fmtInt(s.checks)}</span>
+                  <span className="muted small">sprawdzeń</span>
+                </div>
+                <div>
+                  <span className="mini-value">{fmtPct(s.checks ? s.abstained / s.checks : 0)}</span>
+                  <span className="muted small">bez dowodów</span>
+                </div>
+                <div>
+                  <span className="mini-value">{fmtDuration(s.medianLatencyMs)}</span>
+                  <span className="muted small">typowa odpowiedź</span>
+                </div>
+                <div>
+                  <span className="mini-value">{s.injectionsBlocked}</span>
+                  <span className="muted small">odpartych ataków</span>
+                </div>
               </div>
-            </Card>
-          </>
-        )}
-      </Async>
+            )}
+          </Async>
+        </Card>
+      </div>
     </>
+  );
+}
+
+function StatusDot({ tone }: { tone: Tone }) {
+  return <span className={`status-dot dot-${tone}`} aria-hidden="true" />;
+}
+
+function AttentionTile({
+  to,
+  icon,
+  tone,
+  count,
+  label,
+  ok,
+}: {
+  to: string;
+  icon: IconName;
+  tone: Tone;
+  count: number;
+  label: string;
+  ok: string;
+}) {
+  const active = count > 0;
+  return (
+    <Link to={to} className={`att-tile ${active ? `att-${tone}` : 'att-ok'}`}>
+      <span className="att-icon">
+        <Icon name={active ? icon : 'check'} size={20} />
+      </span>
+      <span className="att-text">
+        {active ? (
+          <>
+            <span className="att-count">{count}</span>
+            <span className="att-label">{label}</span>
+          </>
+        ) : (
+          <span className="att-label">{ok}</span>
+        )}
+      </span>
+    </Link>
   );
 }

@@ -1,6 +1,7 @@
 # admin_panel — panel administracyjny Prawdowida
 
-Frontend panelu dla administratora, analityka i moderatora: logowanie, pulpit,
+Frontend panelu dla administratora, analityka i moderatora: logowanie, pulpit
+(co wymaga uwagi teraz), statystyki,
 alerty i ostrzeżenia, luki informacyjne, powtarzające się zapytania, sprawy
 moderatora, historia weryfikacji, katalog źródeł, wymienne modele, reguły
 alertów, kanały i prywatność, użytkownicy oraz dziennik audytu.
@@ -80,7 +81,7 @@ podłączyć inny transport (np. GraphQL), wystarczy nowa klasa implementująca
 
 ## Modele łatwe do podmienienia
 
-Widok **Modele i dostawcy** odpowiada wymaganiu „wymiana modelu lub dostawcy
+Widok **Modele AI** odpowiada wymaganiu „wymiana modelu lub dostawcy
 bez przebudowy systemu”:
 
 - każdy etap potoku (rozpoznawanie twierdzeń, formułowanie odpowiedzi,
@@ -128,8 +129,11 @@ konkretnej osobie. Zamknięcie sprawy wymaga opisu rozstrzygnięcia.
 - **Katalog źródeł**: typ, poziom zaufania A/B/C, licencja, uzasadnienie
   kwalifikacji, zawieszanie/wykluczanie z uzasadnieniem, kontrola minimów
   korpusu (≥ 100 dokumentów, ≥ 10 domen, ≥ 2 typy).
-- **Pulpit**: ruch, odsetek wstrzymań, mediana i p95 czasu, koszt na 1000
-  zapytań, rozkład werdyktów, kanały, mierniki obowiązkowe względem celów MVP.
+- **Pulpit**: to, co wymaga reakcji — krytyczne i pilne alerty (z przyciskami
+  „Utwórz sprawę” / „Przyjmij”), luki informacyjne bez sprawy, sprawy czekające
+  na przekazanie, problemy z modelami i źródłami, krótkie podsumowanie 24 h.
+- **Statystyki** (osobna zakładka): ruch, odsetek wstrzymań, czas odpowiedzi,
+  koszt na 1000 sprawdzeń, rozkład werdyktów, kanały, najczęstsze tematy.
 - **Bezpieczeństwo**: dziennik prompt injection, SSRF, limitów, odrzuconych
   wejść i nieudanych logowań.
 - **Prywatność**: maskowanie danych osobowych, retencja, anonimizacja,
