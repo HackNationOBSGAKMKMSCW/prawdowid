@@ -12,6 +12,7 @@ from abc import ABC, abstractmethod
 from datetime import UTC, datetime
 from html.parser import HTMLParser
 
+from llm_compat import create_chat_completion, reasoning_effort
 from openai import AsyncOpenAI, OpenAIError
 from pydantic import BaseModel, Field, ValidationError, field_validator
 
@@ -495,14 +496,15 @@ class ProxyContextAnalyzer(BaseTextAnalyzer):
             flush=True,
         )
         try:
-            response = await self.client.chat.completions.create(
+            response = await create_chat_completion(
+                self.client,
                 model=self.model,
                 messages=[
                     {"role": "system", "content": system_instruction},
                     {"role": "user", "content": user_payload},
                 ],
                 temperature=0.1,
-                reasoning_effort="none"
+                reasoning_effort=reasoning_effort(),
             )
             if not response.choices:
                 raise AnalysisError("The language model returned no choices.")

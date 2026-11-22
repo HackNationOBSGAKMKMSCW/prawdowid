@@ -11,7 +11,9 @@ import copy
 import json
 import logging
 import re
+import sys
 from collections.abc import Awaitable, Callable
+from pathlib import Path
 from typing import Any, TypeVar
 
 import openai
@@ -19,6 +21,12 @@ from openai import AsyncOpenAI
 from pydantic import BaseModel, ValidationError
 
 from .config import Settings, get_settings
+
+try:
+    from llm_compat import create_chat_completion, reasoning_effort
+except ImportError:  # analysis/ uruchomione bez backend/ na sys.path
+    sys.path.append(str(Path(__file__).resolve().parents[2] / "backend"))
+    from llm_compat import create_chat_completion, reasoning_effort
 
 log = logging.getLogger(__name__)
 
@@ -116,11 +124,12 @@ async def structured_call(
         global _json_schema_unsupported
         if not _json_schema_unsupported:
             try:
-                resp = await client.chat.completions.create(
+                resp = await create_chat_completion(
+                    client,
                     model=settings.model,
                     messages=msgs,
                     temperature=settings.temperature,
-                    reasoning_effort="none",
+                    reasoning_effort=reasoning_effort(),
                     response_format={
                         "type": "json_schema",
                         "json_schema": {"name": schema.__name__, "schema": json_schema},
@@ -139,11 +148,12 @@ async def structured_call(
             },
             *msgs[1:],
         ]
-        resp = await client.chat.completions.create(
+        resp = await create_chat_completion(
+            client,
             model=settings.model,
             messages=fallback,
             temperature=settings.temperature,
-            reasoning_effort="none",
+            reasoning_effort=reasoning_effort(),
             response_format={"type": "json_object"},
         )
         return resp.choices[0].message.content or ""

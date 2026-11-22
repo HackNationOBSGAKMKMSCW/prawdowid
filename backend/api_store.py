@@ -22,6 +22,10 @@ def _dsn_and_ssl(database_url: str) -> tuple[str, bool | str | ssl.SSLContext]:
     parts = urlsplit(database_url)
     query = dict(parse_qsl(parts.query, keep_blank_values=True))
     url_ssl_mode = query.pop("sslmode", None)
+    # Opcje libpq, których asyncpg nie zna (wysłałby je jako ustawienia serwera i połączenie
+    # by się nie udało). Neon dodaje do adresu `channel_binding=require`; SCRAM i tak działa.
+    for libpq_only in ("channel_binding", "sslnegotiation", "connect_timeout"):
+        query.pop(libpq_only, None)
     ssl_mode = os.getenv("DATABASE_SSL_MODE") or url_ssl_mode or "verify-full"
     if ssl_mode not in _SSL_MODES:
         raise ValueError("DATABASE_SSL_MODE must be a supported PostgreSQL SSL mode")
@@ -56,6 +60,9 @@ class PostgresStore:
             min_size=1,
             max_size=5,
             command_timeout=10,
+            # Bez nazwanych prepared statements: zgodne z poolerami w trybie transakcyjnym
+            # (Neon, Supabase, PgBouncer), przez które idą połączenia z funkcji Vercela.
+            statement_cache_size=0,
         )
         store = cls(pool, retention_days=retention_days)
         await store.initialize()

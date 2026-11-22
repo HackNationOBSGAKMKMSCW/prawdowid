@@ -113,57 +113,93 @@ i `analityk@sprawdz.to.demo`, hasło `demo1234`).
 | Nie da się zalogować do panelu | brak `DATABASE_URL` albo konta (`create-user`) |
 | WhatsApp: „Brak odpowiedzi od backendu” | backend nie działa na porcie 8000 |
 
-## Wdrożenie
+## Wdrożenie na Vercel (Postgres z Vercela + API OpenAI)
 
-Strona, panel i backend działają w jednym projekcie Vercela z katalogu głównego repo
-(`vercel.json`). Baza, model i API zewnętrzne są osobnymi usługami, osiągalnymi z internetu.
+Wszystko działa w jednym projekcie Vercela z katalogu głównego repo (`vercel.json`):
 
 | Część | Gdzie na Vercelu | Adres |
 |---|---|---|
 | Strona | statyczny build `frontend/` (`npm run build:live`) | `/` |
 | Panel admina | statyczny build `admin_panel/frontend/` | `/admin` |
-| Backend (FastAPI) | funkcja `api/index.py`, limit 300 s | `/api/*` |
+| Backend (FastAPI) | funkcja `api/index.py`, region `fra1`, limit 300 s | `/api/*` |
+| PostgreSQL | Vercel Marketplace → Neon (region Frankfurt) | `DATABASE_URL` |
+| Model | API OpenAI | `FREELLM_*` |
 
 Strona i panel wołają `/api` w tej samej domenie, więc `VITE_API_BASE_URL` i `CORS_ORIGINS` nie
-są potrzebne.
+są potrzebne. Nic nie zależy od Tailscale ani od waszych komputerów.
 
-**Usługi zewnętrzne.** Funkcja Vercela nie widzi sieci prywatnej (Tailscale, LAN), więc każda
-usługa musi mieć publiczny adres:
+### Krok 1. Projekt i baza
 
-- **PostgreSQL** z TLS, np. Neon albo Supabase. Najlepiej adres poolera, bo funkcje otwierają
-  wiele krótkich połączeń.
-- **Model** z endpointem zgodnym z OpenAI, np. Gemini albo Ollama za tunelem z kluczem. Ollama
-  nie ma uwierzytelnienia, więc nie wystawiaj jej publicznie bez proxy z kluczem.
-- Google Fact Check i EUvsDisinfo: tylko klucze.
+1. Vercel → Add New → Project → wybierz repozytorium (Root Directory: katalog główny; resztę
+   bierze z `vercel.json`).
+2. W projekcie: Storage → Create Database → **Neon** (Postgres), region **Frankfurt
+   (eu-central-1)**, i podłącz ją do projektu. Vercel sam doda `DATABASE_URL` (adres poolera)
+   i `DATABASE_URL_UNPOOLED` do zmiennych.
 
-**Zmienne w Vercelu** (Settings → Environment Variables):
+Region bazy i funkcji (`fra1`) musi być ten sam: backend wysyła do bazy wiele krótkich zapytań.
 
-- `DATABASE_URL`;
-- `FREELLM_BASE_URL`, `FREELLM_API_KEY`, `FREELLM_MODEL`;
-- `GOOGLE_FACT_CHECK_API_KEY`;
-- `EUVSDISINFO_API_KEY`;
-- `ADMIN_USER_SALT`: losowy ciąg; bez niego pseudonimy w panelu używają publicznej soli
-  domyślnej;
-- opcjonalnie strojenie z `.env.example` (`ARTICLE_*`, `TRUSTED_*`, `MAX_CONCURRENT_CHECKS`).
+### Krok 2. Zmienne (Settings → Environment Variables)
 
-Pliku `.env` nie ma we wdrożeniu (`.vercelignore`), więc wszystko ustawia się w Vercelu.
+| Zmienna | Wartość |
+|---|---|
+| `FREELLM_API_KEY` | klucz z https://platform.openai.com/api-keys |
+| `FREELLM_BASE_URL` | `https://api.openai.com/v1` |
+| `FREELLM_MODEL` | wybrany model OpenAI |
+| `GOOGLE_FACT_CHECK_API_KEY` | klucz Google Fact Check Tools |
+| `EUVSDISINFO_API_KEY` | klucz EUvsDisinfo (bez niego to sprawdzenie jest wyłączone) |
+| `ADMIN_USER_SALT` | losowy ciąg, np. `openssl rand -hex 32` |
 
-**Baza przed pierwszym wdrożeniem**, lokalnie z katalogu `backend/`, z `DATABASE_URL` nowej bazy:
+`DATABASE_URL` ustawia integracja z Neonem; `DATABASE_SSL_MODE` zostaw puste (domyślna
+weryfikacja certyfikatu działa z Neonem). Opcjonalnie: `LLM_REASONING_EFFORT` (opis w
+`.env.example`) i strojenie (`ARTICLE_*`, `TRUSTED_*`, `MAX_CONCURRENT_CHECKS`).
+
+Model można podmienić samą zmienną `FREELLM_MODEL` (i redeployem). Parametry, których dany
+model nie przyjmuje (np. `temperature` w gpt-5-mini albo `reasoning_effort` w gpt-4o),
+backend pomija sam po pierwszym błędzie 400 (`backend/llm_compat.py`).
+
+### Krok 3. Tabele i konto admina (raz, z własnego komputera)
 
 ```bash
-python -m database migrate
-python -m database seed-sources
-python -m database create-user --email ... --name "..." --role admin
+npm i -g vercel && vercel link && vercel env pull .env.vercel
+export DATABASE_URL="$(grep '^DATABASE_URL_UNPOOLED=' .env.vercel | cut -d= -f2- | tr -d '"')"
+cd backend
+../.venv/bin/python -m database migrate
+../.venv/bin/python -m database seed-sources
+../.venv/bin/python -m database create-user --email ... --name "..." --role admin
+cd .. && rm .env.vercel
 ```
 
-**Ograniczenia funkcji Vercela** (ustawione w `api/index.py`, każde da się nadpisać zmienną):
+Migracje idą przez adres bez poolera (`DATABASE_URL_UNPOOLED`), aplikacja przez pooler.
 
-- Jedno sprawdzenie może trwać najwyżej 300 s (`maxDuration`, maksimum na planie Hobby).
-  Backend przerywa analizę po 280 s (`CHECK_TIMEOUT_SECONDS`) i zwraca 504 `analysis_timeout`.
-- Dysk jest tylko do odczytu, poza `/tmp`. Logi (`LOG_FILE`), ustawienia z panelu
-  (`RUNTIME_CONFIG_FILE`) i zapasowy SQLite trafiają do `/tmp/prawdowid` i znikają razem z
-  instancją. Logi są też w zakładce Logs na Vercelu.
+### Krok 4. Przeniesienie danych ze starej bazy (opcjonalnie)
+
+Zamiast kroku 3, z komputera, który widzi starą bazę (np. w Tailscale):
+
+```bash
+pg_dump -Fc --no-owner --no-acl "postgresql://user:haslo@<stary-serwer>:5432/prawdowid" > prawdowid.dump
+pg_restore --no-owner --no-acl -d "$DATABASE_URL" prawdowid.dump   # DATABASE_URL_UNPOOLED
+```
+
+`pg_dump` musi być w wersji nie starszej niż serwer, z którego zrzucacie.
+
+### Krok 5. Sprawdzenie
+
+- `https://<projekt>.vercel.app/api/health` → `{"status":"ok"}` (sprawdza też bazę),
+- strona: sprawdzenie dowolnego zdania; logi etapów w Vercel → Logs,
+- panel: `https://<projekt>.vercel.app/admin`, logowanie kontem z kroku 3.
+
+### Ograniczenia funkcji Vercela
+
+Ustawione w `api/index.py`, każde da się nadpisać zmienną:
+
+- Jedno sprawdzenie trwa najwyżej 300 s (`maxDuration`, maksimum na planie Hobby). Backend
+  przerywa analizę po 280 s (`CHECK_TIMEOUT_SECONDS`) i zwraca 504 `analysis_timeout`.
+- Dysk jest tylko do odczytu, poza `/tmp`. Logi (`LOG_FILE`) i ustawienia z panelu
+  (`RUNTIME_CONFIG_FILE`) trafiają do `/tmp/prawdowid` i znikają razem z instancją. Logi są
+  też w zakładce Logs na Vercelu.
   - Raport zagrożeń w panelu widzi tylko logi bieżącej instancji.
-  - Zmiany ustawień z panelu trzeba wpisać jako zmienne w Vercelu, żeby przetrwały.
+  - Zmiany ustawień z panelu (np. model) trzeba wpisać jako zmienne w Vercelu, żeby przetrwały.
 - Limit równoległych sprawdzeń (`MAX_CONCURRENT_CHECKS`), cache źródeł i limity zapytań działają
   w obrębie jednej instancji, nie globalnie.
+- Koszt modelu rośnie z liczbą sprawdzeń: ustawcie limit wydatków w panelu OpenAI (Settings →
+  Limits).

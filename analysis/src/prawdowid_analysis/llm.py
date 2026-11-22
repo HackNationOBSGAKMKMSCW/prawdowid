@@ -8,12 +8,20 @@ werdykt „brak danych”: potok zwraca wtedy jawny `blad_analizy`.
 import asyncio
 import json
 import re
+import sys
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Protocol
 
 from openai import AsyncOpenAI, OpenAIError, RateLimitError
 
 from .config import Settings
+
+try:
+    from llm_compat import create_chat_completion, reasoning_effort
+except ImportError:  # analysis/ uruchomione bez backend/ na sys.path
+    sys.path.append(str(Path(__file__).resolve().parents[3] / "backend"))
+    from llm_compat import create_chat_completion, reasoning_effort
 
 Message = dict[str, str]
 
@@ -76,12 +84,17 @@ class OpenAIChatClient:
         self._sleep = asyncio.sleep
 
     async def complete(self, messages: list[Message]) -> LLMReply:
-        kwargs: dict[str, Any] = {"model": self.model, "messages": messages, "temperature": 0, "reasoning_effort": "none"}
+        kwargs: dict[str, Any] = {
+            "model": self.model,
+            "messages": messages,
+            "temperature": 0,
+            "reasoning_effort": reasoning_effort(),
+        }
         if self.json_mode:
             kwargs["response_format"] = {"type": "json_object"}
         for attempt in range(RATE_LIMIT_RETRIES + 1):
             try:
-                response = await self._client.chat.completions.create(**kwargs)
+                response = await create_chat_completion(self._client, **kwargs)
                 break
             except RateLimitError as exc:
                 if attempt == RATE_LIMIT_RETRIES:

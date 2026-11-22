@@ -4,6 +4,7 @@
   "installCommand": "npm ci --prefix frontend && npm ci --prefix admin_panel/frontend",
   "buildCommand": "npm run build:live --prefix frontend && npm run build --prefix admin_panel/frontend -- --base=/admin/ && rm -rf dist && cp -r frontend/dist dist && cp -r admin_panel/frontend/dist dist/admin",
   "outputDirectory": "dist",
+  "regions": ["fra1"],
   "functions": {
     "api/index.py": {
       "maxDuration": 300,
