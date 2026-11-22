@@ -165,7 +165,7 @@ export function HelpContent({ onShowSources }: { onShowSources?: () => void }) {
       q: 'Co znaczy „Brak wystarczających dowodów”?',
       a: 'Nie znaleźliśmy dość informacji w wiarygodnych źródłach. Wtedy nie zgadujemy. To nie znaczy, że wiadomość jest fałszywa ani że jest prawdziwa.',
     },
-    { q: 'Czy muszę się logować?', a: 'Nie. Prawdowid jest za darmo i bez logowania.' },
+    { q: 'Czy muszę się logować?', a: 'Nie. Sprawdź.To jest za darmo i bez logowania.' },
     {
       q: 'Co dzieje się z moją wiadomością?',
       a: 'Używamy jej tylko do sprawdzenia wyniku.',

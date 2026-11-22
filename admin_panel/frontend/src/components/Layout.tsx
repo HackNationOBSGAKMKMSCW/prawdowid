@@ -154,7 +154,7 @@ export default function Layout() {
           <div className="brand">
             <Logo size={34} />
             <div>
-              <div className="brand-name">Prawdowid</div>
+              <div className="brand-name">Sprawdź.To</div>
               <div className="brand-sub">Panel administracyjny</div>
             </div>
           </div>

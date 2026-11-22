@@ -100,8 +100,8 @@ npm run dev
 Otwórz http://localhost:5175 i zaloguj się kontem z kroku 3. Panel przekazuje `/api` do
 backendu na porcie 8000 (`ADMIN_API_PROXY_TARGET` w `admin_panel/frontend/.env`, jeśli inny).
 
-Bez bazy, na danych przykładowych: `npm run dev:demo` (konta `admin@prawdowid.demo`
-i `analityk@prawdowid.demo`, hasło `demo1234`).
+Bez bazy, na danych przykładowych: `npm run dev:demo` (konta `admin@sprawdz.to.demo`
+i `analityk@sprawdz.to.demo`, hasło `demo1234`).
 
 ## Gdy coś nie działa
 

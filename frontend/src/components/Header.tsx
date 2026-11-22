@@ -37,10 +37,10 @@ export default function Header({
           type="button"
           className="brand"
           onClick={goHome}
-          aria-label="Prawdowid – strona główna"
+          aria-label="Sprawdź.To – strona główna"
         >
           <span className="brand__flag" aria-hidden="true" />
-          <span className="brand__name">Prawdowid</span>
+          <span className="brand__name">Sprawdź.To</span>
         </button>
         <div
           className="view-settings"

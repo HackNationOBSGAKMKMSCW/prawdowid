@@ -10,7 +10,7 @@ export default function ViewSwitch() {
   const onWhatsApp = pathname.startsWith('/whatsapp');
 
   const to = onWhatsApp ? '/' : '/whatsapp';
-  const label = onWhatsApp ? 'Wróć do strony Prawdowid' : 'Przełącz na demo WhatsApp';
+  const label = onWhatsApp ? 'Wróć do Sprawdź.To' : 'Przełącz na demo WhatsApp';
   // Esc zwija rozwinięty podpis (WCAG 1.4.13).
   const [collapsed, setCollapsed] = useState(false);
   // Na telefonie przycisk chowa się przy przewijaniu w dół i wraca przy przewijaniu w górę.

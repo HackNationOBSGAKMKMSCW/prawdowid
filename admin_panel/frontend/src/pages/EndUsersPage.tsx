@@ -84,7 +84,7 @@ export default function EndUsersPage() {
     <>
       <PageHeader
         title="Użytkownicy serwisu"
-        description="Osoby, które piszą do Prawdowida (np. przez WhatsApp). Panel zna tylko pseudonim (HMAC) i zamaskowany numer. Blokada sprawia, że kolejne wiadomości nie są sprawdzane."
+        description="Osoby, które piszą do Sprawdź.To (np. przez WhatsApp). Panel zna tylko pseudonim (HMAC) i zamaskowany numer. Blokada sprawia, że kolejne wiadomości nie są sprawdzane."
         actions={
           can('export') ? (
             <>

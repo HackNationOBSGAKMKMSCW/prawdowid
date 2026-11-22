@@ -147,7 +147,7 @@ def create_app(
                 await active_store.close()
 
     app = FastAPI(
-        title="Prawdowid API",
+        title="Sprawdź.To API",
         version="1.0.0",
         lifespan=lifespan,
     )

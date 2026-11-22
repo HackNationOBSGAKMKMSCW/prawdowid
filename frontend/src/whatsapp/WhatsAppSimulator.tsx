@@ -329,7 +329,7 @@ export default function WhatsAppSimulator() {
   return (
     <div className="wa-app">
       <div className="wa-page">
-        <section className="wa-phone" aria-label="Symulator WhatsApp: czat z Prawdowidem">
+        <section className="wa-phone" aria-label="Symulator WhatsApp: czat ze Sprawdź.To">
           <StatusBar />
           <header className="wa-header">
             <span className="wa-icon-button" title="Niedostępne w symulatorze">
@@ -337,7 +337,7 @@ export default function WhatsAppSimulator() {
             </span>
             <SprawdzToAvatar size={40} />
             <div className="wa-contact">
-              <span className="wa-contact-name">Prawdowid</span>
+              <span className="wa-contact-name">Sprawdź.To</span>
               <span className={`wa-contact-status${typing > 0 ? ' is-typing' : ''}`}>
                 {headerStatus}
               </span>
@@ -356,7 +356,7 @@ export default function WhatsAppSimulator() {
           <div className="wa-chat" ref={scrollRef} role="log" aria-live="polite">
             <div className="wa-chip wa-chip--notice">
               <LockIcon width={12} height={12} />
-              To symulator WhatsApp. Wiadomości sprawdza backend Prawdowida, tak samo jak na
+              To symulator WhatsApp. Wiadomości sprawdza Sprawdź.To, tak samo jak na
               stronie, i nie trafiają do serwerów WhatsApp. Wpisz /clear, żeby wyczyścić rozmowę.
             </div>
 
@@ -448,7 +448,7 @@ export default function WhatsAppSimulator() {
             {visibleActivity.map((entry) => (
               <div key={entry.id} className="wa-row wa-row--in wa-row--first">
                 {entry.steps.length === 0 ? (
-                  <div className="wa-bubble wa-typing" aria-label="Prawdowid pisze">
+                  <div className="wa-bubble wa-typing" aria-label="Sprawdź.To pisze">
                     <span />
                     <span />
                     <span />
@@ -531,7 +531,7 @@ export default function WhatsAppSimulator() {
                 value={draft}
                 maxLength={16_000}
                 placeholder="Wiadomość"
-                aria-label="Wiadomość do Prawdowida"
+                aria-label="Wiadomość do Sprawdź.To"
                 onChange={(event) => setDraft(event.target.value)}
                 onKeyDown={onKeyDown}
               />

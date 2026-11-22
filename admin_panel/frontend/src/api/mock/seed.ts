@@ -50,7 +50,7 @@ export function seedUsers(now: number): User[] {
   return [
     {
       id: 'u-admin',
-      email: 'admin@prawdowid.demo',
+      email: 'admin@sprawdz.to.demo',
       name: 'Administrator systemu',
       role: 'admin',
       active: true,
@@ -59,7 +59,7 @@ export function seedUsers(now: number): User[] {
     },
     {
       id: 'u-analyst',
-      email: 'analityk@prawdowid.demo',
+      email: 'analityk@sprawdz.to.demo',
       name: 'Anna Nowak',
       role: 'analyst',
       active: true,
@@ -68,7 +68,7 @@ export function seedUsers(now: number): User[] {
     },
     {
       id: 'u-admin2',
-      email: 'p.zielinski@prawdowid.demo',
+      email: 'p.zielinski@sprawdz.to.demo',
       name: 'Piotr Zieliński',
       role: 'admin',
       active: true,
@@ -77,7 +77,7 @@ export function seedUsers(now: number): User[] {
     },
     {
       id: 'u-admin3',
-      email: 'k.wojcik@prawdowid.demo',
+      email: 'k.wojcik@sprawdz.to.demo',
       name: 'Katarzyna Wójcik',
       role: 'admin',
       active: true,
@@ -86,7 +86,7 @@ export function seedUsers(now: number): User[] {
     },
     {
       id: 'u-analyst2',
-      email: 'm.lewandowski@prawdowid.demo',
+      email: 'm.lewandowski@sprawdz.to.demo',
       name: 'Marek Lewandowski',
       role: 'analyst',
       active: false,

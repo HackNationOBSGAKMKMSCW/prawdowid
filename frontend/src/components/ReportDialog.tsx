@@ -62,7 +62,7 @@ export default function ReportDialog({ open, checkId, onClose, onSent }: ReportD
     return (
       <Modal open={open} onClose={close} title="Dziękujemy za zgłoszenie" icon="✓" tone="success">
         <p className="modal__text">
-          Nasz zespół przejrzy ten wynik. Dzięki Tobie Prawdowid będzie działał lepiej.
+          Nasz zespół przejrzy ten wynik. Dzięki Tobie Sprawdź.To będzie działać lepiej.
         </p>
         <div className="modal__actions">
           <button
