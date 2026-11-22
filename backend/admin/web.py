@@ -21,6 +21,7 @@ from typing import Any
 
 from starlette.concurrency import run_in_threadpool
 
+from .checks import known_disinfo_matches
 from .monitor import ClaimInput, Monitor, ScreenDecision
 
 logger = logging.getLogger(__name__)
@@ -96,7 +97,9 @@ class CheckJournal:
             logger.warning("admin_journal_failed step=screen error_type=%s", type(exc).__name__)
             return None
 
-    async def complete(self, query_id: str, response: Any) -> None:
+    async def complete(self, query_id: str, response: Any, report: Any = None) -> None:
+        """Wynik do dziennika; ``report`` (surowy raport ``verification``): trafienia w bazie
+        EUvsDisinfo dają alert ``rosyjska_dezinformacja``."""
         claims, verdict, sources = claims_from_response(response)
         await self._call(
             "complete",
@@ -105,6 +108,11 @@ class CheckJournal:
             verdict=verdict,
             sources_count=sources if claims else None,
         )
+        matches = known_disinfo_matches(report)
+        if matches:
+            await self._call(
+                "register_known_disinformation", query_id, matches, channel=CHANNEL
+            )
 
     async def fail(self, query_id: str, code: str) -> None:
         await self._call("complete", query_id, error=code)

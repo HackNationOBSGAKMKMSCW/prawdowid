@@ -158,7 +158,7 @@ async def check(
         raise ApiFailure(502, "analysis_failed", "The analysis could not be completed.") from None
 
     if journal is not None and journal_id is not None:
-        await journal.complete(journal_id, check_response)
+        await journal.complete(journal_id, check_response, report)
     try:
         await request.app.state.store.record_result(result_id, input_type)
     except Exception as exc:  # noqa: BLE001 - a result is not reportable until persisted

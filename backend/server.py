@@ -9,6 +9,8 @@ from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+from admin.background import BackgroundWorker
+from admin.request_audit import Reporter, SqlInjectionAuditMiddleware
 from api_routes import (
     UrlValidator,
     _run_verification,
@@ -29,6 +31,7 @@ load_dotenv(PROJECT_ROOT / ".env", override=False)
 load_dotenv(PROJECT_ROOT / "backend" / ".env", override=False)
 
 StoreFactory = Callable[[], Awaitable[PostgresStore]]
+MAX_BODY_BYTES = 96 * 1024
 
 # Kanał WhatsApp (whatsapp_sim/backend/whatsappAdapter) działa w tym samym backendzie:
 # /api/whatsapp/* korzysta z tej samej weryfikacji co /api/check.
@@ -55,6 +58,40 @@ def _admin_panel_enabled(flag: bool | None) -> bool:
     return os.getenv("ADMIN_PANEL", "on").strip().lower() not in {"0", "off", "false", "no"}
 
 
+PANEL_PREFIX = "/api/admin"
+WHATSAPP_PREFIX = "/api/whatsapp"
+
+
+def _channel_for(path: str) -> str:
+    """Kanał powiadomienia o SQL injection według ścieżki żądania."""
+    if path.startswith(PANEL_PREFIX):
+        return "panel"
+    if path.startswith(WHATSAPP_PREFIX):
+        return "whatsapp"
+    return "web"
+
+
+def _sql_injection_reporter(monitor: object | None) -> Reporter | None:
+    """Próby SQL injection -> powiadomienia panelu admina (``monitor_alerts``).
+
+    Monitor panelu zamontowanego w tej aplikacji, a bez panelu wspólny ``admin.get_monitor``
+    (``ADMIN_MONITOR=off`` wyłącza zgłoszenia).
+    """
+    from admin import get_monitor
+    from admin.checks import monitor_enabled
+    from admin.request_audit import monitor_reporter
+
+    if monitor is None and not monitor_enabled():
+        return None
+    source = (lambda: monitor) if monitor is not None else get_monitor
+    reporters = {name: monitor_reporter(source, name) for name in ("web", "panel", "whatsapp")}
+
+    def report(detection, method, path, client_ip, request_id) -> None:
+        reporters[_channel_for(path)](detection, method, path, client_ip, request_id)
+
+    return report
+
+
 def create_app(
     *,
     store: object | None = None,
@@ -63,6 +100,7 @@ def create_app(
     url_validator: UrlValidator | None = None,
     admin_panel: bool | None = None,
     monitor: object | None = None,
+    sql_injection_reporter: Reporter | None = None,
 ) -> FastAPI:
     """API strony; ``admin_panel`` (domyślnie ``ADMIN_PANEL``, włączony): ``/api/admin``.
 
@@ -109,7 +147,19 @@ def create_app(
     whatsapp = _whatsapp_router(panel_monitor)
     if whatsapp is not None:
         app.include_router(whatsapp)
-    app.add_middleware(RequestSizeLimitMiddleware, max_body_bytes=96 * 1024)
+    # Próby SQL injection: skan i zapis w jednym wątku poza ścieżką żądania. Wewnątrz limitu
+    # rozmiaru (dodany wcześniej = bliżej aplikacji): za duża treść jest odrzucana, zanim
+    # audyt ją zbuforuje.
+    app.state.admin_worker = BackgroundWorker("admin-web")
+    app.add_middleware(
+        SqlInjectionAuditMiddleware,
+        reporter=sql_injection_reporter
+        if sql_injection_reporter is not None
+        else _sql_injection_reporter(panel_monitor),
+        worker=app.state.admin_worker,
+        max_body=MAX_BODY_BYTES,
+    )
+    app.add_middleware(RequestSizeLimitMiddleware, max_body_bytes=MAX_BODY_BYTES)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=_cors_origins(),

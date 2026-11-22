@@ -19,13 +19,16 @@ def service(monkeypatch, tmp_path):
     monkeypatch.setenv("RUNTIME_CONFIG_FILE", str(tmp_path / "runtime.json"))
     monitor = Monitor(AdminStore(":memory:"), AdminSettings(api_token=TOKEN))
     calls: list[str] = []
-    outcome = {"verdict": "falsz", "error": None}
+    outcome = {"verdict": "falsz", "error": None, "known_disinfo": None}
 
     async def runner(text: str) -> dict:
         calls.append(text)
         if outcome["error"]:
             raise outcome["error"]
-        return report(outcome["verdict"])
+        data = report(outcome["verdict"])
+        if outcome["known_disinfo"]:
+            data["claims_verdict"]["data"]["known_disinfo"] = {"matches": outcome["known_disinfo"]}
+        return data
 
     async def validator(url: str) -> str:
         return url
@@ -142,3 +145,51 @@ def test_panel_can_be_switched_off():
     with TestClient(app) as client:
         assert client.get("/api/admin/health").status_code == 404
         assert client.get("/api/check", params={"text": "Czy prąd zdrożeje?"}).status_code == 200
+
+
+CASE = {
+    "statement": "NATO przygotowuje atak na Rosję z terytorium Polski.",
+    "title": "NATO is preparing to attack Russia",
+    "url": "https://euvsdisinfo.eu/report/nato-is-preparing-to-attack-russia-2",
+    "reason": "Ta sama teza.",
+}
+
+
+def test_known_disinformation_in_a_check_raises_an_admin_alert(service):
+    client, monitor, _, outcome = service
+    outcome["known_disinfo"] = [CASE]
+    first = client.get("/api/check", params={"text": CASE["statement"]}).json()
+    client.get("/api/check", params={"text": CASE["statement"]})
+
+    alerts = client.get(
+        "/api/admin/alerts", params={"type": "rosyjska_dezinformacja"}, headers=AUTH
+    ).json()["items"]
+    assert len(alerts) == 1
+    assert alerts[0]["count"] == 2 and alerts[0]["users"] == 1  # ten sam klient
+    occurrence = alerts[0]["details"]["wystapienia"][-1]
+    assert occurrence["query_id"] == first["id"].replace("-", "")
+    assert occurrence["kanal"] == "web" and occurrence["request_id"]
+    assert "rosyjska_dezinformacja" in monitor.store.get_query(occurrence["query_id"])["flags"]
+
+
+def test_sql_injection_in_a_check_is_one_occurrence_not_two(service):
+    client, monitor, _, _ = service
+    response = client.get("/api/check", params={"text": "x' OR '1'='1"})
+    assert response.status_code == 200  # nic nie blokujemy
+    assert client.app.state.admin_worker.flush()
+
+    alerts = monitor.store.list_alerts(alert_type="sql_injection")
+    assert len(alerts) == 1 and alerts[0]["subject"] == "kanal:web"
+    assert alerts[0]["count"] == 1  # middleware HTTP i monitor treści: to samo żądanie
+    occurrence = alerts[0]["details"]["wystapienia"][0]
+    assert set(occurrence["pola"]) == {"query.text", "tresc_wiadomosci"}
+    assert occurrence["query_id"] == response.json()["id"].replace("-", "")
+
+
+def test_sql_injection_in_panel_requests_uses_the_panel_channel(service):
+    client, monitor, _, _ = service
+    client.get("/api/admin/queries", params={"q": "x' UNION SELECT 1--"}, headers=AUTH)
+    assert client.app.state.admin_worker.flush()
+    alert = monitor.store.list_alerts(alert_type="sql_injection")[0]
+    assert alert["subject"] == "kanal:panel"
+    assert alert["details"]["wystapienia"][0]["sciezka"] == "/api/admin/queries"
