@@ -27,7 +27,7 @@ class _ApiKeywordSchema(BaseModel):
 
 _MAX_KEYWORDS = 25
 _MAX_STATEMENTS = 40
-_MAX_SEARCH_QUERIES = 5
+_MAX_SEARCH_QUERIES = 8
 _MAX_SEARCH_QUERY_CHARS = 120
 
 
@@ -462,9 +462,12 @@ class ProxyContextAnalyzer(BaseTextAnalyzer):
             f"3. Wyodrębnij maksymalnie {top_keywords} najistotniejszych merytorycznie pojęć/nazw/terminów "
             "(w mianowniku) wraz z konkretnym opisem ich roli w tekście.\n"
             "4. Wyciągnij szczegółowe, merytoryczne stwierdzenia (maksymalnie 40), pomijając szum informacyjny.\n"
-            "5. W polu 'search_queries' podaj od 2 do 5 krótkich fraz wyszukiwania (2-6 słów, "
-            "mianownik, bez cudzysłowów), którymi najłatwiej znaleźć sprawdzenie tych tez na stronach "
-            "urzędów i serwisów fact-checkingowych, np. 'Ziemia jest płaska', 'płaska Ziemia'.\n"
+            "5. W polu 'search_queries' podaj od 2 do 8 krótkich fraz wyszukiwania (2-4 słowa, "
+            "mianownik, bez cudzysłowów, bez lat i liczb), którymi najłatwiej znaleźć sprawdzenie tych "
+            "tez na stronach urzędów i serwisów fact-checkingowych. Daj co najmniej jedną frazę na "
+            "każdą osobną tezę, zaczynając od najważniejszych. Gdy urzędy nazywają temat inaczej niż "
+            "tekst, dodaj też wariant urzędowy, np. 'płaca minimalna' i 'minimalne wynagrodzenie', "
+            "'800 plus' i 'Rodzina 800+', 'Ziemia jest płaska' i 'płaska Ziemia'.\n"
             "6. Zwróć WYŁĄCZNIE poprawny obiekt JSON o dokładnie takiej strukturze:\n"
             "{\n"
             '  "category": "wybrana kategoria z listy",\n'

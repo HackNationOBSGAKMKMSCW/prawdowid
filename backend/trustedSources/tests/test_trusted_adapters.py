@@ -45,10 +45,11 @@ async def test_govpl_searches_only_whitelisted_subsites() -> None:
         make_source(id="portal", url="https://www.gov.pl/", adapter="govpl_search",
                     params={"site_id": None}, domains=["www.gov.pl"]),
     ]
-    hits = await GovPlSearchAdapter().search(sources, ["alert", "wiatr", "trzecie"], web.context())
+    queries = ["alert", "wiatr", "trzecie", "4", "5", "6", "siódme"]
+    hits = await GovPlSearchAdapter().search(sources, queries, web.context())
 
-    # 2 queries max x (rcb + gis); duplicate rcb source and the bare portal add no request.
-    assert len(web.requests) == 4
+    # 6 queries max x (rcb + gis); duplicate rcb source and the bare portal add no request.
+    assert len(web.requests) == 12
     assert {request.url.params.get("ministryId") for request in web.requests} == {"rcb", "gis"}
     urls = {(hit.source_id, hit.url) for hit in hits}
     assert ("rcb", "https://www.gov.pl/web/rcb/alert-1") in urls

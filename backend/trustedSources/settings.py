@@ -21,7 +21,7 @@ class TrustedSettings:
     cache_ttl: float = 1200.0
     query_cache_ttl: float = 600.0
     max_concurrency: int = 8
-    max_hits: int = 10
+    max_hits: int = 15
     max_hits_per_source: int = 3
     google_fact_check_api_key: str | None = field(default=None, repr=False)
 
@@ -30,5 +30,7 @@ class TrustedSettings:
         return cls(
             source_timeout=max(0.5, _float("TRUSTED_SOURCE_TIMEOUT", 6.0)),
             cache_ttl=max(0.0, _float("TRUSTED_SOURCE_CACHE_TTL", 1200.0)),
+            max_hits=max(1, int(_float("TRUSTED_MAX_HITS", 15))),
+            max_hits_per_source=max(1, int(_float("TRUSTED_MAX_HITS_PER_SOURCE", 3))),
             google_fact_check_api_key=os.getenv("GOOGLE_FACT_CHECK_API_KEY") or None,
         )

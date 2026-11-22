@@ -107,3 +107,23 @@ def test_long_query_needs_half_and_same_titles_are_merged() -> None:
     ]
     ranked = rank_hits(hits, ["Rząd wprowadza obowiązkowe szczepienia na COVID dla wszystkich"], sources)
     assert [hit.url for hit in ranked] == ["https://example.gov.pl/aktualnosci/1"]
+
+
+def test_years_numbers_and_generic_words_do_not_count_as_coverage() -> None:
+    sources = {"gov": make_source(id="gov", domains=["www.gov.pl"])}
+    hits = [
+        hit("Most w Kostrzynie Dziełem Mostowym Roku 2025", "https://www.gov.pl/web/wody/most-2025"),
+        hit("Polska liderem konkursu CEF Transport 2024", "https://www.gov.pl/web/infra/cef-2024"),
+        hit(
+            "Płaca minimalna w 2025 roku wyniesie 4666 zł",
+            "https://www.gov.pl/web/rodzina/placa-minimalna-2025",
+        ),
+    ]
+    ranked = rank_hits(hits, ["płaca minimalna 2025 Polska", "inflacja Polska 2024 wynik"], sources)
+    assert [item.title for item in ranked] == ["Płaca minimalna w 2025 roku wyniesie 4666 zł"]
+
+
+def test_query_of_only_generic_words_still_matches() -> None:
+    sources = {"gov": make_source(id="gov", domains=["www.gov.pl"])}
+    hits = [hit("Polska w 2025 roku", "https://www.gov.pl/web/gov/polska-2025")]
+    assert rank_hits(hits, ["Polska 2025"], sources)

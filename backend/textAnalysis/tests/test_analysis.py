@@ -244,7 +244,7 @@ async def test_search_queries_are_cleaned_deduplicated_and_limited() -> None:
     )
     result = await _analyzer_returning(payload).analyze("Earth is flat.")
 
-    assert result.search_queries == ["flat earth", "query 0", "query 1", "query 2", "query 3"]
+    assert result.search_queries == ["flat earth", *[f"query {index}" for index in range(7)]]
 
 
 @pytest.mark.asyncio
