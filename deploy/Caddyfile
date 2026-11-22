@@ -1,0 +1,50 @@
+# Caddy: jedno wejście do całej aplikacji na serwerze.
+#   /         strona (frontend/dist)
+#   /admin/   panel admina (admin_panel/frontend/dist, budowany z base /admin/)
+#   /api/*    backend FastAPI na 127.0.0.1:8000
+#
+# deploy/setup.sh wstawia adres w miejsce __SITE__:
+#   :80                      tylko HTTP, adres http://<IP-serwera>
+#   203-0-113-5.sslip.io     HTTPS: certyfikat Let's Encrypt pobierany automatycznie
+#                            (IP z kreskami zamiast kropek; wymaga otwartych portów 80 i 443)
+
+__SITE__ {
+	encode zstd gzip
+
+	handle /api/* {
+		reverse_proxy 127.0.0.1:8000 {
+			# Strumień postępu WhatsApp idzie od razu, bez buforowania.
+			flush_interval -1
+		}
+	}
+
+	redir /admin /admin/ 308
+
+	handle /admin/* {
+		root * /opt/prawdowid/dist
+		# config.json czytany przy starcie panelu: zawsze świeży.
+		header /admin/config.json Cache-Control "no-store"
+		try_files {path} /admin/index.html
+		file_server
+	}
+
+	handle {
+		root * /opt/prawdowid/dist
+		try_files {path} /index.html
+		file_server
+	}
+
+	# Pliki z hashem w nazwie (Vite) można trzymać w cache długo.
+	@assets path /assets/* /admin/assets/*
+	header @assets Cache-Control "public, max-age=31536000, immutable"
+
+	header {
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	log {
+		output file /var/log/caddy/prawdowid.log
+	}
+}
