@@ -350,3 +350,72 @@ def test_no_card_without_reviews_or_links() -> None:
     assert verdict_card(no_reviews) is None
     assert verdict_card(no_links) is None
     assert "*Nie znalazłem weryfikacji*" in format_report(no_reviews)
+
+
+async def test_live_pipeline_attaches_trusted_source_report() -> None:
+    from trustedSources.models import TrustedSearchReport
+
+    trusted = TrustedSearchReport(queries=["q"], hits=[])
+
+    async def analyze(text):
+        return AnalysisDataContainer(source_text=text, statements=["Teza."])
+
+    async def read_statements(analysis):
+        return [reading_result("Teza.", [])]
+
+    async def read_full_text(analysis):
+        raise AssertionError("not expected")
+
+    async def search_trusted(analysis):
+        return trusted
+
+    pipeline = LivePipeline(
+        analyze=analyze,
+        read_statements=read_statements,
+        read_full_text=read_full_text,
+        search_trusted=search_trusted,
+    )
+    report = await pipeline.check("Teza.")
+    assert report.trusted is trusted
+
+
+def test_format_report_lists_trusted_sources_and_live_references() -> None:
+    from datetime import UTC, datetime
+
+    from trustedSources.models import EvidenceHit, TrustedSearchReport
+
+    analysis = AnalysisDataContainer(source_text="t", statements=["A."])
+    trusted = TrustedSearchReport(
+        queries=["alert"],
+        hits=[
+            EvidenceHit(
+                source_id="rcb",
+                source_name="Rządowe Centrum Bezpieczeństwa",
+                url="https://www.gov.pl/web/rcb/alert",
+                title="Alert RCB - silny wiatr",
+                published_at=datetime(2026, 11, 20, tzinfo=UTC),
+            ),
+            EvidenceHit(
+                source_id="x",
+                source_name="Zła",
+                url="javascript:alert(1)",
+                title="Zły link",
+            ),
+            EvidenceHit(
+                source_id="imgw",
+                source_name="IMGW – meteo",
+                url="https://meteo.imgw.pl/",
+                title="IMGW",
+                kind="reference",
+            ),
+        ],
+    )
+    body = format_report(CheckReport(analysis, [reading_result("A.", [])], trusted=trusted))
+
+    assert "*Oficjalne i zaufane źródła:*" in body
+    assert "Alert RCB - silny wiatr · _Rządowe Centrum Bezpieczeństwa · 20.11.2026_" in body
+    assert "https://www.gov.pl/web/rcb/alert" in body
+    assert "javascript:" not in body
+    assert "*Sprawdź na bieżąco:*\n• IMGW – meteo: https://meteo.imgw.pl/" in body
+    assert "powiązane komunikaty z oficjalnych źródeł" in body
+    assert "*Oficjalne" not in format_report(CheckReport(analysis, [reading_result("A.", [])]))

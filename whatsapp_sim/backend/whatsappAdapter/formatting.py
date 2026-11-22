@@ -126,6 +126,36 @@ def _claim_blocks(result: ReadingResult) -> list[str]:
     return blocks
 
 
+MAX_TRUSTED_ARTICLES = 3
+MAX_TRUSTED_REFERENCES = 2
+
+
+def _trusted_sections(report: CheckReport) -> list[str]:
+    """Matching pages from whitelisted official sites and fact-checkers (no verdict)."""
+
+    trusted = report.trusted
+    hits = list(getattr(trusted, "hits", None) or [])
+    articles = [hit for hit in hits if hit.kind == "article"][:MAX_TRUSTED_ARTICLES]
+    references = [hit for hit in hits if hit.kind == "reference"][:MAX_TRUSTED_REFERENCES]
+    sections = []
+    if articles:
+        lines = ["*Oficjalne i zaufane źródła:*"]
+        for hit in articles:
+            date = hit.published_at.strftime("%d.%m.%Y") if hit.published_at else ""
+            meta = " · ".join(part for part in (_clip(hit.source_name, 60), date) if part)
+            lines.append(f"• {_clip(hit.title, 140)} · _{meta}_")
+            if _safe_url(hit.url):
+                lines.append(hit.url)
+        sections.append("\n".join(lines))
+    if references:
+        lines = ["*Sprawdź na bieżąco:*"]
+        lines.extend(
+            f"• {_clip(hit.source_name, 80)}: {hit.url}" for hit in references if _safe_url(hit.url)
+        )
+        sections.append("\n".join(lines))
+    return sections
+
+
 def _missing_key(report: CheckReport) -> bool:
     return any(
         isinstance(outcome.error, ApiAuthError)
@@ -220,6 +250,7 @@ def format_report(report: CheckReport, *, headline: bool = True) -> str:
         ]
         if _missing_key(report):
             sections.append("_(Serwer nie ma ustawionego klucza GOOGLE_FACT_CHECK_API_KEY.)_")
+        sections.extend(_trusted_sections(report))
         return _with_notes("\n\n".join(sections), report)
 
     overall = overall_verdict(review.verdict for review in all_reviews.values())
@@ -232,6 +263,8 @@ def format_report(report: CheckReport, *, headline: bool = True) -> str:
             "\n_Nie ma tego w bazach redakcji fact-checkingowych. To nie znaczy, "
             "że informacja jest prawdziwa ani że jest fałszywa._"
         )
+        if any(hit.kind == "article" for hit in getattr(report.trusted, "hits", None) or []):
+            sections[-1] += "\n_Poniżej powiązane komunikaty z oficjalnych źródeł — porównaj je z wiadomością._"
     else:
         basis = f"_Na podstawie {len(all_reviews)} weryfikacji: {', '.join(publishers[:4])}"
         basis += " i innych._" if len(publishers) > 4 else "._"
@@ -260,6 +293,8 @@ def format_report(report: CheckReport, *, headline: bool = True) -> str:
                 sections.append(f"{heading}\nBrak weryfikacji tego twierdzenia.")
                 continue
             sections.append("\n".join([heading, *blocks]))
+
+    sections.extend(_trusted_sections(report))
 
     if failed:
         footer.append("_Części zapytań nie udało się wykonać — wynik może być niepełny._")

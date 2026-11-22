@@ -27,6 +27,8 @@ class CheckReport:
     results: list[ReadingResult]
     searched_full_text: bool = False
     demo: bool = False
+    # trustedSources.TrustedSearchReport (whitelisted official sites), when searched.
+    trusted: Any = None
 
 
 # Called with a stage name and a count: ("searching", n) once statements are
@@ -48,6 +50,7 @@ async def _report(progress: Progress | None, stage: str, count: int) -> None:
 Analyze = Callable[[str], Awaitable[AnalysisDataContainer]]
 ReadStatements = Callable[[AnalysisDataContainer], Awaitable[list[ReadingResult]]]
 ReadFullText = Callable[[AnalysisDataContainer], Awaitable[ReadingResult]]
+SearchTrusted = Callable[[AnalysisDataContainer], Awaitable[Any]]
 
 
 class LivePipeline:
@@ -65,7 +68,14 @@ class LivePipeline:
         analyze: Analyze | None = None,
         read_statements: ReadStatements | None = None,
         read_full_text: ReadFullText | None = None,
+        search_trusted: SearchTrusted | None = None,
     ) -> None:
+        # Injected fakes (tests) opt out of the live whitelist search unless given one.
+        if search_trusted is None and analyze is read_statements is read_full_text is None:
+            import trustedSources
+
+            search_trusted = trustedSources.run
+        self._search_trusted = search_trusted
         if analyze is None or read_statements is None or read_full_text is None:
             import apiReading
             import textAnalysis
@@ -81,11 +91,27 @@ class LivePipeline:
         analysis = await self._analyze(text)
         statements = [statement for statement in analysis.statements if statement.strip()]
         await _report(progress, "searching", len(statements))
-        if statements:
-            results = await self._read_statements(analysis)
-            return CheckReport(analysis=analysis, results=results)
-        result = await self._read_full_text(analysis)
-        return CheckReport(analysis=analysis, results=[result], searched_full_text=True)
+        trusted_task = (
+            asyncio.ensure_future(self._search_trusted(analysis)) if self._search_trusted else None
+        )
+        try:
+            if statements:
+                results = await self._read_statements(analysis)
+                searched_full_text = False
+            else:
+                results = [await self._read_full_text(analysis)]
+                searched_full_text = True
+        except BaseException:
+            if trusted_task is not None:
+                trusted_task.cancel()
+            raise
+        trusted = await trusted_task if trusted_task is not None else None
+        return CheckReport(
+            analysis=analysis,
+            results=results,
+            searched_full_text=searched_full_text,
+            trusted=trusted,
+        )
 
 
 @dataclass(frozen=True)
