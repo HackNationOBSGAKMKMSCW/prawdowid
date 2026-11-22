@@ -88,7 +88,7 @@ async def health(request: Request) -> dict[str, str]:
 async def check(
     request: Request,
     http_response: Response,
-    text: Annotated[str, Query(min_length=1, max_length=20_000)],
+    text: Annotated[str, Query(min_length=1, max_length=15_000)],
 ) -> CheckResponse:
     verifier: VerificationRunner = request.app.state.verification_runner
     semaphore: asyncio.Semaphore = request.app.state.check_semaphore

@@ -13,12 +13,11 @@ const ROLE_INFO: Record<Role, string> = {
   admin: 'Pełna kontrola nad serwisem: modele, źródła, reguły, blokady, konta i hasła.',
   analyst:
     'Panel obserwacyjny: pulpit, statystyki, alerty, luki, historia weryfikacji, logi i źródła — tylko do odczytu, z eksportem.',
-  moderator: 'Obsługa alertów i luk informacyjnych, blokowanie użytkowników serwisu.',
   user: 'Konto bez dostępu do panelu.',
 };
 
 /** Roles an administrator can give; the first one is the default for a new account. */
-const PANEL_ROLES: Role[] = ['analyst', 'moderator', 'admin'];
+const PANEL_ROLES: Role[] = ['analyst', 'admin'];
 
 const PASSWORD_ALPHABET = 'abcdefghjkmnpqrstuvwxyz23456789';
 
