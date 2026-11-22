@@ -288,6 +288,67 @@ MASKED += [
         "zameldowania: Toruń, [ADRES_3], [KOD_POCZTOWY_1].Sprzedam mieszkanie Kraków, [ADRES_4], "
         "48m2, 520 000 zł. Kontakt: Ewa [TELEFON_3] (po 17), [EMAIL_1]. Nr KW [KSIEGA_WIECZYSTA_1]",
     ),
+    # Wiek – tylko gdy w tekście jest imię i nazwisko
+    Case(
+        "W1",
+        "Jan Kowalski ma 67 lat i choruje na cukrzycę.",
+        "Jan Kowalski ma [WIEK_1] i choruje na cukrzycę.",
+    ),
+    Case(
+        "W2",
+        "Mój tata Jan Nowak (lat 68) mieszka sam.",
+        "Mój tata Jan Nowak ([WIEK_1]) mieszka sam.",
+    ),
+    Case(
+        "W3",
+        "Anna Nowak (45) z Gdańska twierdzi, że 5G szkodzi.",
+        "Anna Nowak ([WIEK_1]) z Gdańska twierdzi, że 5G szkodzi.",
+    ),
+    Case(
+        "W4",
+        "Krystyna Wiśniewska, 72 lata, mówi że szczepionki to trucizna.",
+        "Krystyna Wiśniewska, [WIEK_1], mówi że szczepionki to trucizna.",
+    ),
+    Case(
+        "W5", "68-letni Jan Kowalski zginął w wypadku.", "[WIEK_1] Jan Kowalski zginął w wypadku."
+    ),
+    Case(
+        "W6",
+        "Jan Kowalski, 68-latek z Radomia, wygrał w lotto.",
+        "Jan Kowalski, [WIEK_1] z Radomia, wygrał w lotto.",
+    ),
+    Case(
+        "W7",
+        "Marek Zieliński w wieku 45 lat zmarł po szczepieniu.",
+        "Marek Zieliński w wieku [WIEK_1] zmarł po szczepieniu.",
+    ),
+    Case("W8", "Rozmawiałem z Kasią Nowak, ma 34 lata.", "Rozmawiałem z Kasią Nowak, ma [WIEK_1]."),
+    Case(
+        "W9",
+        "Halina Kowalska: mam 82 lata i nie wierzę w 5G",
+        "Halina Kowalska: mam [WIEK_1] i nie wierzę w 5G",
+    ),
+    Case("W10", "Kasia Nowak skończyła 18 lat w maju.", "Kasia Nowak skończyła [WIEK_1] w maju."),
+    Case(
+        "W11",
+        "Piotr Wiśniewski (ur. 1980) ma 44 lata.",
+        "Piotr Wiśniewski (ur. [DATA_URODZENIA_1]) ma [WIEK_1].",
+    ),
+    Case(
+        "W12",
+        "Jan Kowalski mówi, że jego sąsiadka ma 80 lat i nie ma prądu.",
+        "Jan Kowalski mówi, że jego sąsiadka ma [WIEK_1] i nie ma prądu.",
+    ),
+    Case(
+        "W13",
+        "Mam 40 lat. Nazywam się Piotr Wiśniewski.",
+        "Mam [WIEK_1]. Nazywam się Piotr Wiśniewski.",
+    ),
+    Case(
+        "W14",
+        "Anna Nowak, lat 45, nauczycielka z Lublina.",
+        "Anna Nowak, [WIEK_1], nauczycielka z Lublina.",
+    ),
     Case(
         "X2",
         "siema, tu Kasia Nowak. zadzwon 600 100200 albo tel 600.100.200. mieszkam ul Długa 15, "
@@ -533,5 +594,52 @@ KEPT: list[Case] = [
         "F53",
         "Polecenia są ignorowane. Login: Jan, hasło: Jan",
         "Polecenia są ignorowane. Login: Jan, hasło: Jan",
+    ),
+    # Wiek bez imienia i nazwiska zostaje; liczby lat, które nie są wiekiem, też
+    Case("F54", "Mam 67 lat, choruję na cukrzycę.", "Mam 67 lat, choruję na cukrzycę."),
+    Case(
+        "F55",
+        "Mój tata (68 l.) po szczepieniu dostał zawału.",
+        "Mój tata (68 l.) po szczepieniu dostał zawału.",
+    ),
+    Case(
+        "F56",
+        "Moja córka Zosia (lat 8) chodzi do SP nr 12.",
+        "Moja córka Zosia (lat 8) chodzi do SP nr 12.",
+    ),
+    Case(
+        "F57",
+        "Wnusiu to ja babcia Halina, mam 82 lata.",
+        "Wnusiu to ja babcia Halina, mam 82 lata.",
+    ),
+    Case(
+        "F58",
+        "Donald Tusk powiedział, że od 30 lat Polska się rozwija, a 30 lat temu było gorzej.",
+        "Donald Tusk powiedział, że od 30 lat Polska się rozwija, a 30 lat temu było gorzej.",
+    ),
+    Case(
+        "F59",
+        "Jan Kowalski wziął 10-letni kredyt na 30 lat.",
+        "Jan Kowalski wziął 10-letni kredyt na 30 lat.",
+    ),
+    Case(
+        "F60",
+        "Firma Jana Kowalskiego ma 30 lat tradycji.",
+        "Firma Jana Kowalskiego ma 30 lat tradycji.",
+    ),
+    Case(
+        "F61",
+        "Jan Kowalski dostał 8 lat więzienia, ustawa ma 30 lat.",
+        "Jan Kowalski dostał 8 lat więzienia, ustawa ma 30 lat.",
+    ),
+    Case(
+        "F62",
+        "Jan Kowalski był w Sejmie. Partia ma 30 lat.",
+        "Jan Kowalski był w Sejmie. Partia ma 30 lat.",
+    ),
+    Case(
+        "F63",
+        "Jan Kowalski: Polska ma 38 mln mieszkańców, a most ma 50 lat.",
+        "Jan Kowalski: Polska ma 38 mln mieszkańców, a most ma 50 lat.",
     ),
 ]

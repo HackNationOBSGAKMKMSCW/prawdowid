@@ -24,6 +24,7 @@ export const MASKED_LABELS: Record<MaskedLabel, string> = {
   LOGIN: 'Login',
   IDENTYFIKATOR: 'Numer klienta / umowy / paczki',
   LOKALIZACJA: 'Lokalizacja',
+  WIEK: 'Wiek',
 };
 
 const PLACEHOLDER = /(\[[A-Z_]+_\d+\])/;

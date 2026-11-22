@@ -24,7 +24,7 @@ MAX_TEXT_LENGTH = 20_000  # InputSanitizer sam przycina do 15 000 i to zgłasza
 def _rules_version() -> str:
     """Skrót plików z regułami – widać w oknie testowym, czy backend działa na nowym kodzie."""
     digest = hashlib.sha256()
-    for name in ("rules.py", "masker.py", "normalize.py", "validators.py"):
+    for name in ("rules.py", "masker.py", "normalize.py", "validators.py", "names.py"):
         digest.update((Path(__file__).parent / name).read_bytes())
     return digest.hexdigest()[:8]
 

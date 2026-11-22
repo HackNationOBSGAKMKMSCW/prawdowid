@@ -6,6 +6,7 @@ import re
 from collections import Counter
 from dataclasses import dataclass, field
 
+from .names import contains_full_name
 from .normalize import View, build_view
 from .rules import CONTEXT_BEFORE, RULES, UNIT_AFTER, URL, Keyword, Rule
 
@@ -55,7 +56,11 @@ class _Candidate:
 
 
 def _value_span(match: re.Match[str]) -> tuple[int, int]:
-    return match.span("v") if "v" in match.re.groupindex else match.span()
+    """Grupa ``v`` (albo ``w`` w drugiej alternatywie), a bez nich całe dopasowanie."""
+    for group in ("v", "w"):
+        if group in match.re.groupindex and match.start(group) != -1:
+            return match.span(group)
+    return match.span()
 
 
 def _keyword_near(rule: Rule, text: str, start: int, end: int) -> bool:
@@ -99,7 +104,13 @@ def _candidates(view: View) -> list[_Candidate]:
     text = view.text
     urls = [m.span() for m in URL.finditer(text)]
     found: list[_Candidate] = []
+    has_full_name: bool | None = None
     for rule in RULES:
+        if rule.requires_full_name:
+            if has_full_name is None:
+                has_full_name = contains_full_name(text)
+            if not has_full_name:
+                continue
         for match in rule.pattern.finditer(text):
             start, end = _value_span(match)
             if start == end:

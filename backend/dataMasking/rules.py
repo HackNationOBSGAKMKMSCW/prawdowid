@@ -45,6 +45,8 @@ class Rule:
     weak: bool = False
     reject: re.Pattern[str] | None = None
     """Wartość pasująca w całości do tego wzorca to co innego (np. telefon „48 600 100 200”)."""
+    requires_full_name: bool = False
+    """Maskuj tylko, gdy w tekście jest imię i nazwisko (np. wiek – sam nikogo nie wskazuje)."""
     inside_urls: bool = False
     """Maskuj też w linkach (e-mail, profil); domyślnie liczby w linkach zostają."""
     blocked_after: re.Pattern[str] | None = None
@@ -65,6 +67,30 @@ _LOWER = "a-ząćęłńóśźż"
 _MONTHS = (
     "stycznia|lutego|marca|kwietnia|maja|czerwca|lipca|sierpnia|"
     "września|wrzesnia|października|pazdziernika|listopada|grudnia"
+)
+_PERSON_NOUNS = (
+    r"mężczyzn\w*|mezczyzn\w*|kobiet\w*|chłop\w*|chlop\w*|dziewczyn\w*|dziewczyn\w*|syn\w*|"
+    r"córk\w*|cork\w*|dziec\w*|senior\w*|seniork\w*|emeryt\w*|pacjent\w*|kierowc\w*|"
+    r"mieszkan\w*|ojc\w*|ojciec|matk\w*|brat\w*|siostr\w*|wnu\w*|bab\w*|dziad\w*|"
+    r"uczni\w*|uczeń|uczen|student\w*|nastolat\w*|chłopiec|chlopiec|mąż|maz|męża|meza|żon\w*|"
+    r"zon\w*|sąsiad\w*|sasiad\w*|pan\w*|osob\w*|poszkodowan\w*|zmarł\w*|zmarl\w*|"
+    r"sprawc\w*|ofiar\w*|polityk\w*|posł\w*|posel|radn\w*|lekarz\w*|aktor\w*|piosenkar\w*|"
+    r"kolega|koleg\w*|koleżank\w*|kolezank\w*|przyjaciel\w*|przyjaciół\w*|znajom\w*|szef\w*|"
+    r"tata|taty|tato|mama|mamy|mamą|babcia|babci|dziadek|dziadka|ciocia|cioci|wujek|wujka|"
+    r"teściow\w*|tesciow\w*|szwagier\w*|szwagr\w*|bratow\w*|kuzyn\w*|partner\w*|"
+    r"chłopak\w*|chlopak\w*|narzeczon\w*"
+)
+_AGE_ADVERB = (
+    r"(?:(?i:już|juz|dopiero|prawie|ponad|niecałe|niecale|około|okolo|skończone|skonczone|"
+    r"równo|rowno|dokładnie|dokladnie)\s+)?"
+)
+# Liczba lat osoby; „30 lat tradycji/stażu/więzienia” to nie wiek.
+_AGE = (
+    r"\d{1,3}\s*(?i:lat|lata|latek|l\.|wiosen|rok|roku|miesięcy|miesiecy|miesiące|miesiace|"
+    r"tygodni|urodziny)(?!\w)(?!\s+(?i:tradycji|stażu|stazu|doświadczeni\w*|doswiadczeni\w*|"
+    r"histori\w*|istnieni\w*|działalności|dzialalnosci|pracy|służby|sluzby|temu|gwarancji|"
+    r"kadencji|kredytu|umowy|więzienia|wiezienia|odsiadki|wyroku|ważności|waznosci))"
+    r"|\d{1,3}(?=\s*(?:[,.;!?)]|$))"
 )
 # „w maju 1985”
 _MONTHS_IN = (
@@ -587,5 +613,80 @@ RULES: tuple[Rule, ...] = (
         ),
         keyword_mode=Keyword.REQUIRED,
         keyword_after=True,
+    ),
+    # Wiek – tylko gdy w tekście jest imię i nazwisko. Same liczby lat („od 30 lat”,
+    # „30 lat temu”, „10-letni kredyt”) zostają: maskujemy wyłącznie wiek osoby.
+    Rule(
+        "WIEK",
+        _c(
+            r"(?<!\w)(?i:mam|mamy|miałem|miałam|mialem|mialam|skończyłem|skończyłam|skonczylem|"
+            r"skonczylam|kończę|koncze|skończę|skoncze)\s+"
+            rf"{_AGE_ADVERB}(?P<v>{_AGE})"
+        ),
+        priority=13,
+        requires_full_name=True,
+    ),
+    # Trzecia osoba tylko, gdy w tym samym zdaniu przed nią stoi osoba
+    # („Ewa Kopacz ma 67 lat”, „sąsiadka ma 80 lat”), a nie rzecz („ustawa ma 30 lat”).
+    Rule(
+        "WIEK",
+        _c(
+            rf"(?:(?<=[\w,]\s)[{_UPPER}][{_LOWER}]+|(?<!\w)(?i:{_PERSON_NOUNS}|on|ona|jego|jej))"
+            # Między osobą a wiekiem: bez końca zdania i bez innych liczb, ale nawias wolno
+            # („Piotr Wiśniewski (ur. 1980) ma 44 lata”).
+            r"(?!\w)(?:[^.!?\d\n()]|\([^)\n]{0,40}\)){0,30}?"
+            r"(?<!\w)(?i:ma|miał|miała|mial|miala|mając\w*|majac\w*|skończył\w*|skonczyl\w*|"
+            r"kończy|konczy|skończy|skonczy|liczy|liczył\w*|obchodzi\w*|świętuje|swietuje)\s+"
+            rf"{_AGE_ADVERB}(?P<v>{_AGE})"
+        ),
+        priority=13,
+        requires_full_name=True,
+    ),
+    Rule(
+        "WIEK",
+        _c(
+            r"\(\s*(?P<v>(?i:lat|l\.|wiek)\s*:?\s*\d{1,3}|\d{1,3}\s*(?i:lat|lata|l\.|r\.\s?ż\.|rż))"
+            r"\s*[),]"
+        ),
+        priority=13,
+        requires_full_name=True,
+    ),
+    # „Jan Nowak (68)”, „Jan Nowak, 68 lat,”, „Jan Nowak, lat 68”
+    Rule(
+        "WIEK",
+        _c(
+            rf"(?<=[{_LOWER}])\s*(?:\(\s*(?P<v>\d{{1,3}})\s*\)"
+            r"|,\s*(?P<w>(?i:lat\s+)?\d{1,3}(?:\s*(?i:lat|lata|l\.))?)(?=\s*[,.;)]|\s*$))"
+        ),
+        priority=13,
+        requires_full_name=True,
+    ),
+    Rule(
+        "WIEK",
+        _c(
+            r"(?<!\w)(?P<v>\d{1,3}\s*-?\s*(?i:latek|latka|latki|latkiem|latce|latkowi|latków|latkow|"
+            r"latkami|latkę|latke))(?!\w)"
+        ),
+        priority=13,
+        requires_full_name=True,
+    ),
+    Rule(
+        "WIEK",
+        _c(
+            r"(?<!\w)(?P<v>\d{1,3}\s*-?\s*(?i:letni|letnia|letniego|letniej|letnim|letnią|letnie|"
+            r"letnich))(?=\s+(?:"
+            rf"[{_UPPER}][{_LOWER}]+|(?i:{_PERSON_NOUNS})))"
+        ),
+        priority=13,
+        requires_full_name=True,
+    ),
+    Rule(
+        "WIEK",
+        _c(
+            r"(?<!\w)(?i:w\s+wieku|wiek|wieku)\s*:?\s*(?:(?i:około|okolo|ok\.)\s*)?"
+            r"(?P<v>\d{1,3}(?:\s*(?i:lat|lata))?)(?!\w)"
+        ),
+        priority=13,
+        requires_full_name=True,
     ),
 )

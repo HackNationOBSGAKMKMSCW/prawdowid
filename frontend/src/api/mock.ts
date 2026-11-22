@@ -6,14 +6,7 @@ import { truncate } from '../lib/format.ts';
 import type { CheckResponse } from './types.ts';
 
 export type Scenario =
-  | 'vaccines'
-  | 'analysis'
-  | 'url'
-  | 'opinion'
-  | 'clarify'
-  | 'scope'
-  | 'failure'
-  | 'generic';
+  'vaccines' | 'analysis' | 'url' | 'opinion' | 'clarify' | 'scope' | 'failure' | 'generic';
 
 /** Przykładowe wiadomości, które wkleja pasek demo. */
 export const EXAMPLES: Record<Exclude<Scenario, 'generic'>, string> = {

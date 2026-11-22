@@ -133,7 +133,8 @@ export type MaskedLabel =
   | 'HASLO'
   | 'LOGIN'
   | 'IDENTYFIKATOR'
-  | 'LOKALIZACJA';
+  | 'LOKALIZACJA'
+  | 'WIEK';
 
 export interface MaskedEntity {
   label: MaskedLabel;

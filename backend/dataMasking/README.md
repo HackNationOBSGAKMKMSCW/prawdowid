@@ -37,6 +37,21 @@ w liczbie na zero („6OO 1OO 2OO”), liczby słownie dłuższe niż 6 cyfr na 
 | `NR_REJESTRACYJNY`                                    | po „nr rej.”, „tablice” albo tablica w stylu `WA12345` obok słów o aucie i marek („audi WGM 4521T”)                                                                                                                                                                                                                        |
 | `PASZPORT`, `IP`, `MAC`, `KSIEGA_WIECZYSTA`           | numer po słowie „paszport”; adres IP (bez „wersja 1.2.3.4”); adres MAC; `KR1P/00123456/7`                                                                                                                                                                                                                                  |
 
+### Wiek – tylko przy imieniu i nazwisku
+
+Sam wiek nikogo nie wskazuje, więc jest maskowany (`WIEK`) tylko wtedy, gdy w tekście
+jest imię i nazwisko (`names.py`: imię ze słownika w dowolnym przypadku i zdrobnieniu,
+a po nim wyraz od wielkiej litery – „Jan Kowalski”, „z Kasią Nowak”).
+
+- „Mam 67 lat, choruję na cukrzycę.” – zostaje,
+- „Jan Kowalski ma 67 lat” → „Jan Kowalski ma [WIEK_1]”; także „Anna Nowak (45)”,
+  „Krystyna Wiśniewska, 72 lata,”, „68-letni Jan Kowalski”, „68-latek”, „w wieku 45 lat”,
+  „(lat 8)”, „mam 82 lata” (pierwsza osoba),
+- trzecia osoba tylko, gdy w tym samym zdaniu przed nią stoi osoba („sąsiadka ma 80 lat”),
+  a nie rzecz („ustawa ma 30 lat”, „Partia ma 30 lat”),
+- liczby lat, które nie są wiekiem, zostają: „od 30 lat”, „30 lat temu”, „10-letni kredyt”,
+  „30 lat tradycji”, „8 lat więzienia”.
+
 ## Czego nie rusza (ochrona faktów)
 
 - liczb z jednostką: „500 000 000 zł”, „600 100 200 osób”, „3,5%”, „230 głosami”,
@@ -47,7 +62,7 @@ w liczbie na zero („6OO 1OO 2OO”), liczby słownie dłuższe niż 6 cyfr na 
 
 ## Znane luki
 
-Dane o zdrowiu i wiek („mam 67 lat, choruję na cukrzycę”) zostają, bo są
+Dane o zdrowiu („choruję na cukrzycę”) zostają, bo są
 treścią sprawdzanych twierdzeń. Numery firm i infolinii są maskowane jak
 prywatne (reguły ich nie odróżnią). Numery telefonów słownie („sześćset sto dwieście”), adres bez numeru i bez słowa
 „mieszkam” („pracuję na Długiej”), opisowe identyfikatory („moja szefowa z urzędu w X”)
