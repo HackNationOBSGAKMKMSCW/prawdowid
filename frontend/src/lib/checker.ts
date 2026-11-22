@@ -1,15 +1,21 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
-import { checkMessage } from '../api/client.ts';
+import { ApiError, checkMessage, type ApiErrorCode } from '../api/client.ts';
 import type { Scenario } from '../api/mock.ts';
 import type { CheckResult } from '../api/types.ts';
 
 export type StateKind = 'clarify' | 'out_of_scope' | 'failure';
 
+/** Szczegóły awarii z backendu (kod z `backend/API.md`) do dopasowania komunikatu. */
+export interface FailureInfo {
+  code: ApiErrorCode;
+  requestId?: string;
+}
+
 export type Screen =
   | { name: 'start' }
   | { name: 'checking' }
   | { name: 'result'; result: CheckResult; runId: number }
-  | { name: 'state'; kind: StateKind };
+  | { name: 'state'; kind: StateKind; failure?: FailureInfo };
 
 export interface Checker {
   screen: Screen;
@@ -68,9 +74,10 @@ export function useCheckerState(): Checker {
           if (response.status === 'result') setScreen({ name: 'result', result: response, runId });
           else setScreen({ name: 'state', kind: response.status });
         },
-        () => {
+        (err: unknown) => {
           if (ctrl.signal.aborted) return;
-          setScreen({ name: 'state', kind: 'failure' });
+          const failure = err instanceof ApiError ? { code: err.code, requestId: err.requestId } : undefined;
+          setScreen({ name: 'state', kind: 'failure', failure });
         },
       );
     },

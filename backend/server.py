@@ -18,6 +18,7 @@ from api_store import PostgresStore
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from observability.middleware import ObservabilityMiddleware
+from public_sources import router as trusted_sources_router
 from request_limits import RequestSizeLimitMiddleware
 
 StoreFactory = Callable[[], Awaitable[PostgresStore]]
@@ -57,6 +58,7 @@ def create_app(
         raise ValueError("MAX_CONCURRENT_CHECKS must be at least 1")
     app.state.check_semaphore = asyncio.Semaphore(max_concurrent_checks)
     app.include_router(router)
+    app.include_router(trusted_sources_router)
     app.add_middleware(RequestSizeLimitMiddleware, max_body_bytes=96 * 1024)
     app.add_middleware(
         CORSMiddleware,
