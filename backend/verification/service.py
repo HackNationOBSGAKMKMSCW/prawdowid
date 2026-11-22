@@ -45,9 +45,9 @@ class Evidence:
 
 
 async def _analyze(text: str, submitted_at: datetime) -> Any:
-    import textAnalysis
+    from pipeline import analyze_input
 
-    return await textAnalysis.run(text, started_at=submitted_at)
+    return await analyze_input(text, submitted_at=submitted_at)
 
 
 async def _read(analysis: Any) -> list[Any]:

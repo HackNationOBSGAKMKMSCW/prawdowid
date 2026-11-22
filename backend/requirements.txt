@@ -8,3 +8,4 @@ trafilatura>=2,<3
 lxml>=5,<7
 psycopg[binary]>=3.2,<4
 psycopg-pool>=3.2,<4
+asyncpg>=0.30,<1

@@ -94,6 +94,9 @@ class LocalArticleExtractor:
             title=getattr(document, "title", None),
             author=getattr(document, "author", None),
             date=_to_rfc1123(getattr(document, "date", None)),
+            site_name=getattr(document, "sitename", None),
+            description=getattr(document, "description", None),
+            language=getattr(document, "language", None),
         )
 
 

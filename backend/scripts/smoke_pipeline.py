@@ -1,6 +1,6 @@
-"""Run text analysis, API reading and the trusted-source search, then print the evidence.
+"""Run the analysis pipeline and optionally print its evidence.
 
-Usage (from backend/): python -m scripts.smoke_pipeline [--json] [text]
+Usage (from backend/): python -m scripts.smoke_pipeline [--json] [--no-scrape] [text]
 """
 
 import argparse
@@ -8,19 +8,17 @@ import asyncio
 import json
 import sys
 
-import apiReading
-import articleScraping
 import observability
-import textAnalysis
-import trustedSources
+from pipeline import run_pipeline
+from trustedSources.models import TrustedSearchReport
 
 DEFAULT_TEXT = "Ocieplenie klimatu to fałsz i nie jest realne. Nie ma dowodu, że to wina człowieka."
 
 
-def _print_trusted(trusted: trustedSources.TrustedSearchReport) -> None:
+def _print_trusted(trusted: TrustedSearchReport) -> None:
     print(
         f"[trustedSources] Źródła prawdy: {len(trusted.hits)} trafień z "
-        f"{trusted.sources_queried} źródeł w {trusted.duration_ms} ms; zapytania: {trusted.queries}",
+        f"{trusted.sources_queried} źródeł w {trusted.duration_ms} ms.",
         flush=True,
     )
     for hit in trusted.hits:
@@ -31,30 +29,22 @@ def _print_trusted(trusted: trustedSources.TrustedSearchReport) -> None:
         print(f"  ! {failure.source_id}: {failure.kind}", flush=True)
 
 
-async def main(text: str, as_json: bool, scrape: bool = False) -> int:
-    analysis = await textAnalysis.run(text)
-    results, trusted = await asyncio.gather(apiReading.run(analysis), trustedSources.run(analysis))
-    report = await articleScraping.run(analysis, results, trusted=trusted) if scrape else None
+async def main(text: str, as_json: bool, scrape: bool = True) -> int:
+    final = await run_pipeline(text, scrape=scrape)
+    results, report = final.reading_results, final.scraping_report
     if as_json:
-        reading_payload = [r.model_dump(mode="json") for r in results]
-        payload = (
-            reading_payload
-            if report is None
-            else {
-                "reading_results": reading_payload,
-                "trusted_sources": trusted.model_dump(mode="json"),
-                "scraping_report": report.model_dump(mode="json", exclude={"user_input"}),
-            }
-        )
-        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        payload = final.to_dict()
+        # Derived results are useful in smoke output; echoing submitted text is not.
+        payload.pop("user_text", None)
+        print(json.dumps(payload, ensure_ascii=False, indent=2, default=str))
     else:
-        _print_trusted(trusted)
-    if not as_json and report is not None:
-        for article in report.articles:
-            print(f"[articleScraping] {article.title or article.url} ({article.url})")
-            print(article.text)
-        for failure in report.failures:
-            print(f"[articleScraping] {failure.kind}: {failure.url}")
+        _print_trusted(final.trusted_sources)
+        if report is not None:
+            for article in report.articles:
+                print(f"[articleScraping] {article.title or article.url} ({article.url})")
+                print(article.text)
+            for failure in report.failures:
+                print(f"[articleScraping] {failure.kind}: {failure.url}")
     outcomes = [outcome for result in results for outcome in result.results]
     all_failed = bool(outcomes) and all(outcome.error is not None for outcome in outcomes)
     if all_failed:
@@ -72,7 +62,10 @@ if __name__ == "__main__":
     parser.add_argument("text", nargs="?", default=DEFAULT_TEXT)
     parser.add_argument("--json", action="store_true", dest="as_json")
     parser.add_argument(
-        "--scrape", action="store_true", help="extract article text from discovered URLs"
+        "--no-scrape",
+        action="store_false",
+        dest="scrape",
+        help="skip extracting article text from discovered URLs (on by default)",
     )
     args = parser.parse_args()
     observability.init()
