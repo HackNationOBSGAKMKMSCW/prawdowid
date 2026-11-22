@@ -1,9 +1,9 @@
-# Sprawdź.To (Prawdowid) — dokumentacja techniczna
+# Sprawdź.To (Prawdowid) - dokumentacja techniczna
 
 OPIS
 Zespół: Interpoland
 
-Sprawdź.to – zweryfikuj informacje tak łatwo, jak wysłasz wiadomość
+Sprawdź.to - zweryfikuj informacje tak łatwo, jak wysłasz wiadomość
 
 PROBLEM
 
