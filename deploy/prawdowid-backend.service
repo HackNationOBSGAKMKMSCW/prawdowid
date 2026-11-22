@@ -1,0 +1,40 @@
+# Backend Prawdowida (FastAPI) jako usługa systemd. Instrukcja: deploy/README.md.
+#
+#   sudo cp deploy/prawdowid-backend.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now prawdowid-backend
+#   journalctl -u prawdowid-backend -f
+
+[Unit]
+Description=Prawdowid backend (FastAPI)
+After=network-online.target postgresql.service docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=prawdowid
+Group=prawdowid
+WorkingDirectory=/opt/prawdowid
+# Konfiguracja: /opt/prawdowid/.env (server.py czyta go sam; wzór: deploy/server.env.example).
+Environment=PYTHONPATH=/opt/prawdowid/backend:/opt/prawdowid/analysis:/opt/prawdowid/analysis/src
+# Logi, ustawienia z panelu i zapasowy SQLite panelu: /var/lib/prawdowid (StateDirectory).
+Environment=LOG_FILE=/var/lib/prawdowid/logs/app.jsonl
+Environment=RUNTIME_CONFIG_FILE=/var/lib/prawdowid/runtime_config.json
+Environment=ADMIN_DB_PATH=/var/lib/prawdowid/admin.db
+StateDirectory=prawdowid
+# Tylko localhost: z internetu backend jest osiągalny wyłącznie przez Caddy (HTTPS).
+# Jeden proces (bez --workers): limit równoległych sprawdzeń, cache i limity zapytań są wspólne.
+# --proxy-headers: prawdziwy adres klienta z X-Forwarded-For ustawianego przez Caddy.
+ExecStart=/opt/prawdowid/.venv/bin/uvicorn server:app \
+    --host 127.0.0.1 --port 8000 \
+    --proxy-headers --forwarded-allow-ips=127.0.0.1 \
+    --timeout-graceful-shutdown 30
+Restart=always
+RestartSec=5
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target
