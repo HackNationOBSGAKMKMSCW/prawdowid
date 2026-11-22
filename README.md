@@ -1,5 +1,32 @@
 # Sprawdź.To (Prawdowid) — dokumentacja techniczna
 
+OPIS
+Zespół: Interpoland
+
+Sprawdź.to – zweryfikuj informacje tak łatwo, jak wysłasz wiadomość
+
+PROBLEM
+
+Pogłoski i „przekazane dalej” wiadomości rozchodzą się w komunikatorach szybciej, niż ktokolwiek zdąży je sprawdzić. Zwykły obywatel nie zna metod weryfikacji i nie będzie instalował narzędzi. Prawdowid działa jak wiadomość do znajomego: wklejasz tekst lub link i dostajesz prostą odpowiedź po polsku, ze stwierdzeniami, werdyktem i linkami do źródeł.
+
+CO ODRÓŻNIA NASZE ROZWIĄZANIE
+
+1. Dowody zamiast gładkich zdań. Model nie jest źródłem prawdy. Służy do rozumienia tekstu i wyodrębniania twierdzeń, a werdykt opiera się na wynikach z zewnętrznego źródła: Google Fact Check Tools, czyli ocenach organizacji fact-checkingowych. Każde twierdzenie jest sprawdzane osobno i równolegle.
+2. Uczciwość wobec niepewności. Przy braku danych system nie zgaduje, tylko zwraca „niezweryfikowane”. Gdy oceny się różnią (np. „prawda” i „fałsz”), jawnie zgłasza konflikt zamiast udawać pewność.
+3. Jedna logika, wiele kanałów. Interfejs WWW (React/Vite) i demonstrator WhatsApp (adapter FastAPI zgodny z kształtem webhooków WhatsApp Cloud API) korzystają z tych samych modułów, bez duplikowania logiki. Symulator obsługuje tekst, przyciski, listy, interaktywne karty werdyktu, odpowiedzi ze źródłami, streaming postępu i ostrzeżenie dla wiadomości przekazanych dalej.
+4. Usługa, nie skrypt. Niezależne moduły (analiza tekstu, odpytywanie źródeł, pobieranie artykułów, obserwowalność) i wymienny model przez API zgodne z OpenAI ograniczają zależność od jednego dostawcy. Gotowe są też klienty dane.gov.pl, EUR-Lex i Sejm/API ELI, pokryte testami, do podłączenia kolejnych źródeł urzędowych.
+5. Dostępność dla osób z niepełnosprawnościami. Funkcja czytania na głos, wysokiego kontrastu.
+
+PRZEPŁYW
+
+Tekst lub URL → sanityzacja → (dla URL) pobranie i oczyszczenie artykułu (Trafilatura) → analiza modelem → walidacja schematu (Pydantic) → wyodrębnienie twierdzeń i słów kluczowych → równoległe sprawdzenie w Google Fact Check → agregacja do statusu → zwięzła odpowiedź ze źródłami.
+
+BEZPIECZEŃSTWO (wbudowane od początku)
+
+- Treść użytkownika jest w prompcie oznaczona jako niezaufane dane, a wynik wymuszony do schematu JSON z dozwolonymi kategoriami.
+- Heurystyczne wykrywanie prompt injection oraz token canary w wyjściu: wykrycie wycieku zeruje część wyniku i ustawia ostrzeżenia.
+- Ochrona SSRF przy pobieraniu URL (tylko HTTP/HTTPS, blokada adresów prywatnych, loopback i link-local)
+  
 ## 1. Przegląd
 
 **Sprawdź.To** to serwis do weryfikacji informacji po polsku. Użytkownik wkleja wiadomość albo link na stronie WWW lub wysyła ją botowi WhatsApp.
