@@ -11,11 +11,18 @@ W `backend/.env` ustaw `DATABASE_URL` (PostgreSQL, zob. `backend/database/README
 cd backend
 python -m database migrate
 python -m database create-user --email admin@example.pl --name "Jan Kowalski" --role admin
-uvicorn admin.api:create_app --factory --port 8100
-# dokumentacja: http://localhost:8100/api/admin/docs
+uvicorn server:app --port 8000          # API strony razem z panelem (/api/admin)
+# dokumentacja: http://localhost:8000/docs
 ```
 
-Frontend panelu jest w `admin_panel/frontend` (`npm run dev`, proxy na port 8100).
+Frontend panelu jest w `admin_panel/frontend` (`npm run dev`, proxy na port 8000).
+
+Panel działa w tym samym procesie co API strony (`server.py` → `mount_admin`), więc każde
+`/api/check` trafia do dziennika zapytań (kanał `web`), zgłoszenia błędów dopisują się do
+tego samego wpisu, a zmiany modeli i stron zaufanych działają od razu
+(`backend/API.md`, sekcja *Admin panel*). `ADMIN_PANEL=off` wyłącza panel w `server.py`.
+Sam panel, bez potoku weryfikacji: `uvicorn admin.api:create_app --factory --port 8100`
+(wtedy w panelu `ADMIN_API_PROXY_TARGET=http://127.0.0.1:8100`).
 
 Logowanie: `POST /api/admin/auth/login` (e-mail i hasło konta z tabeli `users`) zwraca token sesji.
 Każde żądanie poza `/health` i `/auth/login` wymaga nagłówka `Authorization: Bearer <token sesji>`.
@@ -56,7 +63,8 @@ if result.message:  # stan luki informacyjnej: dołącz do odpowiedzi
 
 `monitor.record(...)` robi oba kroki naraz, gdy potok już się wykonał.
 
-Bot WhatsApp (`whatsapp_sim/backend/whatsappAdapter/admin_bridge.py`) jest już wpięty.
+API strony (`admin/web.py`, `CheckJournal`) i bot WhatsApp
+(`whatsapp_sim/backend/whatsappAdapter/admin_bridge.py`) są już wpięte.
 Rejestruje każdą wiadomość do sprawdzenia, odrzuca zablokowanych i treści wysokiego ryzyka,
 a do odpowiedzi dołącza komunikat o luce informacyjnej. Bot i panel muszą mieć to samo
 `ADMIN_DB_PATH`. `ADMIN_MONITOR=off` wyłącza rejestr. Awaria monitora nie przerywa rozmowy.
@@ -103,7 +111,7 @@ Klucze są tylko do zapisu. API i audyt pokazują wyłącznie maskę (`****abcd`
 |---|---|
 | `GET /dashboard` | Liczniki, werdykty, otwarte alerty, aktywne luki, zablokowani |
 | `GET /queries` | Logi zapytań użytkowników. Filtry: `user`, `flag`, `verdict`, `status`, `since`, `until`, `q` |
-| `GET /queries/{id}` | Szczegóły zapytania z twierdzeniami |
+| `GET /queries/{id}` | Szczegóły zapytania z twierdzeniami i zgłoszeniem błędu (`report`) |
 | `GET /events`, `GET /events/summary` | Techniczne logi observability (`backend/logs/app.jsonl`) |
 | `GET /users`, `GET /users/{key}` | Użytkownicy (pseudonimy) i ich historia |
 | `POST /users/{key}/block`, `POST /users/{key}/unblock` | Blokada i odblokowanie (`hours: null` blokuje bezterminowo) |
@@ -112,5 +120,12 @@ Klucze są tylko do zapisu. API i audyt pokazują wyłącznie maskę (`****abcd`
 | `GET /config`, `PATCH /config` | Konfiguracja modeli, API i progów |
 | `GET /config/audit`, `GET /config/models` | Historia zmian konfiguracji i dostępne modele |
 | `POST /maintenance/purge` | Ręczne usunięcie starych danych |
+| `GET`/`POST`/`PATCH`/`DELETE /sources` (`?url=`) | Strony zaufane w bazie (`trusted_sources`) |
+| `GET /sources/status` | Te same strony w rejestrze weryfikacji: wykryty sposób wyszukiwania, ostatnie sprawdzenie |
+| `POST /sources/check?url=` | Ponowne wykrycie, jak przeszukiwać stronę (pobiera ją) |
+| `GET /health` | Bez logowania: stan panelu i bazy (`store`, `database`) |
+
+Flaga `zgloszenie:<powód>` w `GET /queries?flag=zgloszenie` to wyniki, w których ktoś zgłosił
+błąd na stronie (`wrong_verdict`, `bad_source`, `misunderstood`, `other`).
 
 Identyfikatory użytkowników są pseudonimizowane (HMAC). Panel pokazuje tylko maskę, np. `***456`.

@@ -40,10 +40,10 @@ cd backend
 python -m database migrate
 python -m database create-user --email admin@example.pl --name "Jan Kowalski" --role admin
 
-# 2. backend admina (port 8100)
-uvicorn admin.api:create_app --factory --port 8100
+# 2. API strony razem z panelem (port 8000): /api/check, /api/admin, /api/trusted-sources
+uvicorn server:app --port 8000
 
-# 3. panel (Vite przekazuje /api na 127.0.0.1:8100)
+# 3. panel (Vite przekazuje /api na 127.0.0.1:8000)
 cd admin_panel/frontend
 npm install
 npm run dev        # http://localhost:5175
@@ -86,6 +86,12 @@ Inny adres backendu w trybie deweloperskim: `ADMIN_API_PROXY_TARGET` w `.env`
 | Logowanie, konto | `POST /auth/login`, `/auth/logout`, `GET /auth/me`, `POST /auth/me/password` |
 | Użytkownicy (konta panelu) | `GET`/`POST /accounts`, `PATCH /accounts/{id}`, `POST /accounts/{id}/password` |
 | Dziennik audytu | `GET /activity` (bez bazy: `GET /config/audit`) |
+| Strony zaufane | `GET`/`POST`/`PATCH`/`DELETE /sources`, `GET /sources/status`, `POST /sources/check` |
+| Historia weryfikacji: zgłoszenia | `GET /queries?flag=zgloszenie`, pole `report` w `GET /queries/{id}` |
+
+Panel jest częścią API strony (`server:app`), więc widzi sprawdzenia ze strony WWW
+(kanał „WWW”) i z bota WhatsApp, zgłoszenia błędów z przycisku „Zgłoś błąd”, a zmiany
+modeli i stron zaufanych od razu działają w weryfikacji.
 
 Widoki z pierwotnego kontraktu, których backend nie ma (sprawy moderatora,
 katalog źródeł w formie z demo, rejestr dostawców modeli, kanały, dziennik

@@ -24,6 +24,7 @@ of exact browser origins. The deployment template is [`../render.yaml`](../rende
 | `GET` | `/api/health` | Readiness check, including PostgreSQL connectivity. |
 | `GET` | `/api/trusted-sources` | Enabled trusted sources, public fields only (`id`, `name`, `url`, `trust`, `topics`, `description`). |
 | `GET` | `/api/trusted-sources/{source_id}` | One enabled trusted source (404 for unknown or disabled). |
+| `*` | `/api/admin/...` | Admin panel API (sign-in required), see [Admin panel](#admin-panel-apiadmin). |
 | `GET` | `/docs` | Interactive OpenAPI documentation. |
 | `GET` | `/redoc` | ReDoc API documentation. |
 | `GET` | `/openapi.json` | OpenAPI schema. |
@@ -135,6 +136,36 @@ That app also implements:
 
 These simulator routes are not served by `server:app` or the Render browser API.
 
+## Admin panel (`/api/admin`)
+
+`server:app` also serves the admin panel API (`admin.api.mount_admin`), so the
+panel and the website share one process and one database:
+
+- Every `GET /api/check` is written to the panel's query journal (`user_queries`,
+  channel `web`) with the submitted text, the claims and verdicts, and the
+  number of cited sources. The journal entry ID is the result ID without dashes,
+  so `POST /api/check/{id}/report` adds the reason and comment to the same entry
+  (flag `zgloszenie:<reason>`). Entries are deleted after the panel's retention
+  period (`monitoring.retention_days`).
+- The same rules as for the WhatsApp bot apply: information gaps, possible
+  disinformation campaigns and repeated dangerous queries raise alerts. A request
+  for weapon or explosive instructions is refused (`422 request_refused`) and a
+  client blocked in the panel gets `403 user_blocked`, both before the pipeline runs.
+- A website client is known to the panel only by a pseudonym (HMAC of the client
+  IP address, `ADMIN_USER_SALT`); the panel shows the last characters of the
+  address. Behind a reverse proxy, run uvicorn with `--proxy-headers
+  --forwarded-allow-ips=<proxy address>`, otherwise all clients share the proxy's
+  address and a block would stop everyone.
+- Model, API-key and threshold changes made in the panel apply to `/api/check`
+  immediately; trusted-site changes reload the search registry.
+- The panel itself (`admin_panel/frontend`) calls `/api/admin` on the same
+  origin. The browser CORS policy above (`GET`/`POST`, no `Authorization`) is
+  meant for the website, so serve the panel from the same domain or a proxy.
+
+Journal failures never break a check: the entry is skipped and a warning is
+logged. `ADMIN_PANEL=off` disables the panel routes and the journal.
+Endpoint list: `backend/admin/README.md` and `/docs`.
+
 ## Error responses
 
 Errors use a sanitized body and never include request bodies or provider
@@ -155,15 +186,18 @@ to public launch traffic.
 
 | Status | Codes |
 | --- | --- |
+| `403` | `user_blocked` |
 | `404` | `result_not_found` |
 | `413` | `request_too_large` |
-| `422` | `invalid_request`, `invalid_url`, `unsafe_url`, `url_unavailable` |
+| `422` | `invalid_request`, `invalid_url`, `unsafe_url`, `url_unavailable`, `request_refused` |
 | `502` | `analysis_failed`, `invalid_analysis_result` |
 | `503` | `analysis_busy`, `storage_unavailable` |
 | `504` | `analysis_timeout` |
 
 `X-Request-ID` is returned for correlation. Submitted text, comments, full URLs,
-credentials, and raw analysis results are not written to standard request logs.
+credentials, and raw analysis results are not written to standard request logs
+(the admin panel's query journal stores the text and report comments in the
+database, see above).
 Provider output logs counts and timings rather than claim text or search terms.
 
 ## Local tests
