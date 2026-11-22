@@ -13,7 +13,7 @@ from ..models import EvidenceHit, TrustedSource
 from ..text import clean_snippet
 from . import SearchContext, SourceAdapter, register_adapter
 
-MAX_QUERIES = 3
+MAX_QUERIES = 6
 PAGE_SIZE = 5
 
 # Publishers indexed by Google Fact Check; detection maps these domains to this adapter.

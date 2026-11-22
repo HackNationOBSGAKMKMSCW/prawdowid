@@ -238,4 +238,71 @@ WHITELIST: tuple[WhitelistEntry, ...] = (
         "Kancelaria Prezesa Rady Ministrów",
         topics=("rząd", "premier"),
     ),
+    # Gospodarka, praca, świadczenia, zdrowie, edukacja, prawo.
+    WhitelistEntry(
+        "https://www.gov.pl/web/rodzina",
+        "Ministerstwo Rodziny, Pracy i Polityki Społecznej",
+        topics=("świadczenia", "800 plus", "płaca minimalna", "emerytury", "rynek pracy"),
+    ),
+    WhitelistEntry(
+        "https://www.gov.pl/web/finanse",
+        "Ministerstwo Finansów",
+        topics=("podatki", "budżet", "inflacja", "finanse publiczne"),
+    ),
+    WhitelistEntry(
+        "https://www.gov.pl/web/dialog",
+        "Rada Dialogu Społecznego",
+        topics=("płaca minimalna", "wynagrodzenia", "dialog społeczny"),
+    ),
+    WhitelistEntry(
+        "https://www.gov.pl/web/rozwoj-technologia",
+        "Ministerstwo Rozwoju i Technologii",
+        topics=("gospodarka", "przedsiębiorczość", "mieszkalnictwo"),
+    ),
+    WhitelistEntry(
+        "https://www.gov.pl/web/zdrowie",
+        "Ministerstwo Zdrowia",
+        topics=("zdrowie", "szczepienia", "NFZ", "leki"),
+    ),
+    WhitelistEntry(
+        "https://www.gov.pl/web/edukacja",
+        "Ministerstwo Edukacji Narodowej",
+        topics=("szkoły", "edukacja"),
+    ),
+    WhitelistEntry(
+        "https://www.gov.pl/web/sprawiedliwosc",
+        "Ministerstwo Sprawiedliwości",
+        topics=("prawo", "sądy"),
+    ),
+    WhitelistEntry(
+        "https://www.gov.pl/web/klimat",
+        "Ministerstwo Klimatu i Środowiska",
+        topics=("energia", "klimat", "środowisko"),
+    ),
+    WhitelistEntry(
+        "https://stat.gov.pl/",
+        "Główny Urząd Statystyczny",
+        topics=("statystyka", "inflacja", "wynagrodzenia", "bezrobocie", "PKB"),
+    ),
+    WhitelistEntry(
+        "https://www.zus.pl/",
+        "Zakład Ubezpieczeń Społecznych",
+        topics=("emerytury", "składki", "świadczenia"),
+    ),
+    # Fact-checkery szukane przez Google Fact Check API (reviewPublisherSiteFilter).
+    WhitelistEntry(
+        "https://konkret24.tvn24.pl/",
+        "Konkret24",
+        topics=("fact-checking", "dezinformacja"),
+    ),
+    WhitelistEntry(
+        "https://sprawdzam.afp.com/",
+        "AFP Sprawdzam",
+        topics=("fact-checking", "dezinformacja"),
+    ),
+    WhitelistEntry(
+        "https://fakenews.pl/",
+        "FakeNews.pl",
+        topics=("fact-checking", "dezinformacja"),
+    ),
 )

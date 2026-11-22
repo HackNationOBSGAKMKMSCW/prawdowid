@@ -19,7 +19,7 @@ from . import SearchContext, SourceAdapter, register_adapter
 GOVPL_HOST = "www.gov.pl"
 _SITE_ID = re.compile(r"^[a-z0-9][a-z0-9-]{0,99}$")
 _DICTIONARY_TTL = 24 * 3600
-MAX_QUERIES = 2
+MAX_QUERIES = 6  # requests = queries x whitelisted subsites; short LLM phrases come first
 PAGE_SIZE = 8
 
 

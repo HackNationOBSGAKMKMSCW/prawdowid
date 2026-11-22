@@ -24,7 +24,12 @@ from inputDataAnalysis.models import (
     ManipulationResult,
     TruthSource,
 )
-from inputDataAnalysis.prompts import MAX_SOURCE_CHARS, manipulation_user, render_sources
+from inputDataAnalysis.prompts import (
+    MAX_SOURCE_CHARS,
+    MAX_TOTAL_SOURCE_CHARS,
+    manipulation_user,
+    render_sources,
+)
 from inputDataAnalysis.spans import locate_quote
 
 from .case_base import Case
@@ -362,6 +367,13 @@ def _pr_truncate() -> None:
     assert "KONIEC" not in out and "a" * MAX_SOURCE_CHARS in out
 
 
+
+def _pr_total_budget() -> None:
+    sources = [TruthSource(id=f"s{i}", content="b" * 10_000 + "KONIEC") for i in range(15)]
+    out = render_sources(sources)
+    assert out.count("<zrodlo") == 15 and "KONIEC" not in out
+    assert out.count("b") <= MAX_TOTAL_SOURCE_CHARS
+
 def _pr_date() -> None:
     out = manipulation_user("Tekst.", [], date(2024, 4, 1))
     assert "Data publikacji tekstu: 2024-04-01" in out and "<tekst>\nTekst.\n</tekst>" in out
@@ -375,6 +387,7 @@ PR_CASES = [
     _pr("PR01", "brak źródeł", "render_sources([])", "„(brak źródeł prawdy)”", _pr_no_sources),
     _pr("PR02", "atrybuty źródła", "źródło z id, tytułem, datą i url", '<zrodlo id="s1" tytul="PAP" data_publikacji="2024-03-12" url=…>', _pr_attrs),
     _pr("PR03", "przycinanie długich źródeł", f"treść {MAX_SOURCE_CHARS + 506} znaków", f"pierwsze {MAX_SOURCE_CHARS} znaków, bez końcówki", _pr_truncate),
+    _pr("PR06", "łączny budżet źródeł", "15 źródeł po 10 000 znaków", f"razem najwyżej {MAX_TOTAL_SOURCE_CHARS} znaków treści, każde źródło obecne", _pr_total_budget),
     _pr("PR04", "data tekstu w nagłówku", "article_date=2024-04-01", "„Data publikacji tekstu: 2024-04-01” + <tekst>…</tekst>", _pr_date),
     _pr("PR05", "nieznana data tekstu", "article_date=None", "„Data publikacji tekstu: nieznana …”", _pr_no_date),
 ]

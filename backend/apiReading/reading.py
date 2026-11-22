@@ -11,6 +11,25 @@ from textAnalysis.settings import Settings
 from .models import Category, ReadingRequest, ReadingResult
 from .reader import read
 
+# Google Fact Check matches short phrases, not whole sentences: a full claim usually
+# returns nothing while "płaca minimalna" returns ten reviews. Short phrases run in
+# addition to the per-statement queries and land in the verdict's shared pool.
+MAX_SHORT_QUERIES = 8
+SHORT_QUERY_PAGE_SIZE = 5
+
+
+def short_queries(analysis: AnalysisDataContainer, statements: list[str]) -> list[str]:
+    """LLM search phrases first, then keyword terms; no duplicates of statements."""
+
+    seen = {statement.lower() for statement in statements}
+    phrases: list[str] = []
+    for candidate in (*analysis.search_queries, *analysis.keyword_terms):
+        phrase = " ".join(str(candidate).split())
+        if phrase and phrase.lower() not in seen:
+            seen.add(phrase.lower())
+            phrases.append(phrase)
+    return phrases[:MAX_SHORT_QUERIES]
+
 
 def format_result(result: ReadingResult) -> str:
     """Render one result as readable lines: claim, publisher, rating, url."""
@@ -32,7 +51,10 @@ def format_result(result: ReadingResult) -> str:
 
 
 async def run(analysis: AnalysisDataContainer) -> list[ReadingResult]:
-    """Fetch one result per analyzed statement using the fact-check source.
+    """Fetch one result per analyzed statement, plus short search phrases, from fact-checks.
+
+    Results for statements come first, in statement order; phrase results follow
+    (their query is not a statement, so the verdict treats them as a shared pool).
 
     The analyzer's topic category is preserved as metadata; the provider does
     not support filtering on that topic label.
@@ -49,21 +71,24 @@ async def run(analysis: AnalysisDataContainer) -> list[ReadingResult]:
         if settings.google_fact_check_api_key
         else {}
     )
+    phrases = short_queries(analysis, statements)
     print(
-        f"[apiReading] Przygotowano zapytania: liczba={len(statements)}; "
+        f"[apiReading] Przygotowano zapytania: liczba={len(statements) + len(phrases)} "
+        f"(stwierdzenia: {len(statements)}, krótkie frazy: {len(phrases)}); "
         f"język={analysis.language_code or 'nieznany'}, źródło=Google Fact Check.",
         flush=True,
     )
 
     requests = [
         ReadingRequest(
-            query=statement,
+            query=query,
             categories=[Category.FACT_CHECK],
             language_code=analysis.language_code,
-            page_size=10,
+            page_size=page_size,
             metadata={"analysis_category": analysis.category},
         )
-        for statement in statements
+        for queries, page_size in ((statements, 10), (phrases, SHORT_QUERY_PAGE_SIZE))
+        for query in queries
     ]
 
     async def fetch_one(index: int, request: ReadingRequest) -> ReadingResult:

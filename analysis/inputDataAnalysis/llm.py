@@ -125,6 +125,7 @@ async def structured_call(
                         "type": "json_schema",
                         "json_schema": {"name": schema.__name__, "schema": json_schema},
                     },
+                    reasoning_effort="none",
                 )
                 return resp.choices[0].message.content or ""
             except openai.BadRequestError as exc:
@@ -145,6 +146,7 @@ async def structured_call(
             temperature=settings.temperature,
             reasoning_effort="none",
             response_format={"type": "json_object"},
+            reasoning_effort="none",
         )
         return resp.choices[0].message.content or ""
 
