@@ -33,18 +33,22 @@ tekst ──► stwierdzenia ──► źródła wzorcowe dla twierdzenia ──
 
 ## Uruchomienie
 
-```bash
-cd analysis
-python -m venv .venv
-.venv/Scripts/python -m pip install -e ".[dev]"
-cp ../.env.example ../.env    # uzupełnij wspólne FREELLM_API_KEY, FREELLM_BASE_URL, FREELLM_MODEL
+Polecenia instalacyjne uruchamiaj z katalogu głównego repozytorium; wspólne zależności
+backendu, analizy i adaptera są zebrane w `requirements.txt` oraz `requirements-dev.txt`.
 
-.venv/Scripts/python -m pytest                                   # testy offline (atrapa LLM)
-.venv/Scripts/python -m prawdowid_analysis.cli "Polska jest w UE od 2004 roku."
-.venv/Scripts/python -m prawdowid_analysis.cli --sources moje.json "Tekst"
-.venv/Scripts/python -m prawdowid_analysis.cli --backend "Tekst"  # z textAnalysis + apiReading
-.venv/Scripts/python -m prawdowid_analysis.cli --backend --fact-checks pelny-tekst "Tekst"
-.venv/Scripts/python -m scripts.eval_verdict                      # ewaluacja na prawdziwym modelu
+```bash
+python -m venv .venv
+.venv/Scripts/python -m pip install -r requirements-dev.txt
+.venv/Scripts/python -m pip install -e analysis --no-deps
+cp .env.example .env          # uzupełnij wspólne FREELLM_API_KEY, FREELLM_BASE_URL, FREELLM_MODEL
+cd analysis
+
+../.venv/Scripts/python -m pytest                                   # testy offline (atrapa LLM)
+../.venv/Scripts/python -m prawdowid_analysis.cli "Polska jest w UE od 2004 roku."
+../.venv/Scripts/python -m prawdowid_analysis.cli --sources moje.json "Tekst"
+../.venv/Scripts/python -m prawdowid_analysis.cli --backend "Tekst"  # z textAnalysis + apiReading
+../.venv/Scripts/python -m prawdowid_analysis.cli --backend --fact-checks pelny-tekst "Tekst"
+../.venv/Scripts/python -m scripts.eval_verdict                      # ewaluacja na prawdziwym modelu
 ```
 
 Kody wyjścia CLI: `0` – sukces, `2` – brak konfiguracji modelu, `3` – błąd backendu.

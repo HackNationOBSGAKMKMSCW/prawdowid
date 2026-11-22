@@ -2,7 +2,7 @@ import pytest
 import respx
 from apiReading import run
 from apiReading.models import Category
-from textAnalysis.container import AnalysisDataContainer
+from textAnalysis.container import AnalysisDataContainer, KeywordItem
 
 GOOGLE_API_URL = "https://factchecktools.googleapis.com/v1alpha1/claims:search"
 
@@ -68,3 +68,27 @@ async def test_package_run_returns_final_claim_payload(monkeypatch) -> None:
 
     assert [item.payload for item in results[0].items] == [claim]
     assert results[0].items[0].source == "google_fact_check"
+
+
+@pytest.mark.asyncio
+async def test_package_run_adds_short_phrase_queries_after_statements(monkeypatch) -> None:
+    monkeypatch.setenv("GOOGLE_FACT_CHECK_API_KEY", "test-key")
+    analysis = AnalysisDataContainer(
+        language_code="pl",
+        statements=["Płaca minimalna w 2025 roku wynosi 4666 zł.", "800 plus jest na każde dziecko."],
+        search_queries=["płaca minimalna", "minimalne wynagrodzenie", "Płaca minimalna"],
+        keywords=[KeywordItem("800 plus", "program"), KeywordItem("płaca minimalna", "temat")],
+    )
+    with respx.mock(assert_all_called=True) as router:
+        route = router.get(GOOGLE_API_URL).respond(200, json={"claims": []})
+        results = await run(analysis)
+
+    assert [result.request.query for result in results] == [
+        "Płaca minimalna w 2025 roku wynosi 4666 zł.",
+        "800 plus jest na każde dziecko.",
+        "płaca minimalna",
+        "minimalne wynagrodzenie",
+        "800 plus",
+    ]
+    assert [result.request.page_size for result in results] == [10, 10, 5, 5, 5]
+    assert route.call_count == 5

@@ -12,7 +12,6 @@ is part of the main web app: it is the **WhatsApp** view of `frontend/`
 ```
 whatsapp_sim/
 ├── backend/                  # Python adapter (FastAPI), port 8000
-│   ├── requirements.txt
 │   ├── pytest.ini
 │   └── whatsappAdapter/      # bot, Cloud API shapes, verdicts, server, tests
 frontend/src/whatsapp/        # chat simulator, the /whatsapp view of the main app
@@ -39,7 +38,7 @@ Backend (Python 3.14), from the repository root:
 
 ```bash
 python -m venv .venv
-.venv/bin/python -m pip install -r whatsapp_sim/backend/requirements.txt
+.venv/bin/python -m pip install -r requirements.txt
 cd whatsapp_sim/backend && ../../.venv/bin/python -m whatsappAdapter --demo --port 8001
 ```
 

@@ -4,7 +4,7 @@ The production app is `server:app` and exposes the browser check and feedback
 routes. Run commands from the repository root:
 
 ```bash
-python -m pip install -r backend/requirements.txt -r analysis/requirements.txt
+python -m pip install -r requirements.txt
 PYTHONPATH=backend:analysis:analysis/src uvicorn server:app --reload --port 8000 --no-access-log
 ```
 

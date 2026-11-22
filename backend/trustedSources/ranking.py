@@ -4,7 +4,8 @@ Site search engines (gov.pl) match words with OR, and listings/feeds are not
 query-aware at all, so every hit is re-scored locally:
 
 * a hit must cover the query's content words (all of a one- or two-word query,
-  2 of 3, half of a longer one) for at least one query;
+  2 of 3, half of a longer one) for at least one query; years, numbers, months
+  and words like "Polska" do not count as content words;
 * survivors are ordered by BM25 over title + snippet + URL slug, with a small
   bonus for fact-checkers and recent publications;
 * the URL must belong to the source's whitelisted domains, duplicates (same
@@ -27,14 +28,40 @@ _K1 = 1.2
 _B = 0.75
 
 
+# Words that appear on almost every Polish government page. They still score (BM25), but
+# never count towards coverage: "płaca minimalna 2025 Polska" must match "płaca minimalna",
+# not any 2025 news that mentions Poland.
+_GENERIC_STEMS = frozenset(
+    stems(
+        """
+        Polska polski polskie polsce polskiej Polaków kraj kraju rok roku lat lata
+        wynik wyniki zasady zasada wynosi wyniosła wynosić zł złotych złote nowy nowe
+        stycznia lutego marca kwietnia maja czerwca lipca sierpnia września października
+        listopada grudnia
+        """
+    )
+)
+
+
+def _is_generic(stem_: str) -> bool:
+    return stem_ in _GENERIC_STEMS or stem_.isdigit()
+
+
 @dataclass(frozen=True)
 class RankedQuery:
     text: str
     stems: frozenset[str]
 
     @property
+    def key_stems(self) -> frozenset[str]:
+        """Stems that decide coverage; all stems when the query has only generic ones."""
+
+        specific = frozenset(s for s in self.stems if not _is_generic(s))
+        return specific or self.stems
+
+    @property
     def required(self) -> int:
-        size = len(self.stems)
+        size = len(self.key_stems)
         if size <= 2:
             return size
         return math.ceil(0.6 * size) if size == 3 else math.ceil(0.5 * size)
@@ -56,8 +83,9 @@ def _document(hit: EvidenceHit) -> list[str]:
 
 
 def coverage_ok(query: RankedQuery, document: set[str], *, relaxed: bool = False) -> bool:
-    matched = len(query.stems & document)
-    needed = max(1, math.ceil(len(query.stems) / 2)) if relaxed else query.required
+    key = query.key_stems
+    matched = len(key & document)
+    needed = max(1, math.ceil(len(key) / 2)) if relaxed else query.required
     return matched >= needed
 
 

@@ -5,13 +5,14 @@ import { defineConfig, loadEnv } from 'vite';
 // Bez tego Vite odrzuca żądania z obcą nazwą hosta (ochrona przed DNS rebinding).
 const allowedHosts = ['.ts.net'];
 
-// Zmienne środowiskowe są w głównym .env projektu (envDir: '..').
+// Wspólny plik `.env` projektu leży w katalogu głównym repo.
 const envDir = '..';
 
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, envDir, '');
-  // `npm run dev:live` / `build:live`: strona łączy się z prawdziwym API.
+  // `npm run dev:live` / `build:live` (`--mode live`): strona łączy się z prawdziwym API.
+  // Tryb zamiast `VITE_API_MODE=live vite`, bo takiej składni nie obsługuje npm na Windowsie.
   if (mode === 'live') process.env.VITE_API_MODE ??= 'live';
   // Dwa osobne backendy w dev:
   //   /api/whatsapp → symulator WhatsApp (whatsapp_sim, `python -m whatsappAdapter --port 8001`)

@@ -9,8 +9,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 DATA_DIR = Path(__file__).resolve().parent / "data"
-# backend/.env, niezależnie od katalogu, z którego uruchomiono proces
-ENV_FILE = Path(__file__).resolve().parents[1] / ".env"
+# Główny .env projektu, a jako zapas backend/.env — niezależnie od katalogu startu procesu.
+ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
+LEGACY_ENV_FILE = Path(__file__).resolve().parents[1] / ".env"
 DEFAULT_DB_PATH = DATA_DIR / "admin.db"
 _DEFAULT_SALT = "prawdowid-admin"
 
@@ -24,7 +25,7 @@ class AdminSettings:
 
     @classmethod
     def from_environment(cls) -> AdminSettings:
-        """Zmienne środowiskowe; brakujące uzupełnia ``backend/.env`` (nie nadpisuje istniejących)."""
+        """Zmienne środowiskowe; brakujące uzupełnia główny ``.env``, potem ``backend/.env``."""
         load_env_file()
         return cls(
             api_token=(os.getenv("ADMIN_API_TOKEN") or "").strip() or None,
@@ -38,11 +39,12 @@ class AdminSettings:
         return digest.hexdigest()[:16]
 
 
-def load_env_file(path: Path = ENV_FILE) -> None:
-    if path.is_file():
-        from dotenv import load_dotenv
+def load_env_file(*paths: Path) -> None:
+    from dotenv import load_dotenv
 
-        load_dotenv(path, override=False)
+    for path in paths or (ENV_FILE, LEGACY_ENV_FILE):
+        if path.is_file():
+            load_dotenv(path, override=False)
 
 
 def user_label(user_id: str) -> str:

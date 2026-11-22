@@ -31,7 +31,7 @@ from .text import STOPWORDS, fold
 
 logger = logging.getLogger(__name__)
 
-MAX_QUERIES = 5
+MAX_QUERIES = 10
 DETECTION_RETRY_AFTER = timedelta(hours=1)
 _background: set[asyncio.Task[None]] = set()
 
@@ -71,7 +71,7 @@ def queries_for(analysis: AnalysisDataContainer) -> list[str]:
 
     candidates = [
         *analysis.search_queries,
-        *analysis.statements[:3],
+        *analysis.statements,
     ]
     if not candidates and analysis.keyword_terms:
         candidates.append(" ".join(analysis.keyword_terms[:4]))

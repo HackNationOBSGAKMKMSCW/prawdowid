@@ -1,5 +1,0 @@
-pydantic>=2.9,<3
-openai>=1.68,<3
-python-dotenv>=1,<2
-dateparser>=1.2
-rapidfuzz>=3
