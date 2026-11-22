@@ -39,7 +39,7 @@ Backend (Python 3.14), from the repository root:
 ```bash
 python -m venv .venv
 .venv/bin/python -m pip install -r requirements.txt
-cd whatsapp_sim/backend && ../../.venv/bin/python -m whatsappAdapter --demo
+cd whatsapp_sim/backend && ../../.venv/bin/python -m whatsappAdapter --demo --port 8001
 ```
 
 Web app with the simulator, in a second terminal:
@@ -49,7 +49,8 @@ cd frontend && npm install && npm run dev
 ```
 
 Open <http://localhost:5173/whatsapp> (or use the **Strona / WhatsApp** switch at
-the top). Vite proxies `/api` to the adapter on port 8000. The WhatsApp number on
+the top). Vite proxies `/api/whatsapp` to the adapter on port 8001 (`WHATSAPP_PROXY_TARGET`)
+and the rest of `/api` to the browser API (`server:app`) on port 8000. The WhatsApp number on
 the start page opens this view with the typed message ready to send
 (`/whatsapp?text=…`); nothing goes to the real WhatsApp.
 

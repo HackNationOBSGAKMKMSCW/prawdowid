@@ -5,8 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:live": "VITE_API_MODE=live vite",
     "dev:host": "vite --host",
+    "dev:host:live": "VITE_API_MODE=live vite --host",
     "build": "tsc -b && vite build",
+    "build:live": "tsc -b && VITE_API_MODE=live vite build",
     "lint": "oxlint",
     "preview": "vite preview"
   },
