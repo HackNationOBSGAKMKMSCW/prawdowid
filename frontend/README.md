@@ -129,6 +129,8 @@ Cel: WCAG 2.2 na poziomie AA.
 - „Czytaj stronę na głos” (ikona głośnika w nagłówku, zapamiętane w `localStorage`):
   syntezator mowy przeglądarki (Web Speech API, `pl-PL`) czyta treść `<main>`, a po
   każdej zmianie strony lub ekranu (np. przejście na wynik) czyta nową treść sam;
+  treść idzie blok po bloku (nagłówek, akapit, punkt listy, przycisk) z ciszą
+  między nimi: 1 s po nagłówku, 0,65 s po innym bloku (stałe w `SpeechProvider.tsx`);
   Esc przerywa czytanie; po odświeżeniu strony przeglądarka pozwala mówić dopiero
   po pierwszym kliknięciu lub klawiszu, więc czytanie rusza wtedy;
 - „Przeczytaj na głos” pod wynikiem czyta sam wynik (ten sam syntezator);

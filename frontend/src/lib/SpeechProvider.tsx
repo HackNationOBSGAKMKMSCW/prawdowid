@@ -2,14 +2,19 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { useLocation } from 'react-router-dom';
 import { useAnnounce } from './announce.ts';
 import { useChecker } from './checker.ts';
-import { SpeechContext, type Speech } from './speech.ts';
+import { SpeechContext, type Speech, type SpeechBlock, type SpeechContent } from './speech.ts';
 
 const MAX_CHUNK = 220;
 /** Opóźnienie po zmianie ekranu: fokus, tytuł i treść zdążą się ustawić. */
 const AUTO_READ_DELAY = 450;
+/** Cisza po akapicie, punkcie listy, przycisku (ms). */
+const BLOCK_PAUSE = 650;
+/** Cisza po nagłówku (ms). */
+const HEADING_PAUSE = 1000;
+/** Cisza między zdaniami jednego długiego bloku (ms). */
+const SENTENCE_PAUSE = 200;
 
-const BLOCK =
-  'h1, h2, h3, h4, h5, h6, p, li, dt, dd, label, legend, blockquote, figcaption, summary, th, td, button, div, section, article';
+const HEADING = 'h1, h2, h3, h4, h5, h6';
 const SKIP =
   '[aria-hidden="true"], [hidden], a .sr-only, dialog, textarea, input, select, script, style, [data-speech-skip]';
 
@@ -64,17 +69,35 @@ function chunks(text: string): string[] {
 }
 
 /**
- * Widoczna treść `<main>` jako tekst do czytania. Pomija elementy ukryte,
- * pola formularza i okna; między blokami (nagłówek, akapit, punkt listy)
- * wstawia kropkę, żeby syntezator zrobił pauzę.
+ * Najbliższy przodek wyświetlany jako blok (akapit, punkt listy, przycisk,
+ * link-kafelek…). Tekst w elementach liniowych (`strong`, link w zdaniu)
+ * zostaje w bloku rodzica, więc zdanie nie rwie się w połowie.
  */
-function mainText(): string {
+function blockOf(element: Element, root: Element): Element {
+  for (let el: Element | null = element; el && el !== root; el = el.parentElement) {
+    const display = getComputedStyle(el).display;
+    if (display !== 'inline' && display !== 'contents') return el;
+  }
+  return root;
+}
+
+/**
+ * Widoczna treść `<main>` podzielona na bloki (nagłówek, akapit, punkt listy,
+ * przycisk). Pomija elementy ukryte, pola formularza i okna.
+ */
+function mainBlocks(): SpeechBlock[] {
   const main = document.getElementById('tresc');
-  if (!main) return '';
+  if (!main) return [];
   const walker = document.createTreeWalker(main, NodeFilter.SHOW_TEXT);
-  const parts: string[] = [];
-  let lastBlock: Element | null = null;
+  const blocks: SpeechBlock[] = [];
+  let text = '';
+  let block: Element | null = null;
   let lastParent: Element | null = null;
+  const flush = () => {
+    const value = text.replace(/\s+/g, ' ').trim();
+    if (value) blocks.push({ text: value, heading: !!block?.closest(HEADING) });
+    text = '';
+  };
   for (let node = walker.nextNode(); node; node = walker.nextNode()) {
     const value = node.nodeValue?.replace(/\s+/g, ' ');
     const parent = node.parentElement;
@@ -82,23 +105,51 @@ function mainText(): string {
     if (parent.checkVisibility && !parent.checkVisibility()) continue;
     if (!value.trim()) {
       // Sama spacja między elementami („Potwierdzone –{' '}opis”) też rozdziela słowa.
-      if (parts.length && !/\s$/.test(parts[parts.length - 1])) parts.push(' ');
+      if (text && !/\s$/.test(text)) text += ' ';
       continue;
     }
-    const block = parent.closest(BLOCK);
-    const prev = parts.length ? parts[parts.length - 1] : '';
-    if (prev && block !== lastBlock) {
-      const trimmed = prev.trimEnd();
-      parts[parts.length - 1] = /[.!?…:;,]$/.test(trimmed) ? `${trimmed} ` : `${trimmed}. `;
-    } else if (prev && parent !== lastParent && !/\s$/.test(prev) && !/^[\s.,;:!?…)]/.test(value)) {
+    const nextBlock = blockOf(parent, main);
+    if (nextBlock !== block) {
+      flush();
+      block = nextBlock;
+    } else if (parent !== lastParent && text && !/\s$/.test(text) && !/^[\s.,;:!?…)]/.test(value)) {
       // Sąsiednie elementy w jednej linii („gov.pl” obok nazwy grupy) – rozdziel spacją.
-      parts[parts.length - 1] = `${prev} `;
+      text += ' ';
     }
-    lastBlock = block;
     lastParent = parent;
-    parts.push(value);
+    text += value;
   }
-  return parts.join('').replace(/\s+/g, ' ').trim();
+  flush();
+  return blocks;
+}
+
+interface Part {
+  text: string;
+  /** Cisza po tym fragmencie (ms). */
+  pause: number;
+}
+
+/**
+ * Zamienia treść na kolejkę krótkich wypowiedzi z pauzami. Każdy blok kończy
+ * się kropką (opadająca intonacja), a po nim jest cisza – dłuższa po nagłówku.
+ */
+function toParts(content: SpeechContent): Part[] {
+  const blocks = typeof content === 'string' ? [content] : content;
+  const parts: Part[] = [];
+  for (const item of blocks) {
+    const block = typeof item === 'string' ? { text: item } : item;
+    const text = block.text.replace(/\s+/g, ' ').trim();
+    if (!text) continue;
+    const sentences = chunks(/[.!?…:;”"]$/.test(text) ? text : `${text}.`);
+    sentences.forEach((sentence, i) => {
+      const last = i === sentences.length - 1;
+      parts.push({
+        text: sentence,
+        pause: !last ? SENTENCE_PAUSE : block.heading ? HEADING_PAUSE : BLOCK_PAUSE,
+      });
+    });
+  }
+  return parts;
 }
 
 interface SpeechProviderProps {
@@ -122,53 +173,71 @@ export function SpeechProvider({ autoRead, onToggleAutoRead, children }: SpeechP
   // Każde nowe czytanie dostaje numer; zdarzenia starszych wypowiedzi są ignorowane.
   const generation = useRef(0);
   // Tekst czekający na pierwszy gest użytkownika (przeglądarka blokuje mowę bez niego).
-  const [pending, setPending] = useState<string | null>(null);
-  const pageText = useRef<string | null>(null);
+  const [pending, setPending] = useState<SpeechContent | null>(null);
+  const pageText = useRef<SpeechContent | null>(null);
+  // Pauza między blokami i bieżąca wypowiedź (Chrome gubi `onend`, gdy obiekt zniknie z pamięci).
+  const pauseTimer = useRef<number | undefined>(undefined);
+  const current = useRef<SpeechSynthesisUtterance | null>(null);
   // Włączenie przyciskiem czyta od razu, więc efekt nie zaczyna drugi raz.
   const justEnabled = useRef(false);
 
   const stop = useCallback(() => {
     generation.current += 1;
+    window.clearTimeout(pauseTimer.current);
+    current.current = null;
     setPending(null);
     synth()?.cancel();
     setSpeaking(false);
   }, []);
 
   const speak = useCallback(
-    (text: string) => {
+    (content: SpeechContent) => {
       const engine = synth();
       if (!engine || typeof SpeechSynthesisUtterance === 'undefined') {
         announce('Twoja przeglądarka nie umie czytać na głos.');
         return;
       }
       const gen = ++generation.current;
+      window.clearTimeout(pauseTimer.current);
       engine.cancel();
       setPending(null);
-      const parts = chunks(text);
+      const parts = toParts(content);
       if (!parts.length) {
         setSpeaking(false);
         return;
       }
       const voice = polishVoice();
-      parts.forEach((part, i) => {
-        const utterance = new SpeechSynthesisUtterance(part);
+
+      // Fragmenty idą po kolei: kolejny startuje dopiero po ciszy po poprzednim.
+      const play = (i: number) => {
+        if (generation.current !== gen) return;
+        const part = parts[i];
+        const utterance = new SpeechSynthesisUtterance(part.text);
         utterance.lang = 'pl-PL';
         if (voice) utterance.voice = voice;
         utterance.rate = 0.95;
-        if (i === parts.length - 1) {
-          utterance.onend = () => {
-            if (generation.current === gen) setSpeaking(false);
-          };
-        }
+        utterance.onend = () => {
+          if (generation.current !== gen) return;
+          if (i === parts.length - 1) {
+            current.current = null;
+            setSpeaking(false);
+            return;
+          }
+          pauseTimer.current = window.setTimeout(() => play(i + 1), part.pause);
+        };
         utterance.onerror = (event) => {
           if (generation.current !== gen) return;
           if (event.error === 'interrupted' || event.error === 'canceled') return;
           generation.current += 1;
+          current.current = null;
           setSpeaking(false);
-          if (event.error === 'not-allowed') setPending(text);
+          if (event.error === 'not-allowed') setPending(content);
         };
+        current.current = utterance;
         engine.speak(utterance);
-      });
+      };
+
+      play(0);
       setSpeaking(true);
     },
     [announce],
@@ -207,14 +276,14 @@ export function SpeechProvider({ autoRead, onToggleAutoRead, children }: SpeechP
       return;
     }
     const timer = window.setTimeout(() => {
-      const text = pageText.current ?? mainText();
-      if (text) speak(text);
+      const content = pageText.current ?? mainBlocks();
+      if (content.length) speak(content);
     }, AUTO_READ_DELAY);
     return () => window.clearTimeout(timer);
   }, [view, autoRead, speak, stop]);
 
-  const setPageText = useCallback((text: string | null) => {
-    pageText.current = text;
+  const setPageText = useCallback((content: SpeechContent | null) => {
+    pageText.current = content;
   }, []);
 
   // Mowa startuje jeszcze w obsłudze kliknięcia – Safari na iPhonie wymaga,
@@ -226,7 +295,7 @@ export function SpeechProvider({ autoRead, onToggleAutoRead, children }: SpeechP
         return;
       }
       justEnabled.current = true;
-      speak(pageText.current ?? mainText());
+      speak(pageText.current ?? mainBlocks());
     } else {
       stop();
     }
