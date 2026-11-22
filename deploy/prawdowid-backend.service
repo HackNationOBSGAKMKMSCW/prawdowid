@@ -6,8 +6,8 @@
 
 [Unit]
 Description=Prawdowid backend (FastAPI)
-After=network-online.target postgresql.service
-Wants=network-online.target postgresql.service
+After=network-online.target postgresql.service docker.service
+Wants=network-online.target
 
 [Service]
 Type=simple
