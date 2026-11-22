@@ -350,6 +350,22 @@ MASKED += [
         "Anna Nowak, [WIEK_1], nauczycielka z Lublina.",
     ),
     Case(
+        "W15",
+        "Pani Zofia Kamińska skończyła wczoraj 100 lat! Mieszka w Sopocie na Monte Cassino 33/5.",
+        "Pani Zofia Kamińska skończyła wczoraj [WIEK_1]! Mieszka w Sopocie na [ADRES_1].",
+    ),
+    Case(
+        "W16",
+        "Zaginęła Natalia Wójcik, 16 lat, ostatnio widziana na ul. Dworcowej 12 w Kutnie.",
+        "Zaginęła Natalia Wójcik, [WIEK_1], ostatnio widziana na [ADRES_1] w Kutnie.",
+    ),
+    Case(
+        "H5",
+        "hej to ja Ola Szymańska, haslo do wifi Kotek2024!, kod do klatki 1234",
+        "hej to ja Ola Szymańska, haslo do wifi [HASLO_1], kod do klatki [HASLO_2]",
+    ),
+    Case("I6", "Mój numer polisy Warta: 908877665.", "Mój numer polisy Warta: [IDENTYFIKATOR_1]."),
+    Case(
         "X2",
         "siema, tu Kasia Nowak. zadzwon 600 100200 albo tel 600.100.200. mieszkam ul Długa 15, "
         "80-831 gdańsk. mój pesel 4405 1401 359 jakby co. dowód abc123456",
@@ -641,5 +657,20 @@ KEPT: list[Case] = [
         "F63",
         "Jan Kowalski: Polska ma 38 mln mieszkańców, a most ma 50 lat.",
         "Jan Kowalski: Polska ma 38 mln mieszkańców, a most ma 50 lat.",
+    ),
+    Case(
+        "F64",
+        "Mój dziadek ma 91 lat i mówi, że w PRL-u chleb kosztował 3 zł.",
+        "Mój dziadek ma 91 lat i mówi, że w PRL-u chleb kosztował 3 zł.",
+    ),
+    Case(
+        "F65",
+        "68-letni mieszkaniec Radomia stracił 40 tys. zł.",
+        "68-letni mieszkaniec Radomia stracił 40 tys. zł.",
+    ),
+    Case(
+        "F66",
+        "Ustawa o emeryturach ma 15 lat, a minimalny wiek emerytalny to 60 lat dla kobiet.",
+        "Ustawa o emeryturach ma 15 lat, a minimalny wiek emerytalny to 60 lat dla kobiet.",
     ),
 ]

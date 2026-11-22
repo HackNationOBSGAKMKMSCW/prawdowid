@@ -80,10 +80,8 @@ _PERSON_NOUNS = (
     r"teściow\w*|tesciow\w*|szwagier\w*|szwagr\w*|bratow\w*|kuzyn\w*|partner\w*|"
     r"chłopak\w*|chlopak\w*|narzeczon\w*"
 )
-_AGE_ADVERB = (
-    r"(?:(?i:już|juz|dopiero|prawie|ponad|niecałe|niecale|około|okolo|skończone|skonczone|"
-    r"równo|rowno|dokładnie|dokladnie)\s+)?"
-)
+# Do dwóch słów między czasownikiem a wiekiem: „skończyła wczoraj 100 lat”, „ma już prawie 80”.
+_AGE_ADVERB = r"(?:[a-ząćęłńóśźż]+\s+){0,2}?"
 # Liczba lat osoby; „30 lat tradycji/stażu/więzienia” to nie wiek.
 _AGE = (
     r"\d{1,3}\s*(?i:lat|lata|latek|l\.|wiosen|rok|roku|miesięcy|miesiecy|miesiące|miesiace|"
@@ -515,7 +513,7 @@ RULES: tuple[Rule, ...] = (
     Rule(
         "HASLO",
         _c(
-            r"(?<!\w)(?i:hasło|hasla|hasło\s+do\s+\w+|haslo|password|passwd|pass)(?!\w)"
+            r"(?<!\w)(?i:hasło|haslo|hasła|hasla|password|passwd|pass)(?!\w)(?:\s+(?i:do|od)\s+[\w-]+)?"
             r"(?:\s+(?i:to|jest|brzmi))?\s*[:=\-]?\s*[\"'„“]?"
             r"(?P<v>[^\s\"'”]{4,40}?)[\"'”]?(?=[\s,;)]|[.!?](?:\s|$)|$)"
         ),
@@ -554,7 +552,7 @@ RULES: tuple[Rule, ...] = (
             r"karty\s+bibliotecznej|karty\s+lojalnościowej|karty\s+lojalnosciowej|vin)|"
             r"(?:paczk\w*|przesyłk\w*|przesylk\w*|polis\w*|umow\w*|legitymacj\w*|prawo\s+jazdy|"
             r"prawa\s+jazdy|vin)\s+(?:nr\.?|numer|o\s+numerze)|vin)"
-            r"(?:\s+[A-Z]{2,6}(?=\s))?\s*[:#.\-]?\s*"
+            r"(?:\s+[A-ZĄĆĘŁŃÓŚŹŻ][\w&]{1,15}(?=\s|:))?\s*[:#.\-]?\s*"
             r"(?P<v>(?=[A-Za-z0-9/\-]*\d)[A-Za-z0-9][A-Za-z0-9/\-]{3,39}[A-Za-z0-9])(?!\w)"
         ),
         priority=2,
