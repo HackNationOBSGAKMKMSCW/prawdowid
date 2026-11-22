@@ -238,6 +238,29 @@ def test_query_journal_on_postgres(clean_db, tmp_path):
     assert monitor.store.purge("2100-01-01T00:00:00Z")["queries"] == 7
 
 
+def test_web_check_report_on_postgres(clean_db, tmp_path):
+    """Wynik z /api/check (id = UUID bez myślników) i zgłoszenie błędu w tym samym wpisie."""
+    from admin import Monitor, PostgresAdminStore, RuntimeConfigStore
+    from admin.settings import AdminSettings
+
+    monitor = Monitor(
+        PostgresAdminStore(clean_db), AdminSettings(), RuntimeConfigStore(tmp_path / "r.json")
+    )
+    query_id = "0123456789abcdef0123456789abcdef"
+    decision = monitor.screen(user_id="web:203.0.113.7", text="Czy prąd zdrożeje?", channel="web",
+                              query_id=query_id)
+    assert decision.query_id == query_id
+    monitor.complete(query_id, verdict="prawda", sources_count=1)
+
+    assert monitor.add_report(query_id, reason="bad_source", comment="Link nie działa.")
+    assert not monitor.add_report("nie-ma-takiego", reason="other")
+    entry = monitor.store.get_query(query_id)
+    assert "zgloszenie:bad_source" in entry["flags"]
+    assert entry["report"]["comment"] == "Link nie działa."
+    items, total = monitor.store.list_queries(flag="zgloszenie")
+    assert total == 1 and items[0]["report"]["reason"] == "bad_source"
+
+
 # --- API -------------------------------------------------------------------------------
 
 

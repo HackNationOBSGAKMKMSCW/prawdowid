@@ -32,7 +32,8 @@ CREATE TABLE IF NOT EXISTS user_queries (
     request_id TEXT,
     sources_count INTEGER,
     completed_at TEXT,
-    error TEXT
+    error TEXT,
+    report TEXT
 );
 CREATE INDEX IF NOT EXISTS ix_user_queries_ts ON user_queries(ts);
 CREATE INDEX IF NOT EXISTS ix_user_queries_user ON user_queries(user_key, ts);
@@ -138,6 +139,9 @@ class AdminStore:
             if str(path) != ":memory:":
                 self._db.execute("PRAGMA journal_mode=WAL")
             self._db.executescript(SCHEMA)
+            columns = {row[1] for row in self._db.execute("PRAGMA table_info(user_queries)")}
+            if "report" not in columns:  # plik z wersji sprzed zgłoszeń
+                self._db.execute("ALTER TABLE user_queries ADD COLUMN report TEXT")
             self._db.commit()
 
     def close(self) -> None:
@@ -171,6 +175,8 @@ class AdminStore:
     def update_query(self, query_id: str, **fields: Any) -> None:
         if "flags" in fields:
             fields["flags"] = json.dumps(sorted(set(fields["flags"])), ensure_ascii=False)
+        if isinstance(fields.get("report"), dict):
+            fields["report"] = json.dumps(fields["report"], ensure_ascii=False)
         assignments = ", ".join(f"{name} = ?" for name in fields)
         self._execute(
             f"UPDATE user_queries SET {assignments} WHERE id = ?", [*fields.values(), query_id]
@@ -178,7 +184,8 @@ class AdminStore:
 
     def get_query(self, query_id: str) -> dict[str, Any] | None:
         query = _row(
-            self._one("SELECT * FROM user_queries WHERE id = ?", [query_id]), ("flags", "safety")
+            self._one("SELECT * FROM user_queries WHERE id = ?", [query_id]),
+            ("flags", "safety", "report"),
         )
         if query is not None:
             query["claims"] = [
@@ -237,7 +244,7 @@ class AdminStore:
             f"SELECT * FROM user_queries {clause} ORDER BY ts DESC LIMIT ? OFFSET ?",
             [*params, limit, offset],
         )
-        return [_row(row, ("flags", "safety")) for row in rows], total
+        return [_row(row, ("flags", "safety", "report")) for row in rows], total
 
     # --- twierdzenia i tematy ----------------------------------------------------------
 
@@ -534,7 +541,7 @@ class PostgresAdminStore(AdminStore):
 
 # Kolumny jsonb wracają z psycopg zdekodowane; reszta kodu (wspólna z SQLite) dekoduje
 # je sama, więc oddajemy je jako tekst JSON — jak SQLite.
-_JSON_COLUMNS = frozenset({"flags", "safety", "tokens", "details", "old", "new"})
+_JSON_COLUMNS = frozenset({"flags", "safety", "tokens", "details", "old", "new", "report"})
 
 
 def _json_as_text(row: Any) -> Any:

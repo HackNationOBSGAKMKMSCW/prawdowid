@@ -167,13 +167,18 @@ class Monitor:
         channel: str = "api",
         request_id: str | None = None,
         account_id: int | None = None,
+        query_id: str | None = None,
     ) -> ScreenDecision:
-        """Zarejestruj zapytanie i zdecyduj, czy wolno je przetwarzać."""
+        """Zarejestruj zapytanie i zdecyduj, czy wolno je przetwarzać.
+
+        ``query_id``: własny identyfikator (np. id wyniku z ``/api/check``), żeby późniejsze
+        zgłoszenie błędu trafiło do tego samego wpisu; domyślnie nowy.
+        """
         now, cfg = self.now(), self.config
         ts = iso(now)
         key = self.settings.user_key(user_id)
         safety = classify(text)
-        query_id = new_id()
+        query_id = (query_id or new_id())[:32]
         flags = [f"niebezpieczne:{name}" for name in safety.categories]
 
         self.store.insert_query(
@@ -491,6 +496,23 @@ class Monitor:
         )
         _log("admin_alert", "warning", alert_type=alert_type, alert_id=alert_id, users=users)
         return alert_id
+
+    # --- zgłoszenia od użytkowników ----------------------------------------------------
+
+    def add_report(self, query_id: str, *, reason: str, comment: str | None = None) -> bool:
+        """Zgłoszenie błędu w wyniku (np. ``POST /api/check/{id}/report``).
+
+        Wpis dostaje flagę ``zgloszenie:<powód>`` (filtr w historii weryfikacji) i treść
+        zgłoszenia. ``False``, gdy zapytania nie ma w dzienniku (np. już usunięte).
+        """
+        query = self.store.get_query(query_id)
+        if query is None:
+            return False
+        flags = [*(query.get("flags") or []), f"zgloszenie:{reason}"]
+        report = {"reason": reason, "comment": comment or None, "ts": iso(self.now())}
+        self.store.update_query(query_id, flags=flags, report=report)
+        _log("admin_query_reported", reason=reason)
+        return True
 
     # --- działania admina --------------------------------------------------------------
 
