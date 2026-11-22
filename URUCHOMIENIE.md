@@ -58,7 +58,7 @@ cd ..
 
 - `migrate` tworzy tabele,
 - `seed-sources` wgrywa startową listę stron zaufanych (bez tego lista źródeł na stronie jest pusta),
-- `create-user` pyta o hasło; role: `admin`, `analyst`, `moderator`.
+- `create-user` pyta o hasło; role: `admin` (pełna kontrola) i `analyst` (tylko podgląd).
 
 Sprawdzenie: `../.venv/bin/python -m database check` (z katalogu `backend/`).
 
@@ -100,8 +100,8 @@ npm run dev
 Otwórz http://localhost:5175 i zaloguj się kontem z kroku 3. Panel przekazuje `/api` do
 backendu na porcie 8000 (`ADMIN_API_PROXY_TARGET` w `admin_panel/frontend/.env`, jeśli inny).
 
-Bez bazy, na danych przykładowych: `npm run dev:demo` (konta `admin@prawdowid.demo`,
-`analityk@prawdowid.demo`, `moderator@prawdowid.demo`, hasło `demo1234`).
+Bez bazy, na danych przykładowych: `npm run dev:demo` (konta `admin@prawdowid.demo`
+i `analityk@prawdowid.demo`, hasło `demo1234`).
 
 ## Gdy coś nie działa
 
