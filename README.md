@@ -1,6 +1,6 @@
 # Sprawdź.To (Prawdowid) - dokumentacja techniczna
 
-<center><b><a href="https://78-10-195-255.sslip.io">DEMO</a></b></center>
+<center><b><a href="https://78-10-195-255.sslip.io">DEMO</a></b></center> <br>
 <center><b><a href="https://78-10-195-255.sslip.io/admin/login">DEMO ADMIN</a></b></center>
 
 OPIS
