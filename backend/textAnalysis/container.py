@@ -23,6 +23,7 @@ class AnalysisDataContainer:
     context_reasoning: str = ""
     keywords: list[KeywordItem] = field(default_factory=list)
     statements: list[str] = field(default_factory=list)
+    search_queries: list[str] = field(default_factory=list)
     total_sentences: int = 0
     security_warnings: list[str] = field(default_factory=list)
     original_text: str = ""
@@ -43,6 +44,7 @@ class AnalysisDataContainer:
         total_sentences: int,
         source_url: str | None = None,
         security_warnings: list[str] | None = None,
+        search_queries: list[str] | None = None,
     ) -> None:
         """Wypełnia pusty kontener wynikami analizy."""
         self.source_text = source_text
@@ -55,6 +57,7 @@ class AnalysisDataContainer:
         self.context_reasoning = context_reasoning
         self.keywords = keywords
         self.statements = statements
+        self.search_queries = search_queries or []
         self.total_sentences = total_sentences
         self.security_warnings = security_warnings or []
 
