@@ -11,15 +11,14 @@ from collections.abc import Iterable
 ROLES = ("user", "moderator", "analyst", "admin")
 PANEL_ROLES = ("moderator", "analyst", "admin")
 
-_COMMON = frozenset(
+# Panel obserwacyjny: wszystko do odczytu (pulpit, statystyki, alerty, luki, historia,
+# logi, użytkownicy serwisu, źródła) i eksport — bez żadnych zmian w serwisie.
+_OBSERVE = frozenset(
     {
         "dashboard:read",
         "alerts:read",
-        "alerts:write",
         "clusters:read",
         "cases:read",
-        "cases:write",
-        "cases:forward",
         "checks:read",
         "sources:read",
         "security:read",
@@ -28,11 +27,13 @@ _COMMON = frozenset(
         "export",
     }
 )
+_COMMON = _OBSERVE | {"alerts:write", "cases:write", "cases:forward"}
 
 ROLE_PERMISSIONS: dict[str, frozenset[str]] = {
     "user": frozenset({"checks:create", "me:read", "me:write"}),
     "moderator": _COMMON | {"endusers:write", "me:read", "me:write"},
-    "analyst": _COMMON | {"sources:write", "models:read", "settings:read", "me:read", "me:write"},
+    # Analityk tylko obserwuje; konto zakłada i nim zarządza administrator.
+    "analyst": _OBSERVE | {"models:read", "settings:read", "me:read", "me:write"},
     "admin": _COMMON
     | {
         "checks:delete",

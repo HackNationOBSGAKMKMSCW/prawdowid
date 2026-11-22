@@ -27,14 +27,12 @@ export type Permission =
   | 'endusers:write'
   | 'export';
 
-const COMMON: Permission[] = [
+/** Observation panel: everything read-only, plus export. */
+const OBSERVE: Permission[] = [
   'dashboard:read',
   'alerts:read',
-  'alerts:write',
   'clusters:read',
   'cases:read',
-  'cases:write',
-  'cases:forward',
   'checks:read',
   'sources:read',
   'security:read',
@@ -42,6 +40,8 @@ const COMMON: Permission[] = [
   'endusers:read',
   'export',
 ];
+
+const COMMON: Permission[] = [...OBSERVE, 'alerts:write', 'cases:write', 'cases:forward'];
 
 /**
  * Role → permissions. The backend enforces the same rules; the panel uses
@@ -63,7 +63,8 @@ export const ROLE_PERMISSIONS: Record<Role, ReadonlySet<Permission>> = {
     'audit:read',
     'endusers:write',
   ]),
-  analyst: new Set<Permission>([...COMMON, 'sources:write', 'models:read', 'settings:read']),
+  // Read-only observer; the administrator creates and manages the account.
+  analyst: new Set<Permission>([...OBSERVE, 'models:read', 'settings:read']),
   moderator: new Set<Permission>([...COMMON, 'endusers:write']),
   // Accounts of the public service cannot use the panel (the backend refuses them too).
   user: new Set<Permission>(),

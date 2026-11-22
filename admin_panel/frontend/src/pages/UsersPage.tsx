@@ -10,11 +10,26 @@ import { useAsync } from '../hooks/useAsync.ts';
 import { fmtDate, fmtRelative } from '../utils/format.ts';
 
 const ROLE_INFO: Record<Role, string> = {
-  admin: 'Konfiguracja systemu: modele, reguły, kanały, użytkownicy, prywatność.',
-  analyst: 'Luki informacyjne, katalog źródeł, sprawy przekazane do analizy.',
-  moderator: 'Alerty, sprawy moderatora, przekazywanie spraw.',
-  user: 'Konto w serwisie dla obywateli: sprawdzanie informacji i własna historia. Bez dostępu do panelu.',
+  admin: 'Pełna kontrola nad serwisem: modele, źródła, reguły, blokady, konta i hasła.',
+  analyst:
+    'Panel obserwacyjny: pulpit, statystyki, alerty, luki, historia weryfikacji, logi i źródła — tylko do odczytu, z eksportem.',
+  moderator: 'Obsługa alertów i luk informacyjnych, blokowanie użytkowników serwisu.',
+  user: 'Konto bez dostępu do panelu.',
 };
+
+/** Roles an administrator can give; the first one is the default for a new account. */
+const PANEL_ROLES: Role[] = ['analyst', 'moderator', 'admin'];
+
+const PASSWORD_ALPHABET = 'abcdefghjkmnpqrstuvwxyz23456789';
+
+/** Ready-to-hand-over password, e.g. `k7mp-3qat-9zhe-n4wx` (crypto-random, ~79 bits). */
+function generatePassword(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  const chars = Array.from(bytes, (b) => PASSWORD_ALPHABET[b % PASSWORD_ALPHABET.length]);
+  return [0, 4, 8, 12].map((i) => chars.slice(i, i + 4).join('')).join('-');
+}
+
+const EMPTY_FORM = { email: '', name: '', role: PANEL_ROLES[0], password: '' };
 
 export default function UsersPage() {
   const api = getApi();
@@ -22,12 +37,8 @@ export default function UsersPage() {
   const users = useAsync(() => api.listUsers(), []);
   const { run, busy } = useAction();
   const [inviting, setInviting] = useState(false);
-  const [form, setForm] = useState<{ email: string; name: string; role: Role; password: string }>({
-    email: '',
-    name: '',
-    role: 'moderator',
-    password: '',
-  });
+  const [form, setForm] = useState<{ email: string; name: string; role: Role; password: string }>(EMPTY_FORM);
+  const [showPassword, setShowPassword] = useState(false);
   const [resetting, setResetting] = useState<User | null>(null);
   const [newPassword, setNewPassword] = useState('');
   const editable = can('users:write');
@@ -45,13 +56,14 @@ export default function UsersPage() {
         );
       },
       withPasswords
-        ? 'Konto utworzone. Przekaż hasło osobie bezpiecznym kanałem; może je zmienić po zalogowaniu.'
+        ? 'Konto gotowe. Przekaż e-mail i hasło tej osobie bezpiecznym kanałem; hasło zmieni ikoną kłódki po zalogowaniu.'
         : 'Użytkownik dodany. Zaproszenie do ustawienia hasła wysyła serwer.',
     );
     if (ok && created) {
       users.setData((list) => [...(list ?? []), created as User]);
       setInviting(false);
-      setForm({ email: '', name: '', role: 'moderator', password: '' });
+      setForm(EMPTY_FORM);
+      setShowPassword(false);
     }
   };
 
@@ -78,7 +90,15 @@ export default function UsersPage() {
         }
         actions={
           editable && (
-            <button type="button" className="btn btn-sm btn-primary" onClick={() => setInviting(true)}>
+            <button
+              type="button"
+              className="btn btn-sm btn-primary"
+              onClick={() => {
+                setForm({ ...EMPTY_FORM, password: withPasswords ? generatePassword() : '' });
+                setShowPassword(true);
+                setInviting(true);
+              }}
+            >
               <Icon name="plus" size={16} /> Dodaj użytkownika
             </button>
           )
@@ -115,9 +135,9 @@ export default function UsersPage() {
                               aria-label={`Rola: ${u.name}`}
                               onChange={(e) => run(async () => replace(await api.updateUser(u.id, { role: e.target.value as Role })), 'Rola zmieniona.')}
                             >
-                              {Object.entries(ROLE_LABEL).map(([k, v]) => (
-                                <option key={k} value={k}>
-                                  {v}
+                              {(PANEL_ROLES.includes(u.role) ? PANEL_ROLES : [u.role, ...PANEL_ROLES]).map((r) => (
+                                <option key={r} value={r} disabled={!PANEL_ROLES.includes(r)}>
+                                  {ROLE_LABEL[r]}
                                 </option>
                               ))}
                             </select>
@@ -158,7 +178,7 @@ export default function UsersPage() {
         </Card>
         <Card title="Role">
           <ul className="role-list">
-            {(Object.keys(ROLE_LABEL) as Role[]).map((r) => (
+            {PANEL_ROLES.map((r) => (
               <li key={r}>
                 <strong>{ROLE_LABEL[r]}</strong>
                 <span className="muted small">{ROLE_INFO[r]}</span>
@@ -194,23 +214,43 @@ export default function UsersPage() {
           </Field>
           <Field label="Rola" hint={ROLE_INFO[form.role]}>
             <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value as Role })}>
-              {Object.entries(ROLE_LABEL).map(([k, v]) => (
-                <option key={k} value={k}>
-                  {v}
+              {PANEL_ROLES.map((r) => (
+                <option key={r} value={r}>
+                  {ROLE_LABEL[r]}
                 </option>
               ))}
             </select>
           </Field>
           {withPasswords && (
-            <Field label="Hasło początkowe" hint="Co najmniej 10 znaków. Osoba zmieni je po zalogowaniu.">
-              <input
-                type="password"
-                autoComplete="new-password"
-                value={form.password}
-                minLength={10}
-                required
-                onChange={(e) => setForm({ ...form, password: e.target.value })}
-              />
+            <Field
+              label="Hasło początkowe"
+              hint="Wygenerowane losowo — skopiuj je i przekaż tej osobie razem z adresem e-mail. Po zapisaniu nie będzie już widoczne."
+            >
+              <div className="row gap-xs">
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  autoComplete="new-password"
+                  className="mono"
+                  value={form.password}
+                  minLength={10}
+                  required
+                  onChange={(e) => setForm({ ...form, password: e.target.value })}
+                />
+                <button type="button" className="btn btn-sm" onClick={() => setForm({ ...form, password: generatePassword() })}>
+                  Nowe
+                </button>
+                <button type="button" className="btn btn-sm" onClick={() => setShowPassword(!showPassword)}>
+                  {showPassword ? 'Ukryj' : 'Pokaż'}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  onClick={() => void navigator.clipboard?.writeText(form.password)}
+                  title="Kopiuj hasło do schowka"
+                >
+                  Kopiuj
+                </button>
+              </div>
             </Field>
           )}
         </form>

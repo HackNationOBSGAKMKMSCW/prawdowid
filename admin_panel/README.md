@@ -54,10 +54,15 @@ npm run dev        # http://localhost:5175
 - Po kilku nieudanych próbach backend czasowo blokuje logowanie (429).
 - Sesja wygasa po czasie z backendu albo przy odpowiedzi 401.
 
-**Role** panelu to administrator, analityk i moderator. Sprawdza je backend (`backend/accounts/permissions.py`), a panel tylko chowa niedostępne widoki. Konta z rolą `user` (serwis dla obywateli) nie mają wstępu do panelu.
+**Role** panelu to administrator, analityk i moderator. Sprawdza je backend (`backend/accounts/permissions.py`), a panel tylko chowa niedostępne widoki.
+- **Administrator** ma pełną kontrolę nad serwisem: modele, źródła, reguły, blokady, konta i hasła.
+- **Analityk** ma panel obserwacyjny: widzi pulpit, statystyki, alerty, luki, historię weryfikacji, logi, użytkowników serwisu i źródła, może eksportować dane, ale niczego nie zmienia.
+- **Moderator** obsługuje alerty i luki oraz blokuje użytkowników serwisu.
+
+Strona dla obywateli nie ma kont: sprawdzanie jest anonimowe. Konta zakłada wyłącznie administrator.
 
 **Konta i hasła:**
-- Konta zakłada i wyłącza administrator w widoku **Użytkownicy**. Może też ustawić komuś nowe hasło.
+- Konta zakłada i wyłącza administrator w widoku **Użytkownicy** („Dodaj użytkownika”, domyślnie rola analityka). Formularz generuje losowe hasło początkowe; administrator kopiuje je i przekazuje tej osobie razem z adresem e-mail. Może też ustawić komuś nowe hasło.
 - Każdy zmienia własne hasło ikoną kłódki w górnym pasku. Zmiana wylogowuje wszystkie jego sesje.
 
 **Dziennik audytu** (`activity_logs`) pokazuje logowania (także nieudane, z adresem IP), zmiany kont, blokady, alerty, luki, źródła i konfigurację.
@@ -110,7 +115,7 @@ Konta przykładowe (hasło `demo1234`):
 | Konto | Rola | Co widzi |
 |---|---|---|
 | `admin@prawdowid.demo` | administrator | wszystko, w tym modele, reguły, użytkowników |
-| `analityk@prawdowid.demo` | analityk | luki, źródła (edycja), modele (podgląd) |
+| `analityk@prawdowid.demo` | analityk | panel obserwacyjny: wszystko do odczytu, eksport |
 | `moderator@prawdowid.demo` | moderator | alerty, sprawy, historia, źródła (podgląd) |
 
 Zmiany wprowadzone w trybie demo są pamiętane w `localStorage` przez 6 godzin;

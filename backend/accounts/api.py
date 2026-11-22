@@ -34,7 +34,8 @@ from .service import (
 )
 from .trusted import SourceError, TrustedSourceRepository
 
-Role = Literal["user", "moderator", "analyst", "admin"]
+# Konta zakłada administrator w panelu; tylko role panelu (konta „user” nie mają dostępu).
+Role = Literal["moderator", "analyst", "admin"]
 
 
 @dataclass(frozen=True)
@@ -155,7 +156,7 @@ class AccountCreate(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     email: str = Field(max_length=255)
     password: str = Field(max_length=256)
-    role: Role = "moderator"
+    role: Role = "analyst"
 
 
 class AccountUpdate(BaseModel):

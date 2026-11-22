@@ -61,8 +61,13 @@ def test_malformed_tokens_are_rejected(raw):
 
 def test_role_permissions_match_panel():
     assert permissions.allowed("admin", ["*"], "users:write")
-    assert permissions.allowed("analyst", ["*"], "sources:write")
-    assert not permissions.allowed("analyst", ["*"], "settings:write")
+    # analityk: panel obserwacyjny, sam odczyt
+    for read in ("dashboard:read", "alerts:read", "clusters:read", "checks:read", "sources:read",
+                 "security:read", "endusers:read", "settings:read", "models:read", "export"):
+        assert permissions.allowed("analyst", ["*"], read), read
+    for write in ("sources:write", "alerts:write", "cases:write", "endusers:write",
+                  "settings:write", "models:write", "users:read", "users:write", "audit:read"):
+        assert not permissions.allowed("analyst", ["*"], write), write
     assert permissions.allowed("moderator", ["*"], "endusers:write")
     assert not permissions.allowed("moderator", ["*"], "models:read")
     assert not permissions.allowed("user", ["*"], "dashboard:read")

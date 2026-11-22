@@ -157,7 +157,7 @@ Table config_audit {
 Różnice względem schematu z założeń:
 - **Unikalność emaila.** `users.email` jest unikalny bez względu na wielkość liter, przez indeks na `lower(email)`.
 - **Dodatkowe pola w `users`.** `is_active` i `last_login_at` są potrzebne panelowi (wyłączanie kont i „ostatnie logowanie”).
-- **Role w `user_role`.** Oprócz `user` i `admin` są role panelu `moderator` i `analyst`, zgodne z `admin_panel/frontend/src/auth/permissions.ts`.
+- **Role w `user_role`.** Konta zakłada administrator (panel albo `python -m database create-user`) z rolą panelu: `admin` (pełna kontrola), `analyst` (panel obserwacyjny, sam odczyt) lub `moderator`. Uprawnienia są zgodne z `admin_panel/frontend/src/auth/permissions.ts`. Wartość `user` zostaje w typie dla zgodności, ale API panelu nie zakłada takich kont.
 
 ## Bezpieczeństwo
 
