@@ -67,6 +67,15 @@ def get_adapter(name: str) -> SourceAdapter | None:
 
 
 # Import built-in adapters so they register themselves.
-from . import fact_check, feed, govpl, listing, reference, sitemap  # noqa: E402, F401
+from . import (  # noqa: E402, F401
+    fact_check,
+    feed,
+    govpl,
+    listing,
+    reference,
+    sejm_eli,
+    sitemap,
+    wikipedia,
+)
 
 __all__ = ["ADAPTERS", "SearchContext", "SourceAdapter", "get_adapter", "register_adapter"]
