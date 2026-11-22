@@ -32,9 +32,9 @@ admin_panel/
 ## Uruchomienie z backendem
 
 ```bash
-# 1. backend admina (z katalogu backend/, port 8100)
+# 1. backend admina (Python ≥ 3.11, token w backend/.env: ADMIN_API_TOKEN=...)
 cd backend
-ADMIN_API_TOKEN=<długi-losowy-token> uvicorn admin.api:create_app --factory --port 8100
+uvicorn admin.api:create_app --factory --port 8100
 
 # 2. panel (Vite przekazuje /api na 127.0.0.1:8100)
 cd admin_panel/frontend
@@ -44,7 +44,7 @@ npm run dev        # http://localhost:5175
 
 Logowanie: **imię i nazwisko** (trafia do dziennika audytu jako `X-Admin-User`,
 polskie znaki są zamieniane na ASCII) i **token administratora** — wartość
-`ADMIN_API_TOKEN`. Backend nie ma kont użytkowników, więc w panelu każdy
+`ADMIN_API_TOKEN` z `backend/.env`. Backend nie ma kont użytkowników, więc w panelu każdy
 zalogowany ma rolę administratora. Sesja wygasa po 8 h lub po odpowiedzi 401.
 
 Bot WhatsApp i panel muszą mieć to samo `ADMIN_DB_PATH`, żeby panel widział

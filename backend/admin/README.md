@@ -5,9 +5,18 @@ Przez HTTP API daje dostęp do logów, alertów i konfiguracji serwisu.
 
 ## Uruchomienie
 
+Token wpisz do `backend/.env` (wzór w `backend/.env.example`; plik jest w `.gitignore`):
+
+```bash
+python3 -c "import secrets; print(secrets.token_urlsafe(32))"   # wygeneruj token
+echo "ADMIN_API_TOKEN=<wygenerowany-token>" >> backend/.env
+```
+
+Zmienne z `.env` nie nadpisują tych ustawionych w środowisku.
+
 ```bash
 cd backend
-ADMIN_API_TOKEN=<długi-losowy-token> uvicorn admin.api:create_app --factory --port 8100
+uvicorn admin.api:create_app --factory --port 8100
 # dokumentacja: http://localhost:8100/api/admin/docs
 ```
 
