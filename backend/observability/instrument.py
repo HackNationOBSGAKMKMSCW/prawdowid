@@ -579,6 +579,11 @@ STAGE_TARGETS: tuple[StageTarget, ...] = (
         "textAnalysis.analysis", "ProxyContextAnalyzer.analyze_url", "textAnalysis.analyze_url"
     ),
     StageTarget("textAnalysis.analysis", "UrlContentFetcher.fetch_text", "textAnalysis.fetch_url"),
+    StageTarget(
+        "textAnalysis.clarification",
+        "ClarificationAnalyzer.assess",
+        "textAnalysis.clarify",
+    ),
     StageTarget("apiReading.reading", "run", "apiReading.run", on_result=_evidence_from_reading),
     StageTarget(
         "apiReading.full_text",
@@ -595,6 +600,8 @@ STAGE_TARGETS: tuple[StageTarget, ...] = (
     ),
     StageTarget("whatsappAdapter.pipeline", "LivePipeline.check", "whatsapp.check"),
     StageTarget("whatsappAdapter.pipeline", "DemoPipeline.check", "whatsapp.check_demo"),
+    StageTarget("whatsappAdapter.clarification", "LiveClarifier.assess", "whatsapp.clarify"),
+    StageTarget("whatsappAdapter.clarification", "DemoClarifier.assess", "whatsapp.clarify_demo"),
 )
 
 _SPECIAL: tuple[tuple[str, Callable[[], None]], ...] = (

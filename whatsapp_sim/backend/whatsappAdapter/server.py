@@ -17,10 +17,12 @@ from observability import ObservabilityMiddleware
 from pydantic import ValidationError
 
 from .bot import BOT_NAME, SprawdzToBot
+from .clarification import Clarifier, DemoClarifier, LiveClarifier
 from .cloud_api import parse_webhook
 from .pipeline import DemoPipeline, FactCheckPipeline, LivePipeline
 
 MODE_ENV = "SPRAWDZTO_MODE"
+CLARIFY_ENV = "SPRAWDZTO_CLARIFY"
 MAX_PAYLOAD_MESSAGES = 10
 
 
@@ -33,8 +35,18 @@ def pipeline_from_environment() -> FactCheckPipeline:
     return LivePipeline()
 
 
+def clarifier_from_environment(pipeline: FactCheckPipeline) -> Clarifier | None:
+    """The clarification loop is on by default; ``SPRAWDZTO_CLARIFY=0`` turns it off."""
+
+    if os.getenv(CLARIFY_ENV, "1").strip().lower() in {"0", "false", "no", "off"}:
+        return None
+    return DemoClarifier() if pipeline.mode == "demo" else LiveClarifier()
+
+
 def create_app(bot: SprawdzToBot | None = None) -> FastAPI:
-    bot = bot or SprawdzToBot(pipeline_from_environment())
+    if bot is None:
+        pipeline = pipeline_from_environment()
+        bot = SprawdzToBot(pipeline, clarifier=clarifier_from_environment(pipeline))
     app = FastAPI(title="SprawdzTo WhatsApp adapter", docs_url="/api/whatsapp/docs")
     app.add_middleware(ObservabilityMiddleware, skip_paths=("/api/whatsapp/health",))
 

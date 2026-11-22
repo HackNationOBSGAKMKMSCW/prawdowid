@@ -28,6 +28,8 @@ messages to the Graph API.
 ```
 simulator ──webhook──▶ POST /api/whatsapp/webhook
                          │ SprawdzToBot
+                         │  ├─ clarifier (optional)      → ask for details, or go on
+                         │  │    ◀── user answers ──┘      (loop, max 2 rounds)
                          │  ├─ textAnalysis.run(text)    → statements
                          │  └─ apiReading.run(analysis)  → fact checks
           ◀──messages──  └─ formatting: verdict, sources, caveats
@@ -62,6 +64,7 @@ the start page opens this view with the typed message ready to send
   `GOOGLE_FACT_CHECK_API_KEY` in `backend/.env` (the main app's file). Missing
   keys are reported in the chat instead of failing silently.
 - `SPRAWDZTO_MODE=demo|live`, `--host`, and `--port` are also supported.
+- `SPRAWDZTO_CLARIFY=0` turns the clarification loop off (it is on by default).
 
 ## Simulator
 
@@ -97,6 +100,8 @@ chat opens). Other types get a "text only" reply.
 - Any other text (8+ characters) → analysis and fact-check search. Messages
   without extractable statements (often plain questions) are searched as a
   whole with `apiReading.run_full_text`.
+- Vague messages about a specific event get questions first (see
+  [Clarification loop](#clarification-loop)).
 - Ratings from fact-checkers are mapped to false / misleading / true /
   unverified (`verdicts.py`) and combined into one headline verdict; true and
   false ratings together are reported as conflicting.
@@ -110,6 +115,58 @@ chat opens). Other types get a "text only" reply.
   WhatsApp they would be ordinary messages or the typing indicator.
 - Replies longer than WhatsApp's 4096-character limit are split.
 - Message text is never printed to the console; only message IDs and timings.
+
+## Clarification loop
+
+A message such as _„Czy naprawdę spadł dron w Polsce?”_ is about one specific
+event, but says neither when nor where. Searching it as it is would match any
+drone incident. Before the check, the bot asks whether the message is specific
+enough and, if not, asks for the missing details:
+
+```
+Ty:        Czy naprawdę spadł dron w Polsce?
+SprawdzTo: 🧩 Chcę dobrze zrozumieć, o co chodzi.
+           Rozumiem, że chodzi o: „W Polsce spadł dron.”
+           • Kiedy mniej więcej to się stało?
+           • Gdzie to było — miasto albo region?
+           [Sprawdź bez tego] [Anuluj]
+Ty:        wczoraj koło Rzeszowa
+SprawdzTo: 🧩 Sprawdziłem z Twoimi szczegółami:
+           „21.11.2026 w okolicach Rzeszowa spadł dron.”
+           🔎 Wynik sprawdzenia …
+```
+
+- **Deciding** (`textAnalysis/clarification.py`, `ClarificationAnalyzer`): the
+  language model gets the whole conversation (first message, the bot's
+  questions, the answers) and today's date, and returns
+  `needs_clarification`, up to 2 `questions`, the `missing` details (`czas`,
+  `miejsce`, `podmiot`, `zrodlo`, `szczegoly`), `understood_claim`, and
+  `resolved_claim` — one self-contained claim built from the first message
+  and every answer, with relative dates ("wczoraj") turned into dates. It
+  asks only about one-off events (incidents, statements, decisions), never
+  about general claims ("szczepionki powodują autyzm").
+- **Context**: each answer is assessed together with the earlier turns, so
+  "wczoraj", "tam" or "koło Rzeszowa" are read as details of the first
+  message. When the reply is a new, unrelated message (`new_topic`), the old
+  thread is dropped and the new message is handled from the start.
+- **Ending the loop**: the claim is checked when the model has enough detail,
+  after 2 rounds of questions, when the user does not know (`nie wiem`,
+  `pomiń`, the _Sprawdź bez tego_ button — then the details given so far are
+  used), or cancelled with `anuluj` / _Anuluj_ / a greeting.
+- **Never blocking**: a model error or timeout (20 s) skips the questions and
+  checks what the bot has. Messages over 600 characters, links, and example
+  buttons are checked directly, without asking.
+- **State** (`whatsappAdapter/clarification.py`, `ConversationStore`): one
+  open conversation per sender, in memory, for 15 minutes; messages of one
+  sender are handled one at a time. Several server workers would need a
+  shared store (e.g. Redis) behind the same `get`/`put`/`pop` methods.
+- **Safety**: user turns go through `InputSanitizer` and the dialogue tags are
+  neutralized; a message with an injection pattern is checked without
+  questions; questions with links or requests for passwords, codes or PESEL
+  are dropped; a leaked canary token voids the answer.
+- **Demo mode** uses `DemoClarifier`: keyword rules (an event word such as
+  _dron_, _wybuch_, _spadł_ without a time or a concrete place) instead of the
+  model, so the loop can be shown without API keys.
 
 ## Checks
 
