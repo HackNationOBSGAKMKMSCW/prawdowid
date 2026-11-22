@@ -1,0 +1,58 @@
+{
+  "meta": {
+    "started_at": "2026-11-22T07:29:24",
+    "base": "http://127.0.0.1:8023",
+    "label": "pelny",
+    "commit": "b65e31d+zmiany",
+    "expect_technical": false,
+    "health": 200
+  },
+  "load": [
+    {
+      "id": "L01",
+      "status": 200,
+      "seconds": 58.94,
+      "outcome": "wynik",
+      "error_code": null
+    },
+    {
+      "id": "L02",
+      "status": 200,
+      "seconds": 150.83,
+      "outcome": "wynik",
+      "error_code": null
+    },
+    {
+      "id": "L03",
+      "status": 200,
+      "seconds": 156.28,
+      "outcome": "wynik",
+      "error_code": null
+    },
+    {
+      "id": "L04",
+      "status": 200,
+      "seconds": 173.33,
+      "outcome": "wynik",
+      "error_code": null
+    },
+    {
+      "id": "L05",
+      "status": 503,
+      "seconds": 0.01,
+      "outcome": "techniczny",
+      "error_code": "analysis_busy"
+    },
+    {
+      "id": "L06",
+      "status": 503,
+      "seconds": 0.01,
+      "outcome": "techniczny",
+      "error_code": "analysis_busy"
+    }
+  ],
+  "status_counts": {
+    "200": 4,
+    "503": 2
+  }
+}

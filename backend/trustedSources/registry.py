@@ -27,6 +27,8 @@ logger = logging.getLogger(__name__)
 
 _ID_CHARS = re.compile(r"[^a-z0-9]+")
 _DETECTED_FIELDS = ("adapter", "params", "last_check", "description")
+# Sejm's ELI API serves the acts; ISAP is the public catalogue linking to the same acts.
+SEJM_ELI_HOSTS = frozenset({"api.sejm.gov.pl", "isap.sejm.gov.pl"})
 
 
 class RegistryError(ValueError):
@@ -69,6 +71,11 @@ def static_classification(url: str) -> tuple[str, dict[str, Any], list[str], str
             f"/web/{site_id}" if site_id else "/",
         )
     bare = host.removeprefix("www.")
+    if bare.endswith(".wikipedia.org"):
+        # Encyclopaedic context, not an official statement.
+        return "wikipedia", {"lang": bare.split(".", 1)[0]}, [bare], "other", "/"
+    if bare in SEJM_ELI_HOSTS:
+        return "sejm_eli", {}, sorted(SEJM_ELI_HOSTS), "official", "/"
     if bare in KNOWN_PUBLISHERS:
         return "fact_check_publisher", {"site": bare}, [bare], "fact_checker", "/"
     return PENDING_ADAPTER, {}, [bare], "official", path_prefix

@@ -5,6 +5,7 @@ from prawdowid_analysis.schemas import ModelVerdictValue
 from scripts.eval_verdict import CASES_FILE, accepted, fact_check_sources, user_sources
 
 ALLOWED = set(typing.get_args(ModelVerdictValue))
+SCENARIOS = set("ABCDEFGHIJ") | {"inne"}
 
 
 def load_cases():
@@ -18,6 +19,7 @@ def test_eval_cases_are_well_formed():
     assert {c["expected"] for c in cases} == ALLOWED, "każdy werdykt ma przypadek testowy"
     for case in cases:
         assert case["claim"].strip(), case["id"]
+        assert case.get("scenario") in SCENARIOS, case["id"]
         assert accepted(case) <= ALLOWED, case["id"]
         assert not accepted(case) & set(case.get("forbidden", [])), case["id"]
 

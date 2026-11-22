@@ -279,10 +279,35 @@ WHITELIST: tuple[WhitelistEntry, ...] = (
         "Ministerstwo Klimatu i Środowiska",
         topics=("energia", "klimat", "środowisko"),
     ),
+    # stat.gov.pl przekierowuje na nowy serwis GUS (kanał RSS z komunikatami).
     WhitelistEntry(
-        "https://stat.gov.pl/",
+        "https://new.stat.gov.pl/",
         "Główny Urząd Statystyczny",
-        topics=("statystyka", "inflacja", "wynagrodzenia", "bezrobocie", "PKB"),
+        topics=("statystyka", "inflacja", "wynagrodzenia", "bezrobocie", "PKB", "ludność"),
+    ),
+    # Akty prawne po tytule: API ELI Sejmu (adapter sejm_eli, linki do tekstu aktu i ISAP).
+    WhitelistEntry(
+        "https://isap.sejm.gov.pl/",
+        "Sejm – akty prawne (ELI / ISAP)",
+        topics=("prawo", "ustawa", "rozporządzenie", "Dziennik Ustaw", "Monitor Polski"),
+    ),
+    # Kontekst encyklopedyczny dla faktów ogólnych (geografia, historia, instytucje).
+    # Zaufanie "other": to nie jest źródło urzędowe.
+    WhitelistEntry(
+        "https://pl.wikipedia.org/",
+        "Wikipedia (polska)",
+        topics=("encyklopedia", "geografia", "historia", "instytucje"),
+        description="Kontekst encyklopedyczny; nie jest źródłem urzędowym.",
+    ),
+    WhitelistEntry(
+        "https://www.nato.int/",
+        "NATO – aktualności",
+        topics=("NATO", "sojusz", "obronność", "Ukraina"),
+    ),
+    WhitelistEntry(
+        "https://poland.representation.ec.europa.eu/index_pl",
+        "Komisja Europejska – Przedstawicielstwo w Polsce",
+        topics=("Unia Europejska", "Komisja Europejska", "fundusze UE", "prawo UE"),
     ),
     WhitelistEntry(
         "https://www.zus.pl/",
