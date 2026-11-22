@@ -142,3 +142,59 @@ def test_panel_can_be_switched_off():
     with TestClient(app) as client:
         assert client.get("/api/admin/health").status_code == 404
         assert client.get("/api/check", params={"text": "Czy prąd zdrożeje?"}).status_code == 200
+
+
+class _Account:
+    def __init__(self, user_id: int) -> None:
+        self.user = type("User", (), {"id": user_id})()
+
+
+class FakeAccounts:
+    """``AccountService.authenticate``: jeden ważny token."""
+
+    def authenticate(self, raw_token: str):
+        return _Account(7) if raw_token == "oat_dobry.sekret" else None
+
+
+def test_signed_in_check_is_linked_to_the_account(service):
+    client, monitor, _, _ = service
+    client.app.state.journal.accounts = FakeAccounts()
+
+    signed = client.get(
+        "/api/check",
+        params={"text": "Szczepionki powodują autyzm."},
+        headers={"Authorization": "Bearer oat_dobry.sekret"},
+    ).json()
+    expired = client.get(
+        "/api/check",
+        params={"text": "Szczepionki powodują autyzm."},
+        headers={"Authorization": "Bearer oat_wygasly.sekret"},
+    )
+    assert expired.status_code == 200  # zły token: sprawdzenie anonimowe, nie błąd
+
+    entry = monitor.store.get_query(signed["id"].replace("-", ""))
+    assert entry["account_id"] == 7
+    items, total = monitor.store.list_queries(account_id=7)
+    assert total == 1 and items[0]["id"] == entry["id"]
+    anonymous = monitor.store.get_query(expired.json()["id"].replace("-", ""))
+    assert anonymous["account_id"] is None
+    assert anonymous["user_key"] != entry["user_key"]
+
+
+def test_cors_allows_the_session_header(monkeypatch):
+    async def runner(text: str) -> dict:
+        return report()
+
+    monkeypatch.setenv("CORS_ORIGINS", "https://strona.example")
+    app = create_app(store=FakeStore(), verification_runner=runner, admin_panel=False)
+    with TestClient(app) as client:
+        preflight = client.options(
+            "/api/check",
+            headers={
+                "Origin": "https://strona.example",
+                "Access-Control-Request-Method": "GET",
+                "Access-Control-Request-Headers": "authorization",
+            },
+        )
+    assert preflight.status_code == 200
+    assert "authorization" in preflight.headers["access-control-allow-headers"].lower()

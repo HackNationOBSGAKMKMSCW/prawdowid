@@ -5,9 +5,11 @@ Każde sprawdzenie ze strony trafia do tego samego rejestru co wiadomości z bot
 informacyjnych, alertach dezinformacji i u użytkowników serwisu. Zgłoszenie błędu
 w wyniku dopisuje się do tego samego wpisu (identyfikator wyniku = identyfikator zapytania).
 
-Użytkownik strony jest anonimowy: jego pseudonim to HMAC adresu IP (``AdminSettings.user_key``),
-a w panelu widać tylko końcówkę adresu. Za proxy adres klienta podaje uvicorn
-(``--proxy-headers --forwarded-allow-ips=...``).
+Zalogowany użytkownik strony (token z ``/api/auth``) jest rozpoznawany po koncie: wpis dostaje
+``account_id`` (historia w ``GET /api/auth/me/queries``), a blokada w panelu dotyczy konta.
+Anonimowy użytkownik to HMAC adresu IP (``AdminSettings.user_key``); w panelu widać tylko
+końcówkę adresu. Za proxy adres klienta podaje uvicorn (``--proxy-headers --forwarded-allow-ips=...``).
+Nieważny lub wygasły token nie blokuje sprawdzenia: jest wtedy anonimowe.
 
 Błąd monitora nigdy nie psuje sprawdzenia: zapis jest pomijany i zostaje ostrzeżenie w logach.
 Jedyny wyjątek to świadoma odmowa (zablokowany użytkownik, prośba o instrukcje przemocy).
@@ -73,24 +75,50 @@ def client_id(request: Any) -> str:
     return f"web:{host}"
 
 
-class CheckJournal:
-    """Zapis sprawdzeń ze strony w dzienniku panelu; bezpieczny przy awarii monitora."""
+def bearer_token(request: Any) -> str | None:
+    scheme, _, token = (request.headers.get("authorization") or "").partition(" ")
+    if scheme.lower() != "bearer":
+        return None
+    return token.strip() or None
 
-    def __init__(self, monitor: Monitor) -> None:
+
+class CheckJournal:
+    """Zapis sprawdzeń ze strony w dzienniku panelu; bezpieczny przy awarii monitora.
+
+    ``accounts`` (``AccountService``, gdy jest baza): sprawdzenia zalogowanych trafiają na konto.
+    """
+
+    def __init__(self, monitor: Monitor, accounts: Any = None) -> None:
         self.monitor = monitor
+        self.accounts = accounts
+
+    def identify(self, request: Any) -> tuple[str, int | None]:
+        """``(identyfikator dla monitora, id konta)``; bez ważnego tokenu: adres IP."""
+        token = bearer_token(request) if self.accounts is not None else None
+        if token:
+            try:
+                auth = self.accounts.authenticate(token)
+            except Exception as exc:  # noqa: BLE001 - błąd bazy: sprawdzenie anonimowe
+                logger.warning("admin_journal_auth_failed error_type=%s", type(exc).__name__)
+                auth = None
+            if auth is not None:
+                return f"konto:{auth.user.id}", auth.user.id
+        return client_id(request), None
 
     async def screen(
         self, request: Any, text: str, *, query_id: str, request_id: str | None = None
     ) -> ScreenDecision | None:
         """``None``: monitor niedostępny (sprawdzamy dalej, bez wpisu w dzienniku)."""
         try:
+            user_id, account_id = await run_in_threadpool(self.identify, request)
             return await run_in_threadpool(
                 self.monitor.screen,
-                user_id=client_id(request),
+                user_id=user_id,
                 text=text,
                 channel=CHANNEL,
                 request_id=request_id,
                 query_id=query_id,
+                account_id=account_id,
             )
         except Exception as exc:  # noqa: BLE001
             logger.warning("admin_journal_failed step=screen error_type=%s", type(exc).__name__)

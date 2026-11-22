@@ -52,7 +52,8 @@ def create_app(
     """API strony; ``admin_panel`` (domyślnie ``ADMIN_PANEL``, włączony): ``/api/admin``.
 
     Z panelem każde ``/api/check`` i zgłoszenie trafia do dziennika zapytań panelu
-    (``admin.web.CheckJournal``). ``monitor``: gotowy monitor (testy).
+    (``admin.web.CheckJournal``). ``monitor``: gotowy monitor (testy). Z bazą także konta
+    użytkowników strony (``/api/auth``); ich sprawdzenia trafiają na konto.
     """
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -87,14 +88,24 @@ def create_app(
         from admin.api import mount_admin
         from admin.web import CheckJournal
 
-        app.state.journal = CheckJournal(mount_admin(app, monitor=monitor))
+        journal_monitor = mount_admin(app, monitor=monitor)
+        accounts = None
+        database = getattr(app.state, "database", None)
+        if database is not None:
+            # Konta użytkowników strony: /api/auth (rejestracja, logowanie, historia sprawdzeń).
+            from accounts import AccountService
+            from accounts.api import create_service_router
+
+            app.include_router(create_service_router(database))
+            accounts = AccountService(database)
+        app.state.journal = CheckJournal(journal_monitor, accounts)
     app.add_middleware(RequestSizeLimitMiddleware, max_body_bytes=96 * 1024)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=_cors_origins(),
         allow_credentials=False,
         allow_methods=["GET", "POST", "OPTIONS"],
-        allow_headers=["Content-Type", "X-Request-ID"],
+        allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
         expose_headers=["X-Request-ID"],
     )
     app.add_middleware(
