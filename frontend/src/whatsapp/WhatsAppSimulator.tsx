@@ -73,7 +73,8 @@ interface Activity {
 }
 
 const STORAGE_KEY = 'sprawdzto-whatsapp-chat-v1';
-const START_COMMAND = 'cd whatsapp_sim/backend && ../../.venv/bin/python -m whatsappAdapter --demo';
+const START_COMMAND =
+  'cd whatsapp_sim/backend && ../../.venv/bin/python -m whatsappAdapter --demo --port 8001';
 
 // A typical chain message, used by the attach menu to demo forwarded content.
 const SAMPLE_CHAIN =

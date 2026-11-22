@@ -11,7 +11,7 @@ is part of the main web app: it is the **WhatsApp** view of `frontend/`
 
 ```
 whatsapp_sim/
-├── backend/                  # Python adapter (FastAPI), port 8000
+├── backend/                  # Python adapter (FastAPI), port 8001
 │   ├── pytest.ini
 │   └── whatsappAdapter/      # bot, Cloud API shapes, verdicts, server, tests
 frontend/src/whatsapp/        # chat simulator, the /whatsapp view of the main app
