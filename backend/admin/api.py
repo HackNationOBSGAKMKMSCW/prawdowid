@@ -481,7 +481,7 @@ def create_app(
     Zwykle panel działa w API strony (``server.py``) — ten tryb jest dla pracy nad samym
     panelem bez modeli i bez potoku weryfikacji.
     """
-    app = FastAPI(title="Prawdowid — panel admina", docs_url="/api/admin/docs")
+    app = FastAPI(title="Sprawdź.To — panel admina", docs_url="/api/admin/docs")
     try:
         from observability import ObservabilityMiddleware
 

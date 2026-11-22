@@ -11,7 +11,7 @@ export type InfoKind = 'how' | 'sources' | 'a11y' | 'help';
 const META: Record<InfoKind, { title: string; lead: string }> = {
   how: {
     title: 'Jak to działa',
-    lead: 'Prawdowid porównuje Twoją wiadomość z wiarygodnymi źródłami i mówi prostym językiem, co znalazł.',
+    lead: 'Sprawdź.To porównuje Twoją wiadomość z wiarygodnymi źródłami i mówi prostym językiem, co znalazł.',
   },
   sources: {
     title: 'Lista źródeł',
@@ -19,7 +19,7 @@ const META: Record<InfoKind, { title: string; lead: string }> = {
   },
   a11y: {
     title: 'Deklaracja dostępności',
-    lead: 'Chcemy, żeby z Prawdowida mógł korzystać każdy, także osoby z niepełnosprawnościami i osoby starsze.',
+    lead: 'Chcemy, żeby każdy mógł korzystać ze Sprawdź.To, także osoby z niepełnosprawnościami i osoby starsze.',
   },
   help: { title: 'Pomoc', lead: 'Kliknij pytanie, żeby zobaczyć odpowiedź.' },
 };

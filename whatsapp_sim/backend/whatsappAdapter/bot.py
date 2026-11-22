@@ -45,14 +45,14 @@ WELCOME_TEXT = (
     "• zdanie lub cytat, który krąży w sieci,\n"
     "• pytanie, np. _„Czy 5G szkodzi zdrowiu?”_,\n"
     "• treść podejrzanego łańcuszka.\n\n"
-    "Sprawdzę ją tak samo jak strona Prawdowida: wyciągnę konkretne twierdzenia, "
+    "Sprawdzę ją tak samo jak strona Sprawdź.To: wyciągnę konkretne twierdzenia, "
     "poszukam ich w wiarygodnych źródłach i ocenię każde z nich."
 )
 WELCOME_BUTTONS_TEXT = "Chcesz zobaczyć, jak to działa na przykładzie?"
 
 HELP_TEXT = (
     f"*Jak działa {BOT_NAME}?*\n\n"
-    "To ta sama weryfikacja co na stronie Prawdowida, tylko w czacie.\n\n"
+    "To ta sama weryfikacja co na stronie Sprawdź.To, tylko w czacie.\n\n"
     "1. Model językowy analizuje Twoją wiadomość i wyciąga z niej konkretne twierdzenia.\n"
     "2. Szukam ich w bazach redakcji fact-checkingowych, na stronach urzędów "
     "i zaufanych serwisów oraz w bazie znanej dezinformacji.\n"

@@ -9,8 +9,8 @@ const MAX_ATTEMPTS = 5;
 const LOCK_SECONDS = 30;
 
 const DEMO_ACCOUNTS = [
-  { email: 'admin@prawdowid.demo', role: 'Administrator', note: 'pełny dostęp, konfiguracja modeli' },
-  { email: 'analityk@prawdowid.demo', role: 'Analityk', note: 'podgląd: pulpit, alerty, luki, historia, źródła' },
+  { email: 'admin@sprawdz.to.demo', role: 'Administrator', note: 'pełny dostęp, konfiguracja modeli' },
+  { email: 'analityk@sprawdz.to.demo', role: 'Analityk', note: 'podgląd: pulpit, alerty, luki, historia, źródła' },
 ];
 
 export default function LoginPage() {
@@ -81,7 +81,7 @@ export default function LoginPage() {
         <div className="login-brand">
           <Logo size={44} />
           <div>
-            <h1>Prawdowid</h1>
+            <h1>Sprawdź.To</h1>
             <p>Panel administracyjny weryfikacji informacji</p>
           </div>
         </div>

@@ -113,8 +113,8 @@ Konta przykładowe (hasło `demo1234`):
 
 | Konto | Rola | Co widzi |
 |---|---|---|
-| `admin@prawdowid.demo` | administrator | wszystko, w tym modele, reguły, użytkowników |
-| `analityk@prawdowid.demo` | analityk | panel obserwacyjny: wszystko do odczytu, eksport |
+| `admin@sprawdz.to.demo` | administrator | wszystko, w tym modele, reguły, użytkowników |
+| `analityk@sprawdz.to.demo` | analityk | panel obserwacyjny: wszystko do odczytu, eksport |
 
 Zmiany wprowadzone w trybie demo są pamiętane w `localStorage` przez 6 godzin;
 „Kanały i prywatność → Przywróć dane demo” zaczyna od nowa.

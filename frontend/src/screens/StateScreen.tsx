@@ -96,7 +96,7 @@ const FAILURES: Partial<Record<ApiErrorCode, StateContent>> = {
     icon: '!',
     tone: 'warning',
     title: 'Brak połączenia',
-    body: 'Nie możemy połączyć się z serwerem Prawdowida. Sprawdź internet i spróbuj ponownie.',
+    body: 'Nie możemy połączyć się z serwisem Sprawdź.To. Sprawdź internet i spróbuj ponownie.',
     action: 'Spróbuj jeszcze raz',
   },
 };
