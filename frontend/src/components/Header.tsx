@@ -1,5 +1,6 @@
 import { useState, type KeyboardEvent, type MouseEvent } from 'react';
 import { useGoHome } from '../lib/navigation.ts';
+import { useSpeech } from '../lib/speech.ts';
 
 interface HeaderProps {
   bigText: boolean;
@@ -19,6 +20,7 @@ export default function Header({
   onToggleTheme,
 }: HeaderProps) {
   const goHome = useGoHome();
+  const speech = useSpeech();
   // Dymek z podpisem da się schować klawiszem Esc (WCAG 1.4.13).
   const [tipsHidden, setTipsHidden] = useState(false);
   const onKeyDown = (event: KeyboardEvent) => {
@@ -43,12 +45,54 @@ export default function Header({
         <div
           className="view-settings"
           role="group"
-          aria-label="Ustawienia wyglądu"
+          aria-label="Ułatwienia dostępu"
           data-tips-hidden={tipsHidden || undefined}
           onKeyDown={onKeyDown}
           onMouseLeave={showTips}
           onBlur={showTips}
         >
+          <button
+            type="button"
+            className="pill-toggle pill-toggle--icon read-aloud-toggle"
+            aria-pressed={speech.autoRead}
+            aria-label="Czytaj stronę na głos"
+            aria-describedby="read-aloud-hint"
+            data-speaking={(speech.autoRead && speech.speaking) || undefined}
+            onClick={speech.toggleAutoRead}
+          >
+            <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" focusable="false">
+              <path
+                d="M3.5 9.5h3.8L12 5.6v12.8l-4.7-3.9H3.5z"
+                fill={speech.autoRead ? 'currentColor' : 'none'}
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinejoin="round"
+              />
+              <path
+                className="read-aloud-toggle__wave read-aloud-toggle__wave--near"
+                d="M15.5 9.2a4 4 0 0 1 0 5.6"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+              />
+              <path
+                className="read-aloud-toggle__wave read-aloud-toggle__wave--far"
+                d="M18.4 6.4a8 8 0 0 1 0 11.2"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+              />
+            </svg>
+            <span className="icon-tip" aria-hidden="true" onClick={keepTip}>
+              {speech.autoRead ? 'Wyłącz czytanie na głos' : 'Czytaj stronę na głos'}
+            </span>
+          </button>
+          <span id="read-aloud-hint" className="sr-only">
+            Syntezator mowy przeczyta treść tej strony, a potem automatycznie każdą kolejną, także
+            wynik sprawdzania. Klawisz Esc przerywa czytanie. Naciśnij ponownie, aby wyłączyć.
+          </span>
           <button
             type="button"
             className="pill-toggle pill-toggle--icon"

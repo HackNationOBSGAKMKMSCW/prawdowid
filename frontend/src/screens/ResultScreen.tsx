@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import type { CheckResult } from '../api/types.ts';
 import AnalysisCard from '../components/AnalysisCard.tsx';
 import ClaimCard from '../components/ClaimCard.tsx';
@@ -7,7 +7,7 @@ import { useAnnounce } from '../lib/announce.ts';
 import { useChecker } from '../lib/checker.ts';
 import { buildResultView } from '../lib/result.ts';
 import { shareLink } from '../lib/share.ts';
-import { useSpeech } from '../lib/useSpeech.ts';
+import { usePageSpeechText, useSpeech } from '../lib/speech.ts';
 
 export default function ResultScreen({ result }: { result: CheckResult }) {
   const { input, goStart } = useChecker();
@@ -18,11 +18,9 @@ export default function ResultScreen({ result }: { result: CheckResult }) {
   const [reported, setReported] = useState(false);
   const [dialog, setDialog] = useState<'report' | null>(null);
 
-  const onSpeechUnsupported = useCallback(
-    () => announce('Twoja przeglądarka nie umie czytać na głos.'),
-    [announce],
-  );
-  const speech = useSpeech(onSpeechUnsupported);
+  const speech = useSpeech();
+  // Przy włączonym czytaniu w nagłówku wynik czyta się sam po przejściu na ten ekran.
+  usePageSpeechText(view.readAloud);
 
   const onShare = async () => {
     const ok = await shareLink(input);
@@ -47,7 +45,7 @@ export default function ResultScreen({ result }: { result: CheckResult }) {
         type="button"
         className="btn-outline"
         aria-pressed={speech.speaking}
-        onClick={() => speech.toggle(view.readAloud)}
+        onClick={() => (speech.speaking ? speech.stop() : speech.speak(view.readAloud))}
       >
         <span className="btn-outline__glyph" aria-hidden="true">
           {speech.speaking ? '■' : '▶'}
