@@ -1,0 +1,405 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Architektura Sprawdź.To</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400;500&family=Source+Sans+3:wght@400;600&display=swap">
+<style>
+  /* Układ: torowy diagram (kanały → API → weryfikacja), po prawej to, co poza procesem. Kolory z frontend/src/index.css. */
+  :root {
+    --bg: #f2f4f7;
+    --surface: #ffffff;
+    --fg: #141a24;
+    --muted: #4b5466;
+    --subtle: #5f6778;
+    --line: #d5dae2;
+    --line-strong: #a3abb8;
+    --edge: #97a0ae;
+    --band: #e5e9ef;
+    --accent: #0a2f63;
+    --sans: 'Source Sans 3', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --mono: 'Source Code Pro', ui-monospace, Consolas, monospace;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0f141c;
+      --surface: #161c26;
+      --fg: #e6e9ef;
+      --muted: #a8b0be;
+      --subtle: #8a93a3;
+      --line: #2a3240;
+      --line-strong: #46505f;
+      --edge: #5f6979;
+      --band: #1b2230;
+      --accent: #8fb4ea;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0f141c;
+    --surface: #161c26;
+    --fg: #e6e9ef;
+    --muted: #a8b0be;
+    --subtle: #8a93a3;
+    --line: #2a3240;
+    --line-strong: #46505f;
+    --edge: #5f6979;
+    --band: #1b2230;
+    --accent: #8fb4ea;
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font: 400 15px/1.55 var(--sans);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap {
+    max-width: 1280px;
+    margin: 0 auto;
+    padding-block: 48px 64px;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+  }
+
+  header { display: grid; gap: 8px; max-width: 70ch; }
+  .eyebrow { margin: 0; font: 500 12px var(--mono); letter-spacing: .06em; color: var(--subtle); }
+  h1 { margin: 0; font-size: 30px; font-weight: 600; line-height: 1.2; letter-spacing: -.01em; text-wrap: balance; }
+  .lede { margin: 0; font-size: 16px; color: var(--muted); }
+  .meta { margin: 4px 0 0; font: 400 12px var(--mono); color: var(--subtle); }
+
+  figure { margin: 36px 0 0; max-width: 100%; overflow-x: auto; }
+  figure svg { display: block; width: 100%; min-width: 1000px; height: auto; }
+  .hint { display: none; margin: 8px 0 0; font-size: 13px; color: var(--subtle); }
+  @media (max-width: 1000px) { .hint { display: block; } }
+
+  .legend {
+    display: flex; flex-wrap: wrap; gap: 10px 28px;
+    list-style: none; margin: 20px 0 0; padding: 0;
+    font-size: 13px; color: var(--muted);
+  }
+  .legend li { display: flex; align-items: center; gap: 8px; }
+  .legend svg { flex: none; }
+
+  .principles { margin-top: 48px; padding-top: 24px; border-top: 1px solid var(--line); }
+  .principles h2 { margin: 0 0 16px; font-size: 12px; font-weight: 600; letter-spacing: .09em; text-transform: uppercase; color: var(--subtle); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 24px 36px; }
+  .grid > div { min-width: 0; }
+  .grid h3 { margin: 0; font-size: 15px; font-weight: 600; text-wrap: balance; }
+  .grid p { margin: 4px 0 0; font-size: 14px; color: var(--muted); }
+  code { font: 400 .92em var(--mono); }
+
+  /* --- diagram --- */
+  .box { fill: var(--surface); stroke: var(--line); stroke-width: 1; }
+  .box-x { fill: var(--bg); stroke: var(--line-strong); stroke-width: 1; }
+  .frame { fill: none; stroke: var(--line-strong); stroke-width: 1; stroke-dasharray: 4 5; }
+  .band { fill: var(--band); }
+  .t { font: 600 13.5px var(--sans); fill: var(--fg); }
+  .m { font: 400 10.5px var(--mono); fill: var(--muted); }
+  .d { font: 400 11.5px var(--sans); fill: var(--muted); }
+  .c { font: 600 10px var(--sans); letter-spacing: .09em; fill: var(--subtle); }
+  .bt { font: 400 11px var(--sans); fill: var(--muted); }
+  .lane-t { font: 600 15px var(--sans); fill: var(--fg); }
+  .lane-c { font: 400 11.5px var(--sans); fill: var(--subtle); }
+  .note { font: 400 11.5px var(--sans); fill: var(--subtle); }
+  .ph { font: 400 11.5px var(--sans); fill: var(--subtle); }
+  .ph-n { font: 500 11px var(--mono); fill: var(--accent); }
+  .lbl {
+    font: 400 10.5px var(--mono); fill: var(--muted);
+    paint-order: stroke; stroke: var(--bg); stroke-width: 4px; stroke-linejoin: round;
+  }
+  .e { fill: none; stroke: var(--edge); stroke-width: 1.25; }
+  .ea { fill: none; stroke: var(--accent); stroke-width: 1.5; }
+  .dash { stroke-dasharray: 4 3; }
+  .llm { fill: var(--accent); }
+  .port { fill: var(--edge); }
+  .ah { fill: var(--edge); }
+  .aha { fill: var(--accent); }
+</style>
+</head>
+<body>
+<main class="wrap">
+
+  <header>
+    <p class="eyebrow">SPRAWDŹ.TO · PRAWDOWID</p>
+    <h1>Architektura systemu</h1>
+    <p class="lede">Jeden proces FastAPI obsługuje stronę, kanał WhatsApp i panel admina. Każde sprawdzenie przechodzi przez ten sam potok: analiza tekstu, zbieranie dowodów i dwie niezależne oceny.</p>
+    <p class="meta">na podstawie README.md, backend/server.py i vercel.json · listopad 2026</p>
+  </header>
+
+  <figure>
+    <svg viewBox="0 0 1280 880" role="img" aria-labelledby="dg-title dg-desc" xmlns="http://www.w3.org/2000/svg">
+      <title id="dg-title">Diagram architektury Sprawdź.To</title>
+      <desc id="dg-desc">Strona WWW, symulator WhatsApp i panel admina łączą się z jednym procesem FastAPI (server:app). Sprawdzenie z /api/check lub z webhooka WhatsApp trafia do modułu verification: analiza tekstu, potem równolegle odczyt API i strony zaufane, następnie pobranie pełnych artykułów i dwie niezależne oceny: analiza wiadomości oraz werdykt. Zaraz po twierdzeniach równolegle działa dopasowanie do bazy EUvsDisinfo, które może nadpisać werdykt. Proces zapisuje dane w PostgreSQL i logi w pliku JSONL oraz korzysta z modelu językowego, publicznych API, stron z białej listy i serwera MCP EUvsDisinfo.</desc>
+      <defs>
+        <marker id="ah" viewBox="0 0 8 8" refX="7.5" refY="4" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto">
+          <path class="ah" d="M0 .6 7.5 4 0 7.4z"/>
+        </marker>
+        <marker id="aha" viewBox="0 0 8 8" refX="7.5" refY="4" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto">
+          <path class="aha" d="M0 .6 7.5 4 0 7.4z"/>
+        </marker>
+      </defs>
+
+      <!-- tory: etykiety -->
+      <text class="lane-t" x="24" y="66">Kanały</text>
+      <text class="lane-c" x="24" y="84">aplikacje</text>
+      <text class="lane-c" x="24" y="99">w przeglądarce</text>
+
+      <text class="lane-t" x="24" y="181">API</text>
+      <text class="m" x="24" y="199">server:app</text>
+      <text class="lane-c" x="24" y="215">FastAPI, uvicorn</text>
+
+      <text class="lane-t" x="24" y="492">Weryfikacja</text>
+      <text class="m" x="24" y="510">verification</text>
+      <text class="lane-c" x="24" y="526">ten sam proces</text>
+
+      <text class="c" x="1000" y="34">WDROŻENIE</text>
+      <text class="c" x="1000" y="196">DANE</text>
+      <text class="c" x="1000" y="490">USŁUGI ZEWNĘTRZNE</text>
+
+      <!-- granica procesu i middleware -->
+      <rect class="frame" x="148" y="150" width="798" height="712" rx="14"/>
+      <rect class="band" x="160" y="164" width="770" height="26" rx="5"/>
+      <text class="c" x="172" y="181">MIDDLEWARE</text>
+      <text class="bt" x="353" y="181" text-anchor="middle">Observability · request_id</text>
+      <text class="bt" x="549" y="181" text-anchor="middle">CORS · GET, POST, OPTIONS</text>
+      <text class="bt" x="745.5" y="181" text-anchor="middle">limit żądania 96 KiB</text>
+      <text class="bt" x="887" y="181" text-anchor="middle">audyt SQLi</text>
+
+      <!-- połączenia: ścieżka sprawdzenia -->
+      <path class="ea" d="M255 108V206" marker-end="url(#aha)"/>
+      <path class="ea" d="M647 108V206" marker-end="url(#aha)"/>
+      <path class="ea" d="M647 276V296H255"/>
+      <path class="ea" d="M255 276V548" marker-end="url(#aha)"/>
+      <circle class="llm" cx="255" cy="296" r="3"/>
+
+      <path class="ea" d="M324 581H343M343 539V623"/>
+      <path class="ea" d="M343 539H362" marker-end="url(#aha)"/>
+      <path class="ea" d="M343 623H362" marker-end="url(#aha)"/>
+      <path class="ea" d="M526 539H545M526 623H545M545 539V623"/>
+      <path class="ea" d="M545 581H564" marker-end="url(#aha)"/>
+      <path class="ea" d="M728 581H747M747 539V623"/>
+      <path class="ea" d="M747 539H766" marker-end="url(#aha)"/>
+      <path class="ea" d="M747 623H766" marker-end="url(#aha)"/>
+      <path class="ea" d="M242 614V723H362" marker-end="url(#aha)"/>
+      <path class="ea" d="M728 723H800V656" marker-end="url(#aha)"/>
+
+      <!-- połączenia: pozostałe -->
+      <path class="e" d="M451 108V206" marker-end="url(#ah)"/>
+      <path class="e" d="M844 108V206" marker-end="url(#ah)"/>
+      <path class="e dash" d="M255 334H758" marker-end="url(#ah)"/>
+      <circle class="port" cx="255" cy="334" r="3"/>
+      <path class="e" d="M930 241H1000" marker-end="url(#ah)"/>
+      <path class="e" d="M930 334H1000" marker-end="url(#ah)"/>
+      <path class="e" d="M930 410H1000" marker-end="url(#ah)"/>
+
+      <circle class="port" cx="946" cy="531" r="2.5"/><path class="e" d="M946 531H1000" marker-end="url(#ah)"/>
+      <circle class="port" cx="946" cy="603" r="2.5"/><path class="e" d="M946 603H1000" marker-end="url(#ah)"/>
+      <circle class="port" cx="946" cy="675" r="2.5"/><path class="e" d="M946 675H1000" marker-end="url(#ah)"/>
+      <circle class="port" cx="946" cy="747" r="2.5"/><path class="e" d="M946 747H1000" marker-end="url(#ah)"/>
+      <circle class="port" cx="946" cy="819" r="2.5"/><path class="e" d="M946 819H1000" marker-end="url(#ah)"/>
+
+      <!-- kanały -->
+      <rect class="box" x="160" y="44" width="376" height="64" rx="8"/>
+      <text class="t" x="174" y="66">Strona WWW</text>
+      <text class="m" x="174" y="82">frontend/</text>
+      <text class="d" x="174" y="97">sprawdzanie tekstu i linków, odczyt na głos</text>
+
+      <rect class="box" x="552" y="44" width="190" height="64" rx="8"/>
+      <text class="t" x="566" y="66">Symulator WhatsApp</text>
+      <text class="m" x="566" y="82">frontend/src/whatsapp</text>
+      <text class="d" x="566" y="97">webhooki jak w Cloud API</text>
+
+      <rect class="box" x="758" y="44" width="172" height="64" rx="8"/>
+      <text class="t" x="772" y="66">Panel admina</text>
+      <text class="m" x="772" y="82">admin_panel/frontend</text>
+      <text class="d" x="772" y="97">pod adresem /admin</text>
+
+      <rect class="box-x" x="1000" y="44" width="256" height="64" rx="8"/>
+      <text class="t" x="1014" y="66">Vercel</text>
+      <text class="m" x="1242" y="66" text-anchor="end">vercel.json</text>
+      <text class="d" x="1014" y="82">strona i /admin jako pliki statyczne</text>
+      <text class="d" x="1014" y="97">/api/* → funkcja api/index.py</text>
+
+      <!-- routery -->
+      <rect class="box" x="160" y="206" width="190" height="70" rx="8"/>
+      <text class="t" x="174" y="229">Sprawdzanie</text>
+      <text class="m" x="174" y="246">api_routes</text>
+      <text class="d" x="174" y="262">maks. 4 sprawdzenia naraz</text>
+
+      <rect class="box" x="366" y="206" width="170" height="70" rx="8"/>
+      <text class="t" x="380" y="229">Lista źródeł</text>
+      <text class="m" x="380" y="246">public_sources</text>
+      <text class="d" x="380" y="262">strony zaufane z bazy</text>
+
+      <rect class="box" x="552" y="206" width="190" height="70" rx="8"/>
+      <text class="t" x="566" y="229">Bot WhatsApp</text>
+      <text class="m" x="566" y="246">whatsappAdapter</text>
+      <text class="d" x="566" y="262">tryby live, factcheck, demo</text>
+
+      <rect class="box" x="758" y="206" width="172" height="70" rx="8"/>
+      <text class="t" x="772" y="229">API panelu</text>
+      <text class="m" x="772" y="246">admin, accounts</text>
+      <text class="d" x="772" y="262">konta, role, alerty</text>
+
+      <rect class="box" x="758" y="304" width="172" height="60" rx="8"/>
+      <text class="t" x="772" y="325">Monitor</text>
+      <text class="m" x="772" y="341">admin/monitor.py</text>
+      <text class="d" x="772" y="356">luki, alerty, blokady</text>
+
+      <rect class="box" x="758" y="380" width="172" height="60" rx="8"/>
+      <text class="t" x="772" y="401">Obserwowalność</text>
+      <text class="m" x="772" y="417">observability</text>
+      <text class="d" x="772" y="432">czasy etapów, koszt LLM</text>
+
+      <!-- dane -->
+      <rect class="box-x" x="1000" y="206" width="256" height="158" rx="8"/>
+      <text class="t" x="1014" y="228">PostgreSQL</text>
+      <text class="m" x="1242" y="228" text-anchor="end">migracje 0001–0009</text>
+      <text class="d" x="1014" y="248">konta i tokeny sesji</text>
+      <text class="d" x="1014" y="264">strony zaufane</text>
+      <text class="d" x="1014" y="280">dziennik zapytań, tematy, alerty</text>
+      <text class="d" x="1014" y="296">wyniki i zgłoszenia błędów</text>
+      <text class="m" x="1014" y="350">bez DATABASE_URL: SQLite</text>
+
+      <rect class="box-x" x="1000" y="380" width="256" height="60" rx="8"/>
+      <text class="t" x="1014" y="401">Logi</text>
+      <text class="m" x="1242" y="401" text-anchor="end">app.jsonl</text>
+      <text class="d" x="1014" y="418">JSON Lines z request_id i kosztami</text>
+      <text class="d" x="1014" y="433">czyta panel: logi, zagrożenia</text>
+
+      <!-- etapy weryfikacji -->
+      <text x="160" y="492"><tspan class="ph-n">1</tspan><tspan class="ph" dx="7">analiza</tspan></text>
+      <text x="362" y="492"><tspan class="ph-n">2</tspan><tspan class="ph" dx="7">dowody (evidence)</tspan></text>
+      <text x="766" y="492"><tspan class="ph-n">3</tspan><tspan class="ph" dx="7">dwie niezależne oceny</tspan></text>
+
+      <rect class="box" x="160" y="548" width="164" height="66" rx="8"/>
+      <text class="t" x="174" y="570">Analiza tekstu</text>
+      <text class="m" x="174" y="586">textAnalysis</text>
+      <text class="d" x="174" y="601">twierdzenia i frazy</text>
+      <circle class="llm" cx="312" cy="560" r="3"/>
+
+      <rect class="box" x="362" y="506" width="164" height="66" rx="8"/>
+      <text class="t" x="376" y="528">Odczyt API</text>
+      <text class="m" x="376" y="544">apiReading</text>
+      <text class="d" x="376" y="559">fact-check, prawo, dane</text>
+
+      <rect class="box" x="362" y="590" width="164" height="66" rx="8"/>
+      <text class="t" x="376" y="612">Strony zaufane</text>
+      <text class="m" x="376" y="628">trustedSources</text>
+      <text class="d" x="376" y="643">biała lista, BM25</text>
+
+      <rect class="box" x="564" y="548" width="164" height="66" rx="8"/>
+      <text class="t" x="578" y="570">Pełne artykuły</text>
+      <text class="m" x="578" y="586">articleScraping</text>
+      <text class="d" x="578" y="601">min. 2 różne strony</text>
+
+      <rect class="box" x="766" y="506" width="164" height="66" rx="8"/>
+      <text class="t" x="780" y="528">Analiza wiadomości</text>
+      <text class="m" x="780" y="544">inputDataAnalysis</text>
+      <text class="d" x="780" y="559">manipulacje A–G, daty</text>
+      <circle class="llm" cx="918" cy="518" r="3"/>
+
+      <rect class="box" x="766" y="590" width="164" height="66" rx="8"/>
+      <text class="t" x="780" y="612">Werdykt</text>
+      <text class="m" x="780" y="628">prawdowid_analysis</text>
+      <text class="d" x="780" y="643">wymaga cytatu ze źródła</text>
+      <circle class="llm" cx="918" cy="602" r="3"/>
+
+      <rect class="box" x="362" y="690" width="366" height="66" rx="8"/>
+      <text class="t" x="376" y="712">Znana dezinformacja</text>
+      <text class="m" x="376" y="728">knownDisinfo</text>
+      <text class="d" x="376" y="743">startuje zaraz po twierdzeniach, bez czekania na dowody</text>
+      <circle class="llm" cx="716" cy="702" r="3"/>
+
+      <text class="note" x="160" y="800">Sam link: najpierw pobierany jest artykuł, potem analizowany jego tekst.</text>
+      <text class="note" x="160" y="818">Brak twierdzeń: cały tekst (do 1000 znaków) jest sprawdzany jako jedno twierdzenie.</text>
+      <text class="note" x="160" y="836">Wynik: zdarzenia evidence, input_analysis i claims_verdict; api_adapter składa z nich CheckResponse.</text>
+      <text class="m" x="934" y="850" text-anchor="end">server:app · jeden proces FastAPI</text>
+
+      <!-- usługi zewnętrzne -->
+      <rect class="box-x" x="1000" y="500" width="256" height="62" rx="8"/>
+      <text class="t" x="1014" y="521">Model językowy</text>
+      <circle class="llm" cx="1242" cy="517" r="3"/>
+      <text class="d" x="1014" y="538">API zgodne z OpenAI · 4–8 wywołań</text>
+      <text class="m" x="1014" y="552">gemini-3.5-flash-lite</text>
+
+      <rect class="box-x" x="1000" y="572" width="256" height="62" rx="8"/>
+      <text class="t" x="1014" y="593">API publiczne</text>
+      <text class="m" x="1242" y="593" text-anchor="end">apiReading</text>
+      <text class="d" x="1014" y="610">Google Fact Check, EUR-Lex,</text>
+      <text class="d" x="1014" y="624">Sejm (ELI), dane.gov.pl</text>
+
+      <rect class="box-x" x="1000" y="644" width="256" height="62" rx="8"/>
+      <text class="t" x="1014" y="665">Strony WWW</text>
+      <text class="m" x="1242" y="665" text-anchor="end">trustedSources</text>
+      <text class="d" x="1014" y="682">biała lista, ok. 50 serwisów:</text>
+      <text class="d" x="1014" y="696">gov.pl, Demagog, Konkret24, AFP</text>
+
+      <rect class="box-x" x="1000" y="716" width="256" height="62" rx="8"/>
+      <text class="t" x="1014" y="737">Artykuły</text>
+      <text class="m" x="1242" y="737" text-anchor="end">articleScraping</text>
+      <text class="d" x="1014" y="754">pobieranie, ekstrakcja trafilatura</text>
+      <text class="d" x="1014" y="768">ochrona SSRF: tylko adresy publiczne</text>
+
+      <rect class="box-x" x="1000" y="788" width="256" height="62" rx="8"/>
+      <text class="t" x="1014" y="809">EUvsDisinfo</text>
+      <text class="m" x="1242" y="809" text-anchor="end">knownDisinfo</text>
+      <text class="d" x="1014" y="826">serwer MCP, mcp.euvsd.info</text>
+      <text class="d" x="1014" y="840">ponad 19 tys. przypadków</text>
+
+      <!-- etykiety połączeń (na wierzchu) -->
+      <text class="lbl" x="263" y="136">GET /api/check</text>
+      <text class="lbl" x="459" y="136">GET /api/trusted-sources</text>
+      <text class="lbl" x="655" y="136">POST /api/whatsapp/webhook</text>
+      <text class="lbl" x="852" y="136">/api/admin/*</text>
+      <text class="lbl" x="506" y="327" text-anchor="middle">dziennik zapytań</text>
+      <text class="lbl" x="263" y="410">verification.start(text)</text>
+      <text class="lbl" x="810" y="694">nadpisuje werdykt</text>
+    </svg>
+  </figure>
+  <p class="hint">Przesuń diagram w bok, aby zobaczyć całość.</p>
+
+  <ul class="legend">
+    <li><svg width="28" height="10" aria-hidden="true"><line x1="0" y1="5" x2="28" y2="5" stroke="var(--accent)" stroke-width="1.5"/></svg>ścieżka jednego sprawdzenia</li>
+    <li><svg width="28" height="10" aria-hidden="true"><line x1="0" y1="5" x2="28" y2="5" stroke="var(--edge)" stroke-width="1.25"/></svg>odczyt, zapis, wywołania</li>
+    <li><svg width="28" height="10" aria-hidden="true"><line x1="0" y1="5" x2="28" y2="5" stroke="var(--edge)" stroke-width="1.25" stroke-dasharray="4 3"/></svg>wpis do dziennika panelu</li>
+    <li><svg width="10" height="10" aria-hidden="true"><circle cx="5" cy="5" r="3" fill="var(--accent)"/></svg>etap wywołuje model językowy</li>
+    <li><svg width="22" height="14" aria-hidden="true"><rect x=".5" y=".5" width="21" height="13" rx="3" fill="var(--surface)" stroke="var(--line)"/></svg>kod aplikacji</li>
+    <li><svg width="22" height="14" aria-hidden="true"><rect x=".5" y=".5" width="21" height="13" rx="3" fill="var(--bg)" stroke="var(--line-strong)"/></svg>infrastruktura i usługi zewnętrzne</li>
+  </ul>
+
+  <section class="principles">
+    <h2>Zasady widoczne w kodzie</h2>
+    <div class="grid">
+      <div>
+        <h3>Izolacja błędów</h3>
+        <p>Każdy etap zwraca zdarzenie <code>ok</code> albo <code>error</code>. Awaria jednej oceny nie psuje drugiej.</p>
+      </div>
+      <div>
+        <h3>Model nie ma ostatniego słowa</h3>
+        <p>Werdykt wymaga dosłownego cytatu ze źródła. Bez pokrycia kod obniża go do „brak danych”.</p>
+      </div>
+      <div>
+        <h3>Wymienne zależności</h3>
+        <p><code>create_app(...)</code> i <code>verification.Stages</code> przyjmują atrapy, więc testy działają bez sieci, kluczy i bazy.</p>
+      </div>
+      <div>
+        <h3>Prywatność</h3>
+        <p>Pełne wyniki nie są zapisywane. Panel widzi użytkowników serwisu tylko jako pseudonimy HMAC.</p>
+      </div>
+    </div>
+  </section>
+
+</main>
+</body>
+</html>
