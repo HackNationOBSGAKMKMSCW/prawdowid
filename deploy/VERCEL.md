@@ -7,7 +7,7 @@ Wszystko działa w jednym projekcie Vercela z katalogu głównego repo:
 | Strona i symulator WhatsApp | statyczny build `frontend/` (`npm run build:live`) | `/`, `/whatsapp` |
 | Panel admina | statyczny build `admin_panel/frontend/` (`--base=/admin/`) | `/admin` |
 | Backend FastAPI (`backend/server.py`) | funkcja Pythona `api/index.py`, region `fra1`, limit 300 s | `/api/*` |
-| PostgreSQL | Vercel → Storage → Neon (Frankfurt) | `DATABASE_URL` |
+| PostgreSQL | Vercel → Storage → Neon (Frankfurt), prefiks `TEMP` | `TEMP_DATABASE_URL` → `DATABASE_URL` |
 
 Konfiguracja projektu jest w plikach w repo, więc w panelu Vercela niczego nie trzeba wpisywać ręcznie:
 - `vercel.json`: install, build, katalog wynikowy, funkcja i przekierowania;
@@ -55,10 +55,15 @@ Na planie **Hobby** Vercel nie wdroży **prywatnego** repozytorium należącego 
    - **Database name**: dowolna, np. `sprawdz-to`.
 3. **Create**, a w oknie **Connect Project**:
    - **Environments**: zaznacz Production i Preview. Development jest potrzebny tylko dla `vercel env pull` w kroku 5, więc też go zaznacz.
-   - **Custom Prefix**: zostaw puste. Backend czyta dokładnie `DATABASE_URL`.
+   - **Custom Prefix**: `TEMP`. W projekcie są już bezprefiksowe zmienne bazy, które Vercel dodał wcześniej, a ten prefiks oddziela od nich nową bazę.
 4. **Connect**. W **Settings → Environment Variables** pojawią się między innymi:
-   - `DATABASE_URL`: adres przez pooler, z niego korzysta aplikacja;
-   - `DATABASE_URL_UNPOOLED`: adres bez poolera, do migracji.
+   - `TEMP_DATABASE_URL`: adres przez pooler, z niego korzysta aplikacja;
+   - `TEMP_DATABASE_URL_UNPOOLED`: adres bez poolera, do migracji.
+
+   Backend czyta tylko `DATABASE_URL`, dlatego `api/index.py` przy starcie funkcji wpisuje do niego `TEMP_DATABASE_URL` (albo `TEMP_POSTGRES_URL`). To ma pierwszeństwo przed starą, bezprefiksową `DATABASE_URL`.
+   - W Logs pojawia się wtedy linia `[vercel] DATABASE_URL z TEMP_DATABASE_URL`, bez samego adresu.
+   - Inny prefiks ustawiasz zmienną `DATABASE_ENV_PREFIX`.
+   - Pusta `DATABASE_ENV_PREFIX` przywraca zwykłe `DATABASE_URL`.
 
 Nic więcej przy bazie nie trzeba:
 - SSL jest weryfikowany domyślnie, więc `DATABASE_SSL_MODE` zostaw puste;
@@ -92,7 +97,7 @@ Zmiany zmiennych wchodzą dopiero po redeployu (krok 6).
 
 Nowa baza Neon jest pusta, a te polecenia zakładają wszystko od zera: 9 migracji (13 tabel), 48 stron zaufanych i pierwsze konto admina. Starej bazy ani zrzutu nie potrzeba. Polecenia można bezpiecznie powtórzyć, bo zastosowane migracje i istniejące źródła są pomijane.
 
-Migracje idą adresem **bez poolera** (`DATABASE_URL_UNPOOLED`). Potrzebne jest lokalne środowisko Pythona z `requirements.txt` (zob. `URUCHOMIENIE.md`, krok 1).
+Migracje idą adresem **bez poolera** (`TEMP_DATABASE_URL_UNPOOLED`). Potrzebne jest lokalne środowisko Pythona z `requirements.txt` (zob. `URUCHOMIENIE.md`, krok 1).
 
 Git Bash albo Linux/macOS, z katalogu głównego repo:
 
@@ -101,7 +106,7 @@ npm i -g vercel
 vercel login
 vercel link                       # wybierz zespół i projekt z kroku 2
 vercel env pull .env.vercel       # pobiera zmienne środowiska Development
-export DATABASE_URL="$(grep '^DATABASE_URL_UNPOOLED=' .env.vercel | cut -d= -f2- | tr -d '"')"
+export DATABASE_URL="$(grep '^TEMP_DATABASE_URL_UNPOOLED=' .env.vercel | cut -d= -f2- | tr -d '"')"
 cd backend
 python -m database migrate        # tworzy tabele
 python -m database seed-sources   # startowa lista stron zaufanych
@@ -114,7 +119,7 @@ PowerShell:
 
 ```powershell
 vercel link; vercel env pull .env.vercel
-$env:DATABASE_URL = ((Select-String -Path .env.vercel -Pattern '^DATABASE_URL_UNPOOLED=').Line -replace '^DATABASE_URL_UNPOOLED=', '').Trim('"')
+$env:DATABASE_URL = ((Select-String -Path .env.vercel -Pattern '^TEMP_DATABASE_URL_UNPOOLED=').Line -replace '^TEMP_DATABASE_URL_UNPOOLED=', '').Trim('"')
 cd backend
 python -m database migrate
 python -m database seed-sources
@@ -129,7 +134,7 @@ cd ..; Remove-Item .env.vercel
 
 Bez `vercel` CLI adres można skopiować ręcznie:
 1. Storage → baza → **.env.local** → **Show secret**;
-2. skopiuj `DATABASE_URL_UNPOOLED`;
+2. skopiuj `TEMP_DATABASE_URL_UNPOOLED`;
 3. ustaw go jako `DATABASE_URL` w terminalu.
 
 ## Krok 6. Redeploy
@@ -152,6 +157,8 @@ Logi backendu są w zakładce **Logs** projektu: każdy etap sprawdzania i błę
 | Objaw | Przyczyna |
 |---|---|
 | `/api/health` zwraca 500, a w Logs jest `DATABASE_URL is required` | baza nie jest podpięta do tego środowiska (krok 3) albo nie było redeployu |
+| W Logs jest `[vercel] brak TEMP_DATABASE_URL` | baza podpięta z innym prefiksem: ustaw `DATABASE_ENV_PREFIX` albo podepnij ją ponownie z prefiksem `TEMP` |
+| Panel działa, ale nie widać w nim nowej bazy (stare dane albo błąd tabel) | funkcja łączy się ze starą bazą: sprawdź w Logs linię `[vercel] DATABASE_URL z ...` |
 | `/api/health` zwraca 500, a w Logs jest `relation ... does not exist` | nie wykonano `migrate` (krok 5) |
 | Nie da się zalogować do panelu | brak konta (`create-user`) albo migracji |
 | Lista źródeł jest pusta | nie wykonano `seed-sources` |

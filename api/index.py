@@ -33,6 +33,38 @@ _DEFAULTS = {
 for name, value in _DEFAULTS.items():
     os.environ.setdefault(name, value)
 
+# The Neon database was connected in Vercel Storage with the custom prefix ``TEMP``
+# (``TEMP_DATABASE_URL``...), because unprefixed variables already existed in the project.
+# The backend reads only ``DATABASE_URL``, so the prefixed pooled address replaces it here,
+# taking precedence over any unprefixed ``DATABASE_URL``. ``DATABASE_ENV_PREFIX`` selects a
+# different prefix; an empty value keeps plain ``DATABASE_URL``.
+DATABASE_ENV_PREFIX = os.getenv("DATABASE_ENV_PREFIX", "TEMP").strip().rstrip("_")
+# Neon sets DATABASE_URL (pooler); older integrations name the same address POSTGRES_URL.
+_POOLED_URL_NAMES = ("DATABASE_URL", "POSTGRES_URL")
+
+
+def _prefixed_database_url(prefix: str) -> tuple[str, str] | None:
+    """(variable name, address) of the prefixed pooled database address, if set."""
+    if not prefix:
+        return None
+    for name in _POOLED_URL_NAMES:
+        value = os.getenv(f"{prefix}_{name}", "").strip()
+        if value:
+            return f"{prefix}_{name}", value
+    return None
+
+
+_found = _prefixed_database_url(DATABASE_ENV_PREFIX)
+if _found is not None:
+    os.environ["DATABASE_URL"] = _found[1]
+    print(f"[vercel] DATABASE_URL z {_found[0]}", file=sys.stderr, flush=True)  # nazwa, bez adresu
+elif DATABASE_ENV_PREFIX:
+    print(
+        f"[vercel] brak {DATABASE_ENV_PREFIX}_DATABASE_URL: zostaje DATABASE_URL",
+        file=sys.stderr,
+        flush=True,
+    )
+
 from server import app  # noqa: E402
 
 __all__ = ["app"]
