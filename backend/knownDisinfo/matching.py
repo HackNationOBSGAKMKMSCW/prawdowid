@@ -18,6 +18,8 @@ import time
 from collections.abc import Sequence
 from typing import Any, Protocol
 
+from llm_compat import create_chat_completion, reasoning_effort
+
 from .mcp import McpError
 from .models import CandidateRef, DisinfoCase, DisinfoCheck, StatementCheck
 from .settings import DisinfoSettings
@@ -61,6 +63,14 @@ def parse_json(raw: str) -> Any:
         return json.loads(text[start : end + 1])
 
 
+def _known_disinfo_reasoning_effort() -> str | None:
+    """``KNOWN_DISINFO_REASONING_EFFORT`` (``off``: nie wysyłaj), inaczej ``LLM_REASONING_EFFORT``."""
+    value = os.getenv("KNOWN_DISINFO_REASONING_EFFORT", "").strip().lower()
+    if value == "off":
+        return None
+    return value or reasoning_effort()
+
+
 class OpenAIJsonLLM:
     """OpenAI-compatible chat endpoint configured like textAnalysis (``FREELLM_*``)."""
 
@@ -95,7 +105,7 @@ class OpenAIJsonLLM:
             base_url=settings.freellm_base_url,
             model=settings.freellm_model,
             timeout=settings.llm_timeout,
-            reasoning_effort=os.getenv("KNOWN_DISINFO_REASONING_EFFORT", "none").strip() or None,
+            reasoning_effort=_known_disinfo_reasoning_effort(),
         )
 
     async def complete_json(self, system: str, user: str) -> Any:
@@ -109,13 +119,14 @@ class OpenAIJsonLLM:
         if self.reasoning_effort:
             kwargs["reasoning_effort"] = self.reasoning_effort
         try:
-            response = await self._client.chat.completions.create(**kwargs)
+            response = await create_chat_completion(self._client, **kwargs)
         except BadRequestError:
+            # Endpoint odrzucił zapytanie bez wskazania parametru: spróbuj bez rozumowania.
             if "reasoning_effort" not in kwargs:
                 raise
             self.reasoning_effort = None
             del kwargs["reasoning_effort"]
-            response = await self._client.chat.completions.create(**kwargs)
+            response = await create_chat_completion(self._client, **kwargs)
         if not response.choices:
             raise ValueError("model nie zwrócił odpowiedzi")
         return parse_json(response.choices[0].message.content or "")
