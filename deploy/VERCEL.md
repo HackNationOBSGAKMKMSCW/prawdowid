@@ -97,45 +97,57 @@ Zmiany zmiennych wchodzą dopiero po redeployu (krok 6).
 
 Nowa baza Neon jest pusta, a te polecenia zakładają wszystko od zera: 9 migracji (13 tabel), 48 stron zaufanych i pierwsze konto admina. Starej bazy ani zrzutu nie potrzeba. Polecenia można bezpiecznie powtórzyć, bo zastosowane migracje i istniejące źródła są pomijane.
 
-Migracje idą adresem **bez poolera** (`TEMP_DATABASE_URL_UNPOOLED`). Potrzebne jest lokalne środowisko Pythona z `requirements.txt` (zob. `URUCHOMIENIE.md`, krok 1).
+Migracje idą adresem **bez poolera** (`TEMP_DATABASE_URL_UNPOOLED`). Potrzebny jest Python z zależnościami z `requirements.txt`, np. `backend\.venv` (zob. `URUCHOMIENIE.md`, krok 1).
 
-Git Bash albo Linux/macOS, z katalogu głównego repo:
+`vercel` CLI **nie jest potrzebne**. Pakiet `vercel` z `pip` to biblioteka Pythona, a nie CLI, więc do tego kroku się nie przyda.
 
-```bash
-npm i -g vercel
-vercel login
-vercel link                       # wybierz zespół i projekt z kroku 2
-vercel env pull .env.vercel       # pobiera zmienne środowiska Development
-export DATABASE_URL="$(grep '^TEMP_DATABASE_URL_UNPOOLED=' .env.vercel | cut -d= -f2- | tr -d '"')"
-cd backend
-python -m database migrate        # tworzy tabele
-python -m database seed-sources   # startowa lista stron zaufanych
-python -m database create-user --email admin@example.pl --name "Jan Kowalski" --role admin
-python -m database check          # połączenie, tabele, stan migracji
-cd .. && rm .env.vercel
-```
+### 5a. Skopiuj adres bazy (przeglądarka)
 
-PowerShell:
+1. Vercel → projekt → **Storage** → kliknij bazę Neon.
+2. W sekcji **Quickstart** wybierz zakładkę **.env.local** i kliknij **Show secret**.
+3. Skopiuj wartość `TEMP_DATABASE_URL_UNPOOLED`, czyli tekst po `=` bez cudzysłowów. Wygląda tak: `postgresql://neondb_owner:...@ep-...eu-central-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require`.
+   - W nazwie hosta **nie ma** `-pooler`.
+   - Jeśli widzisz tylko adres z `-pooler`, otwórz **Open in Neon** → **Connect**, wyłącz **Connection pooling** i skopiuj adres stamtąd.
+
+### 5b. Uruchom polecenia (PowerShell)
+
+Użyj terminala **PowerShell**, a nie Git Bash. W VS Code: Terminal → New Terminal, a potem strzałka obok `+` → PowerShell. W Git Bash programy pytające o odpowiedź (hasło, „Ok to proceed?”) nie przyjmują Entera: zamiast niego pojawia się `^M` albo litera.
 
 ```powershell
-vercel link; vercel env pull .env.vercel
-$env:DATABASE_URL = ((Select-String -Path .env.vercel -Pattern '^TEMP_DATABASE_URL_UNPOOLED=').Line -replace '^TEMP_DATABASE_URL_UNPOOLED=', '').Trim('"')
-cd backend
-python -m database migrate
-python -m database seed-sources
-python -m database create-user --email admin@example.pl --name "Jan Kowalski" --role admin
-python -m database check
-cd ..; Remove-Item .env.vercel
+cd C:\Codes\projects\Hacknation\prawdowid\backend
+
+# adres z kroku 5a, w POJEDYNCZYCH cudzysłowach (zawiera znak &)
+$env:DATABASE_URL = 'postgresql://...wklej-tutaj...'
+
+.\.venv\Scripts\python -m database check          # połączenie; migracje "DO ZASTOSOWANIA"
+.\.venv\Scripts\python -m database migrate        # 9 migracji, 13 tabel
+.\.venv\Scripts\python -m database seed-sources   # "Dodano 48 z 48 źródeł"
+.\.venv\Scripts\python -m database create-user --email admin@example.pl --name "Jan Kowalski" --role admin
+.\.venv\Scripts\python -m database check          # wszystkie migracje "zastosowana"
+
+Remove-Item Env:DATABASE_URL                      # sprząta adres z tej sesji terminala
 ```
 
-- `python` to Python z waszego środowiska, np. `backend\.venv\Scripts\python`.
-- Zmienna procesu `DATABASE_URL` ma pierwszeństwo przed lokalnym `.env`.
-- `create-user` pyta o hasło w terminalu. Role: `admin` (pełna kontrola) i `analyst` (podgląd).
+- `create-user` pyta o hasło: pisane znaki nie są widoczne, na końcu Enter. Hasło możesz też podać wcześniej: `$env:NEW_USER_PASSWORD = '...'`, a po wszystkim `Remove-Item Env:NEW_USER_PASSWORD`.
+- Role: `admin` (pełna kontrola) i `analyst` (podgląd).
+- Zmienna `$env:DATABASE_URL` ma pierwszeństwo przed lokalnym `.env`, więc polecenia idą do Neona, a nie do bazy z `.env`.
+- Adres bazy zawiera hasło. Nie wklejaj go do plików w repo ani na czat.
 
-Bez `vercel` CLI adres można skopiować ręcznie:
-1. Storage → baza → **.env.local** → **Show secret**;
-2. skopiuj `TEMP_DATABASE_URL_UNPOOLED`;
-3. ustaw go jako `DATABASE_URL` w terminalu.
+### Opcjonalnie: przez `vercel` CLI
+
+CLI to pakiet z npm, a nie z pip. W **PowerShell**:
+
+```powershell
+npm i -g vercel           # instalacja bez pytania "Ok to proceed?"
+vercel login
+cd C:\Codes\projects\Hacknation\prawdowid
+vercel link               # zespół i projekt z kroku 2
+vercel env pull .env.vercel --environment=production
+$env:DATABASE_URL = ((Select-String -Path .env.vercel -Pattern '^TEMP_DATABASE_URL_UNPOOLED=').Line -replace '^TEMP_DATABASE_URL_UNPOOLED=', '').Trim('"')
+Remove-Item .env.vercel
+```
+
+Dalej tak jak w 5b, od `cd backend`.
 
 ## Krok 6. Redeploy
 

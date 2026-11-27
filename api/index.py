@@ -54,16 +54,45 @@ def _prefixed_database_url(prefix: str) -> tuple[str, str] | None:
     return None
 
 
+def _describe(url: str) -> str:
+    """Host and database name of ``url`` for the logs: never the user or the password."""
+    from urllib.parse import parse_qs, urlsplit
+
+    try:
+        parts = urlsplit(url)
+        if parts.scheme not in ("postgresql", "postgres"):
+            # Nothing from the value: without the scheme the password can land in any part.
+            return "ZŁY adres: nie zaczyna się od postgresql:// (cudzysłowy, spacja, inna zmienna?)"
+        netloc_host = parts.netloc.rpartition("@")[2]  # libpq: host1:port,host2 after the @
+        query_hosts = parse_qs(parts.query).get("host", [])
+        database = parts.path.lstrip("/")
+    except ValueError:
+        return "ZŁY adres: nie do odczytania"
+    hosts = [h.rsplit(":", 1)[0] if h.count(":") == 1 else h for h in netloc_host.split(",")]
+    hosts += [h for value in query_hosts for h in value.split(",")]
+    hosts = [h for h in hosts if h] or [""]
+    shown = ",".join(hosts) or "-"
+    if any(not label for host in hosts for label in host.split(".")):
+        return f"host={shown}, baza={database or '-'}; ZŁY host: pusty albo z pustym członem (np. zaczyna się od kropki)"
+    return f"host={shown}, baza={database or '-'}"
+
+
+def _log(message: str) -> None:
+    print(f"[vercel] {message}", file=sys.stderr, flush=True)
+
+
 _found = _prefixed_database_url(DATABASE_ENV_PREFIX)
 if _found is not None:
     os.environ["DATABASE_URL"] = _found[1]
-    print(f"[vercel] DATABASE_URL z {_found[0]}", file=sys.stderr, flush=True)  # nazwa, bez adresu
+    _log(f"DATABASE_URL z {_found[0]} ({_describe(_found[1])})")
 elif DATABASE_ENV_PREFIX:
-    print(
-        f"[vercel] brak {DATABASE_ENV_PREFIX}_DATABASE_URL: zostaje DATABASE_URL",
-        file=sys.stderr,
-        flush=True,
-    )
+    _log(f"brak {DATABASE_ENV_PREFIX}_DATABASE_URL: zostaje DATABASE_URL")
+if os.getenv("DATABASE_URL", "").strip():
+    if _found is None:
+        _log(f"DATABASE_URL ({_describe(os.environ['DATABASE_URL'])})")
+else:
+    # Lokalnie adres może jeszcze przyjść z .env (server.py czyta go później); na Vercelu nie.
+    _log("brak DATABASE_URL w zmiennych środowiska: na Vercelu backend nie połączy się z bazą")
 
 from server import app  # noqa: E402
 
