@@ -1,5 +1,7 @@
 # Wdrożenie na jednym serwerze (strona + panel + backend + baza, model z API OpenAI)
 
+Demo bez własnego serwera (Vercel + baza Neon): [`VERCEL.md`](VERCEL.md).
+
 ```
 Użytkownik ─> http://<IP-serwera>  albo  https://<ip-z-kreskami>.sslip.io
                  └── Caddy (porty 80/443)

@@ -1,0 +1,14 @@
+# Nie wysyłaj na Vercel lokalnych sekretów ani środowisk (wdrożenie z `vercel` CLI).
+# Zmienne środowiskowe ustawia się w ustawieniach projektu na Vercelu.
+.env
+.env.*
+!.env.example
+.envrc
+**/.venv
+**/venv
+**/node_modules
+**/__pycache__
+backend/logs
+backend/admin/data
+dist
+graphify-out

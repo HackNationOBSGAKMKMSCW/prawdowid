@@ -1,0 +1,26 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "installCommand": "npm ci --prefix frontend && npm ci --prefix admin_panel/frontend",
+  "buildCommand": "VITE_CHECK_TIMEOUT_MS=${VITE_CHECK_TIMEOUT_MS:-310000} npm run build:live --prefix frontend && npm run build --prefix admin_panel/frontend -- --base=/admin/ && rm -rf dist && cp -r frontend/dist dist && cp -r admin_panel/frontend/dist dist/admin",
+  "outputDirectory": "dist",
+  "regions": ["fra1"],
+  "functions": {
+    "api/index.py": {
+      "maxDuration": 300,
+      "excludeFiles": "{frontend/**,admin_panel/frontend/**,**/node_modules/**,dist/**,docs/**,graphify-out/**,**/tests/**,**/test_*.py,**/conftest.py,**/.venv/**,**/venv/**,**/__pycache__/**,backend/logs/**,backend/admin/data/**,analysis/data/eval/**,analysis/scripts/**}"
+    }
+  },
+  "rewrites": [
+    { "source": "/api/:path*", "destination": "/api/index" },
+    { "source": "/admin", "destination": "/admin/index.html" },
+    { "source": "/admin/:path*", "destination": "/admin/index.html" },
+    { "source": "/:path*", "destination": "/index.html" }
+  ],
+  "headers": [
+    {
+      "source": "/admin/config.json",
+      "headers": [{ "key": "Cache-Control", "value": "no-store" }]
+    }
+  ]
+}

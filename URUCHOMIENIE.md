@@ -118,3 +118,6 @@ i `analityk@sprawdz.to.demo`, hasło `demo1234`).
 Całość (strona, panel, backend, baza) działa na jednym serwerze za Caddy, a model idzie przez
 API OpenAI. Instrukcja krok po kroku: [`deploy/README.md`](deploy/README.md), instalacja jednym
 poleceniem: `sudo deploy/setup.sh :80`.
+
+Demo na Vercelu (strona, panel i backend jako funkcja, baza Neon z Vercel Storage):
+[`deploy/VERCEL.md`](deploy/VERCEL.md).

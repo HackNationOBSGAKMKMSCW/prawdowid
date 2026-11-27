@@ -56,7 +56,7 @@ Administracja widzi ruch, alerty, luki informacyjne i zagrożenia w osobnym pane
 | Analiza tekstu | dateparser, rapidfuzz, własny BM25, trafilatura + lxml (pobieranie artykułów) |
 | Baza           | PostgreSQL (konta, dziennik, listy); SQLite jako tryb zapasowy panelu bez `DATABASE_URL` |
 | Frontend       | Vite 8, React 19, TypeScript (strona na porcie 5173, panel na 5175) |
-| Wdrożenie      | backend jako usługa (Render), strona i panel na Vercel (`vercel.json`) |
+| Wdrożenie      | jeden serwer za Caddy (`deploy/README.md`) albo demo na Vercelu z bazą Neon (`vercel.json`, `deploy/VERCEL.md`) |
 
 ## 2. Architektura
 
@@ -417,7 +417,16 @@ Sprawdzenie: `http://127.0.0.1:8000/api/health` zwraca `{"status":"ok"}`.
 
 **Skrypty** (`backend/scripts`): `estimate_llm_tokens.py` (pomiar tokenów na jedno sprawdzenie z atrapą modelu), `load_test.py` (test obciążeniowy API), `smoke_pipeline.py` (przejście całego potoku).
 
-**Wdrożenie.** Backend jako osobna usługa (build `pip install -r requirements.txt`, start `uvicorn server:app --host 0.0.0.0 --port $PORT`, `PYTHONPATH=backend:analysis:analysis/src`, `CORS_ORIGINS=https://<domena>`); strona i panel na Vercel jednym projektem z `vercel.json` (strona pod `/`, panel pod `/admin`). **W `vercel.json` trzeba podmienić `TWOJ-BACKEND.onrender.com`** na adres backendu. Strona i WhatsApp łączą się z backendem bezpośrednio (stad CORS), bo jedno sprawdzenie trwa do kilku minut, a przekierowania Vercel mają limit 120 s; panel idzie przez przekierowanie `/api/admin`.
+**Wdrożenie.** Dwie drogi, obie bez zmian w kodzie:
+
+- **jeden serwer:** Caddy, backend jako usługa systemd i lokalny Postgres, instrukcja w `deploy/README.md`;
+- **demo na Vercelu:** jeden projekt z `vercel.json`:
+  - strona pod `/`, panel pod `/admin`;
+  - backend jako funkcja Pythona `api/index.py` pod `/api/*`;
+  - PostgreSQL z Vercel Storage (Neon);
+  - instrukcja w `deploy/VERCEL.md`.
+
+Strona i panel wołają `/api` pod tym samym adresem, więc CORS nie jest potrzebny.
 
 ## 15. Uwagi z przeglądu kodu
 
